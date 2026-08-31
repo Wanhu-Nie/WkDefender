@@ -93,11 +93,11 @@ AeReportIndicatorPair(
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
 AeOrchestratorDispatch(
-    _In_ PWKD_PROCESS SourceProcess,
-    _In_ PWKD_PROCESS TargetProcess,
+    _In_ const PWKD_PROCESS SourceProcess,
+    _Inout_ PWKD_PROCESS TargetProcess,
     _In_ WKD_ASSEMBLY_SOURCE Source,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _In_opt_ PVOID Context
+    _In_opt_ const PVOID Context
     );
 
 //

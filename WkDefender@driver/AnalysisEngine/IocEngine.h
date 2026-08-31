@@ -74,7 +74,7 @@ IocAllocateProcessPairContext(
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 VOID
-IocFreeProcessPairContext(
+IocDestroyProcessPairContext(
     _Inout_ PAE_PROCESS_PAIR Pair
 );
 

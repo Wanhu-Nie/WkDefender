@@ -84,7 +84,7 @@ AeDestroyProcessPairContexts(
 /*++
 Routine Description:
     释放进程对的三分析上下文。遍历三链释放全部记录节点 + 释放上下文 +
-    置 NULL。由 PairManager_CleanupExpired (摘除成功后) / PairManager_Cleanup
+    置 NULL。由 IocCleanupExpiredProcessPair (摘除成功后) / PairManager_Cleanup
     调用 (对齐 driver PsDereferenceWkdProcessPair refcount==0 分支)。
     **无锁访问**
 
@@ -96,54 +96,54 @@ Arguments:
 --*/
 {
     PLIST_ENTRY entry;
-    PIOA_PAIR_IOC_RECORD iocRec;
-    PIOA_PAIR_IOA_RECORD ioaRec;
-    PIOA_PAIR_TS_RECORD  tsRec;
-    PAE_PROCESS_PAIR_IOC_CONTEXT ioc;
-    PAE_PROCESS_PAIR_IOA_CONTEXT ioa;
-    PAE_PROCESS_PAIR_TS_CONTEXT  ts;
+    PIOA_PAIR_IOC_RECORD iocRecord;
+    PIOA_PAIR_IOA_RECORD ioaRecord;
+    PIOA_PAIR_TS_RECORD  tsRecord;
+    PAE_PROCESS_PAIR_IOC_CONTEXT iocContext;
+    PAE_PROCESS_PAIR_IOA_CONTEXT ioaContext;
+    PAE_PROCESS_PAIR_TS_CONTEXT  tsContext;
 
     if (!Pair) return;
 
-    ioc = Pair->IocContext;
-    ioa = Pair->IoaContext;
-    ts  = Pair->TsContext;
+    iocContext = Pair->IocContext;
+    ioaContext = Pair->IoaContext;
+    tsContext = Pair->TsContext;
 
     /* 释放 IOC 证据链 */
-    if (ioc) {
-        while (!IsListEmpty(&ioc->IocChain)) {
-            entry = RemoveHeadList(&ioc->IocChain);
-            iocRec = CONTAINING_RECORD(entry, IOA_PAIR_IOC_RECORD, Link);
-            free(iocRec);
+    if (iocContext) {
+        while (!IsListEmpty(&iocContext->IocChain)) {
+            entry = RemoveHeadList(&iocContext->IocChain);
+            iocRecord = CONTAINING_RECORD(entry, IOA_PAIR_IOC_RECORD, Link);
+            free(iocRecord);
         }
-        free(ioc);
+        free(iocContext);
         Pair->IocContext = NULL;
     }
 
     /* 释放 IOA 行为摘要链 */
-    if (ioa) {
-        while (!IsListEmpty(&ioa->IoaChain)) {
-            entry = RemoveHeadList(&ioa->IoaChain);
-            ioaRec = CONTAINING_RECORD(entry, IOA_PAIR_IOA_RECORD, Link);
-            free(ioaRec);
+    if (ioaContext) {
+        while (!IsListEmpty(&ioaContext->IoaChain)) {
+            entry = RemoveHeadList(&ioaContext->IoaChain);
+            ioaRecord = CONTAINING_RECORD(entry, IOA_PAIR_IOA_RECORD, Link);
+            free(ioaRecord);
         }
-        free(ioa);
+        free(ioaContext);
         Pair->IoaContext = NULL;
     }
 
     /* 释放 TS 待结算 IOC 链 + IOA 窗口链 */
-    if (ts) {
-        while (!IsListEmpty(&ts->PendingIocChain)) {
-            entry = RemoveHeadList(&ts->PendingIocChain);
-            tsRec = CONTAINING_RECORD(entry, IOA_PAIR_TS_RECORD, Link);
-            free(tsRec);
+    if (tsContext) {
+        while (!IsListEmpty(&tsContext->PendingIocChain)) {
+            entry = RemoveHeadList(&tsContext->PendingIocChain);
+            tsRecord = CONTAINING_RECORD(entry, IOA_PAIR_TS_RECORD, Link);
+            free(tsRecord);
         }
-        while (!IsListEmpty(&ts->IoaChain)) {
-            entry = RemoveHeadList(&ts->IoaChain);
-            tsRec = CONTAINING_RECORD(entry, IOA_PAIR_TS_RECORD, Link);
-            free(tsRec);
+        while (!IsListEmpty(&tsContext->IoaChain)) {
+            entry = RemoveHeadList(&tsContext->IoaChain);
+            tsRecord = CONTAINING_RECORD(entry, IOA_PAIR_TS_RECORD, Link);
+            free(tsRecord);
         }
-        free(ts);
+        free(tsContext);
         Pair->TsContext = NULL;
     }
 }

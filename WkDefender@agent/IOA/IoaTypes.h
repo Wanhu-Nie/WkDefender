@@ -84,33 +84,32 @@ typedef struct _IOA_ENGINE_CONFIG {
 /**************************************************/
 
 typedef struct _IOA_ENGINE_STATS {
-    volatile LONG64     EventsIngested;
-    volatile LONG64     ProcessNodesCreated;
-    volatile LONG       ProcessNodesTerminated;
-    volatile LONG64     ThreadNodesTerminated;   /* 线程退出释放的 wkd_thread 计数 (2026-08-27) */
-    volatile LONG64     GraphNodesCreated;
-    volatile LONG64     EdgesCreated;
-    volatile LONG64     EdgesCompacted;
-    volatile LONG64     T1Evaluations;
-    volatile LONG64     T1RuleHits;
-    volatile LONG64     T2Calls;
-    volatile LONG64     T2Hits;
-    volatile LONG64     PersistEnqueued;
-    volatile LONG64     PersistWritten;
-    volatile LONG64     ScoreUpdates;
-    volatile LONG64     MitreMappings;
-    volatile LONG64     CurrentProcessCount;
+    volatile LONG     EventsIngested;           // 已导入的事件数
+    volatile LONG     ProcessNodesCreated;
+    volatile LONG     ProcessNodesTerminated;
+    volatile LONG     ThreadNodesTerminated;   /* 线程退出释放的 wkd_thread 计数 (2026-08-27) */
+    volatile LONG     GraphNodesCreated;
+    volatile LONG     EdgesCreated;
+    volatile LONG     EdgesCompacted;
+    volatile LONG     T1Evaluations;
+    volatile LONG     T1RuleHits;
+    volatile LONG     T2Calls;
+    volatile LONG     T2Hits;
+    volatile LONG     PersistEnqueued;
+    volatile LONG     PersistWritten;
+    volatile LONG     ScoreUpdates;
+    volatile LONG     MitreMappings;
+    volatile LONG     CurrentProcessCount;
     /* FSM 统计 */
-    volatile LONG64     FsmEventsProcessed;
-    volatile LONG64     FsmAcceptHits;
+    volatile LONG     FsmEventsProcessed;
+    volatile LONG     FsmAcceptHits;
     /* 环形缓冲区写入 / 丢弃统计 (在同步路径上更新) */
-    volatile LONG64     RingBufferWrites;
-    volatile LONG64     RingBufferDrops;
+    volatile LONG     RingBufferWrites;
+    volatile LONG     RingBufferDrops;
     /* 注: RingBufferConsumed/FsmActiveTrackers/FsmTimeouts
        已迁移至 GrbGetStats / FsmGetStats 实时读取 */
     /* 进程对缺失计数 (2026-08-23 改造点三上提后, IoaObserve 阶段2 应只查
      * 分发层已建的 pair; 此处缺失属异常, 计数以观测量级) */
-    volatile LONG64     MissingPairCount;
 } IOA_ENGINE_STATS, * PIOA_ENGINE_STATS;
 
 /**************************************************/
@@ -120,6 +119,7 @@ typedef struct _IOA_ENGINE_STATS {
 typedef struct _IOA_ENGINE {
     BOOLEAN             Initialized;
     BOOLEAN             Running;
+    WKD_RUNDOWN_REF     RundownRef;
     IOA_ENGINE_CONFIG   Config;
 
     /* 核心存储 */
@@ -147,8 +147,8 @@ typedef struct _IOA_ENGINE {
     PIOA_AGGREGATE_EDGE_TABLE EdgeAggTable;     /* 全局边聚合表 */
     PIOA_PROCESS_PAIR_MANAGER PairManager;       /* 进程对管理器 */
 
-    IOA_ENGINE_STATS    Stats;
-    CRITICAL_SECTION    Lock;
+    IOA_ENGINE_STATS        Statistics;
+    CRITICAL_SECTION        Lock;
 } IOA_ENGINE, * PIOA_ENGINE;
 
 /**************************************************/
@@ -187,8 +187,8 @@ struct _IOA_GRAPH_EDGE {
     GUID                    EdgeId;
     IOA_GRAPH_EDGE_TYPE           Type;
     DEF_EVENT_CLASS         EventClass;
-    GUID                    SrcNodeId;
-    GUID                    TgtNodeId;
+    GUID                    SourceNodeId;
+    GUID                    TargetNodeId;
     PIOA_CARSAL_GRAPH_NODE  SrcNode;
     PIOA_CARSAL_GRAPH_NODE  TgtNode;
     LARGE_INTEGER           FirstSeen;
@@ -223,9 +223,9 @@ struct _IOA_GRAPH_EDGE {
 /**************************************************/
 
 struct _FSM_PATTERN {
-    /* ── 键 (Hash 输入: DJB(SrcNodeId || TgtNodeId || PatternIndex)) ── */
-    GUID                    SrcNodeId;
-    GUID                    TgtNodeId;
+    /* ── 键 (Hash 输入: DJB(SourceNodeId || TargetNodeId || PatternIndex)) ── */
+    GUID                    SourceNodeId;
+    GUID                    TargetNodeId;
     ULONG                   PatternIndex;       /* 攻击模式索引 (0=ClassicDllInjection, ...) */
 
     /* ── 模式级状态 ── */
@@ -341,7 +341,7 @@ typedef struct _IOA_GRAPH_RING_BUFFER {
 
 /**************************************************/
 /*           全局边聚合表 (P0 新增)                  */
-/*           Key: <SrcNodeId, TgtNodeId, EdgeType>  */
+/*           Key: <SourceNodeId, TargetNodeId, EdgeType>  */
 /*           内存常驻，仅统计 + EventId 指针         */
 /**************************************************/
 
@@ -351,54 +351,55 @@ typedef struct _IOA_GRAPH_RING_BUFFER {
  * 设计约束: 不存储具体事件参数。证据通过 RecentEventIds[]
  * 从 Causal Graph / SQLite 按需回查。
  */
+/* 前向声明: AE_PROCESS_PAIR 定义于本文件后部 (~行648)。
+ * IOA_AGGREGATE_EDGE::OwnerPair 仅持指针, 前向声明即可满足 C 类型要求。 */
+typedef struct _AE_PROCESS_PAIR AE_PROCESS_PAIR, *PAE_PROCESS_PAIR;
+
 typedef struct _IOA_AGGREGATE_EDGE {
-    /* ── 键（隐式，由哈希表维护）── */
-    GUID                    SrcNodeId;
-    GUID                    TgtNodeId;
-    IOA_GRAPH_EDGE_TYPE     EdgeType;
+    volatile LONG       RefCount;
+    GUID                SourceNodeId;
+    GUID                TargetNodeId;
+    IOA_GRAPH_EDGE_TYPE EdgeType;
 
     /* ── 基础统计 (Tier1 语义进化用) ── */
-    ULONG                   OccurrenceCount;      /* 总发生次数 (单调递增) */
-    ULONG                   ActiveCount;          /* 滑动窗口内次数 */
-    LARGE_INTEGER           FirstSeen;            /* 首条边的时间戳0 */
-    LARGE_INTEGER           LastSeen;             /* 最近刷新时间——新入边或定期刷新 */
-    ULONG                   Confidence;           /* 滚动平均置信度 [0,100] */
+    volatile LONG       TotalEdges;
+    volatile LONG       ActiveEdges;          /* 滑动窗口内次数 */
+    LARGE_INTEGER       EarliestExpireTime;   /* 最早过期时间(= min(Timestamp)+EDGE_AGGREGATE_TTL_MS); > Now 表示全部有效, 可快速跳过遍历 */
+    LARGE_INTEGER       FirstSeen;            /* 首条边的时间戳0 */
+    LARGE_INTEGER       LastSeen;             /* 最近刷新时间——新入边或定期刷新 */
+    ULONG               Confidence;           /* 滚动平均置信度 [0,100] */
 
     /* ── 时间窗口 ── */
-    LARGE_INTEGER           WindowStart;
-    ULONG                   TimeWindowMs;         /* 默认 5000ms */
+    LARGE_INTEGER       WindowStart;
+    ULONG               TimeWindowMs;         /* 默认 5000ms */
 
     /* ── 脏标记 ── */
-    volatile LONG64         SequenceNumber;       /* 该类型边每次更新递增 */
+    volatile LONG64     SequenceNumber;       /* 该类型边每次更新递增 */
 
     /* ── 具体边链表 (FSM 多路归并数据源) ──
      * 每条 IOA_CONCRETE_EDGE 记录一次 syscall 的 EdgeId + Timestamp。
      * 尾插保证基本有序。
      * Active=TRUE 的节点参与 FSM 归并, Active=FALSE 被跳过。
      */
-    LIST_ENTRY              EdgesHead;            /* IOA_CONCRETE_EDGE::Link */
-    volatile LONG           TotalEdgeCount;       /* 总节点数 (含 inactive) */
-    volatile LONG           ActiveEdgeCount;      /* 活跃节点数 (Active=TRUE) */
+    LIST_ENTRY          EdgesHead;            /* IOA_CONCRETE_EDGE::Link */
 
     /* ── 链表操作锁 (保护 EdgesHead 所有操作) ── */
-    SRWLOCK                 EdgeLock;
+    SRWLOCK             EdgeLock;
 
     /* ── 链表 ── */
-    LIST_ENTRY              HashLink;             /* 哈希桶 */
-    LIST_ENTRY              PairLink;             /* 挂入 AE_PROCESS_PAIR::EdgeListHead */
-    PVOID                   OwnerPair;            /* 反向指针 → 挂靠的 AE_PROCESS_PAIR (双向摘链用, 2026-08-25) */
-    LONG                    RefCount;
+    LIST_ENTRY          PairLink;             /* 挂入 AE_PROCESS_PAIR::EdgeListHead */
+    PAE_PROCESS_PAIR    OwnerPair;            /* 反向引用进程对对象 */
 } IOA_AGGREGATE_EDGE, *PIOA_AGGREGATE_EDGE;
 
 /*
  * IOA_AGGREGATE_EDGE_TABLE — 全局边聚合表。
- * 按 (SrcNodeId, TgtNodeId, EdgeType) 三元组索引。
+ * 按 (SourceNodeId, TargetNodeId, EdgeType) 三元组索引。
  */
 typedef struct _IOA_AGGREGATE_EDGE_TABLE {
-    BOOLEAN             Initialized;
-    LIST_ENTRY          HashBuckets[8192];
-    volatile LONG       EntryCount;
-    CRITICAL_SECTION    Lock;
+    BOOLEAN         Initialized;
+    WKD_HASH_MAP    HashMap;
+    volatile LONG   ActiveAggEdges;
+    volatile LONG   TotalAggEdges;
 } IOA_AGGREGATE_EDGE_TABLE, *PIOA_AGGREGATE_EDGE_TABLE;
 
 /**************************************************/
@@ -470,7 +471,7 @@ typedef struct _T1_PAIR_FEATURE {
 
 /**************************************************/
 /*           进程对上下文 (重构)                     */
-/*           Key: <SrcNodeId, TgtNodeId>            */
+/*           Key: <SourceNodeId, TargetNodeId>            */
 /*           轻量聚合入口 + FSM Tracker 指针         */
 /**************************************************/
 
@@ -648,9 +649,9 @@ typedef struct _AE_PROCESS_PAIR_KEY {
  *   - 速率/谱系等不可从位图推导的特征仍保留在 T1Feature
  */
 typedef struct _AE_PROCESS_PAIR {
-    /* ── 键 ── */
     HANDLE                  SourceProcessId;        /* 源进程 PID */
     HANDLE                  TargetProcessId;        /* 目标进程 PID */
+    volatile LONG           RefCount;
 
     /* ── 统一位图 (数据层 + 语义层, 128位) ── */
     INTERACTION_BITMAP      InteractionBitmap;    /* 低64=数据层, 高64=语义层 */
@@ -662,8 +663,8 @@ typedef struct _AE_PROCESS_PAIR {
      * 承载真实节点指针 (对齐 driver AeFindOrCreateProcessPair 收
      * PWKD_PROCESS)。与 PID 键并存: PID 用于跨进程/同步查询匹配,
      * 指针用于 O(1) 访问节点、避免 PsLookupWkdProcessByStrictProcessId 反查与 UAF。 */
-    PWKD_PROCESS            SrcNode;             /* 源进程节点指针 */
-    PWKD_PROCESS            TgtNode;             /* 目标进程节点指针 */
+    GUID            SourceNodeId;             /* 源进程节点指针 */
+    GUID            TargetNodeID;             /* 目标进程节点指针 */
     LIST_ENTRY              SourceProcessLinks;              /* 链入 SrcNode->OutPairListHead */
     LIST_ENTRY              TargetProcessLinks;              /* 链入 TgtNode->InPairListHead */
 
@@ -674,8 +675,10 @@ typedef struct _AE_PROCESS_PAIR {
     LIST_ENTRY              EdgeListHead;         /* IOA_AGGREGATE_EDGE::PairLink */
 
     /* ── <spn, tpn> 级别总计数 (供进程级速率计算) ── */
-    volatile ULONG          TotalEventCount;      /* Σ OccurrenceCount，历史累计 */
-    volatile ULONG          ActiveEventCount;     /* Σ ActiveCount，活跃窗口内 */
+    volatile LONG          TotalEdges;         /* Σ OccurrenceCount，历史累计 */
+    volatile LONG          ActiveEdges;         /* Σ ActiveCount，活跃窗口内 */
+    volatile LONG          ActiveAggEdges;
+    volatile LONG          TotalAggEdges;
 
     /* ── 时间戳 ── */
     LARGE_INTEGER           FirstSeen;
@@ -683,17 +686,11 @@ typedef struct _AE_PROCESS_PAIR {
     LARGE_INTEGER           CreationTime;
 
     /* ── 脏标记 ── */
-    volatile LONG64         SequenceNumber;       /* 任意边更新时递增 */
-    volatile ULONG          DirtyFlags;           /* IOA_PAIR_DIRTY_TIER1|T2|T3 */
+    volatile LONG         SequenceNumber;       /* 任意边更新时递增 */
+    volatile LONG          DirtyFlags;           /* IOA_PAIR_DIRTY_TIER1|T2|T3 */
 
     /* ── Tier1 特征记录 (不可从位图推导的特征: 速率/谱系/时序/评分) ── */
     T1_PAIR_FEATURE         T1Feature;            /* IoaCollectFeatures 填充, Scorer 读取 */
-
-    /* ── 生命周期 ──
-     * 2026-08-23 HashMap 化: 自定义桶/LRU 已删除, 索引由 PairManager.PairMap
-     * 承接 (key=AE_PROCESS_PAIR_KEY 字节块)。配额由 MaxEntries 承接,
-     * 淘汰策略由维护清扫按 LastSeen 摘除 (对齐 driver 范式)。 */
-    volatile LONG           RefCount;
 
     /* ── Tier2 良性抑制元数据 (由 Tier2 反写) ──
      *
@@ -713,7 +710,7 @@ typedef struct _AE_PROCESS_PAIR {
 
     /* ── 序列规则引擎状态宿主 (ShadowStrike PatternMatcher 迁移, 2026-08) ──
      * 内嵌列表头 + 计数。状态实体在 PolicyEngine g_SeqEngine.StateHashBuckets 中
-     * (键 = <SrcNodeId,TgtNodeId,RuleIndex>), 经 PairLink 链回本列表。
+     * (键 = <SourceNodeId,TargetNodeId,RuleIndex>), 经 PairLink 链回本列表。
      * PairCtx 被 LRU/TTL 淘汰时据此回收全部序列状态
      * (PolicyEngine_RemovePairSequenceStates)。
      * 默认 EnableSequenceRules=FALSE, 不创建任何状态。 */

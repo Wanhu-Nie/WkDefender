@@ -131,6 +131,39 @@ CgFsmCleanupThread(_In_ LPVOID Param)
 }
 
 /**************************************************/
+/*   进程对 + 聚合边 过期清理线程 (仅启用此条)       */
+/**************************************************/
+
+static DWORD WINAPI
+OrcpProcessPairCleanuper(
+    _In_ LPVOID Param
+    )
+/*++
+Routine Description:
+    后台清理线程: 进程对是主对象, 聚合边是子对象。
+    仅调用 IocCleanupExpiredProcessPair (主对象回收); 其内部经 AepRefreshProcessPair
+    统一刷新并回收挂靠的聚合边 (子对象) —— 聚合边必挂靠于进程对, 进程对删除受
+    pin/ShouldRemove 保护, 不存在无主孤儿聚合边, 故无需独立的聚合边表清扫。
+--*/
+{
+    PORC_ENGINE engine = (PORC_ENGINE)Param;
+
+    printf("[Orchestrator] Pair/Edge cleanup thread started (interval=%ums)\n",
+           engine->Config.PairCleanupIntervalMs);
+
+    while (engine->PairCleanupRunning) {
+        Sleep(engine->Config.PairCleanupIntervalMs);
+        if (!engine->PairCleanupRunning) break;
+
+        if (WkdIoaEngine.PairManager) {
+            IocCleanupExpiredProcessPair(WkdIoaEngine.PairManager);
+        }
+    }
+    printf("[Orchestrator] Pair/Edge cleanup thread exited\n");
+    return 0;
+}
+
+/**************************************************/
 /*           Tier 2 告警异步处理线程                 */
 /**************************************************/
 
@@ -208,6 +241,7 @@ Return Value:
     PORC_ENGINE         engine;
     PWKD_PROCESS targetWkdProcess = NULL;
     PWKD_PROCESS sourceWkdProcess = NULL;
+    PAE_PROCESS_PAIR pair = NULL;
 
     engine = (PORC_ENGINE)Context;
     if (!engine || !engine->Config.AnalysisEnabled || !Message)
@@ -267,7 +301,6 @@ Return Value:
      *   直接 Cleanup。IoaObserve 阶段2 降级只查, 不再创建。 */
     {
         HANDLE srcPid = 0, tgtPid = 0;
-        PAE_PROCESS_PAIR pair = NULL;
 
         status = NtfExtractEventPids(event, &srcPid, &tgtPid);
         if (!NT_SUCCESS(status)) goto Cleanup;
@@ -286,13 +319,38 @@ Return Value:
 
         status = AeFindOrCreateProcessPair(sourceWkdProcess, targetWkdProcess, &pair);
         if (!NT_SUCCESS(status)) goto Cleanup;
-
-        /* 归还 pair 借出 pin (2026-08-25 HashMap ref/deref 契约):
-         * 此处仅确保 pair 已物化 (分发层职责), 后续 IoaObserve 阶段2
-         * 经 AeLookupProcessPair 自行借 pin, 不跨函数传递指针。 */
-        AeDereferenceProcessPair(pair);
     }
    
+    /* ---- Debug: 过滤打印目标进程 (2026-08-25 调试辅助, 验证完删除) ---- */
+    if (CoCheckUnicodeStringValidity(&targetWkdProcess->ImagePath) &&
+        _wcsicmp(targetWkdProcess->ImagePath->Buffer,
+            L"c:\\users\\walker\\desktop\\loadpe.exe") == 0 &&
+        event->Type != WkdEvent_ImageLoad) {
+        wprintf(L"[PsCreateWkdProcess] >>> TARGET HIT: loadpe.exe <<<\n"
+            L"********************** %ls %ls **********************\n"
+            L"Pid=%lu ParentPid=%lu SessionId=%lu CreateTime=%lld Pair=%p PairRefCount=%d ActiveAggEdges= %d ActiveEdges=%d\n",
+            sourceWkdProcess->ImagePath->Buffer,
+            (event->Type == WkdEvent_ProcessCreate) ? L"ProcessCreate" :
+            (event->Type == WkdEvent_ProcessExit) ? L"ProcessExit" :
+            (event->Type == WkdEvent_ThreadCreate) ? L"ThreadCreate" :
+            (event->Type == WkdEvent_RemoteThreadCreate) ? L"RemoteThreadCreate" :
+            (event->Type == WkdEvent_ThreadExit) ? L"ThreadExit" :
+            (event->Type == WkdEvent_ImageLoad) ? L"ImageLoad" :
+            L"Unknown",
+            (ULONG)(ULONG_PTR)targetWkdProcess->ProcessId,
+            targetWkdProcess->ParentProcessId,
+            targetWkdProcess->SessionId,
+            targetWkdProcess->CreateTime.QuadPart,
+            pair, pair->RefCount, pair->ActiveAggEdges, pair->ActiveEdges);
+
+        /* 注册受监视进程对: 记录当前事件源→loadpe 目标的 PID 二元组 key,
+         * 供 IocCleanupExpiredProcessPair 快照后精确直查 PairMap 验证存在性。
+         * 动态去重累积, 自然覆盖 <system,loadpe>/<explorer,loadpe>/<loadpe,loadpe>。 */
+        IocRegisterMonitoredProcessPair(
+            sourceWkdProcess->ProcessId,
+            targetWkdProcess->ProcessId);
+    }
+
     switch (event->Type) {
 
     case WkdEvent_ProcessCreate: {
@@ -308,7 +366,7 @@ Return Value:
         if (!NT_SUCCESS(status)) goto Cleanup;
 
         /* ③ IOA: 行为分析 (节点已由分发层建立，直接进入后续共同路径) */
-        // IoaObserve(event);
+        IoaObserve(pair, event);
         break;
     }
 
@@ -316,14 +374,13 @@ Return Value:
         /*const PEVENT_PAYLOAD_PROCESS_EXIT payload =
             (const PEVENT_PAYLOAD_PROCESS_EXIT)((PUCHAR)event + sizeof(WKD_EVENT_HEADER));*/
        
-        CoRemoveHashMapEntry(&WkdProcessTree.PidMap,
-                             &targetWkdProcess->ProcessId,
-                             sizeof(HANDLE));
-        PsDereferenceWkdProcess(&targetWkdProcess->RefCount);
-        targetWkdProcess = NULL;
+        IoaObserve(pair, event);
+
+        /* 进程终止时不能直接移除 hashmap 项，进程对和聚合边的刷新、回收均依赖于进程对象!!! */
+        PsDereferenceWkdProcess(targetWkdProcess);
 
         // PsHandleProcessExit(&WkdProcessTree, targetWkdProcess->NodeId, payload->ExitTime);
-        InterlockedIncrement(&WkdIoaEngine.Stats.ProcessNodesTerminated);
+        InterlockedIncrement(&WkdIoaEngine.Statistics.ProcessNodesTerminated);
 
         /* 记录进程退出到历史追踪器（PID 复用检测; HANDLE → ULONG 截断） */
         //IpeRecordProcessExit(
@@ -339,8 +396,8 @@ Return Value:
         //GRAPH_EDGE_DESCRIPTOR edgeDesc;
         //RtlZeroMemory(&edgeDesc, sizeof(edgeDesc));
         //WkdCreateGuid(&edgeDesc.EdgeId);
-        //WkdCopyGuid(&edgeDesc.SrcNodeId, &event->SourceProcessId);
-        //WkdCopyGuid(&edgeDesc.TgtNodeId, &targetWkdProcess->NodeId);
+        //WkdCopyGuid(&edgeDesc.SourceNodeId, &event->SourceProcessId);
+        //WkdCopyGuid(&edgeDesc.TargetNodeId, &targetWkdProcess->NodeId);
         //edgeDesc.EdgeType = DefEdge_Terminates;
         //edgeDesc.EventClass = event->Class;
         //edgeDesc.BehaviorFlags = event->BehaviorFlags;
@@ -348,7 +405,7 @@ Return Value:
         //edgeDesc.Timestamp = event->Timestamp;
 
         /*GrbWriteEdge(WkdIoaEngine.RingBuffer, &edgeDesc, GraphLayer_Hot);
-        WkdIoaEngine.Stats.RingBufferWrites++;*/
+        WkdIoaEngine.Statistics.RingBufferWrites++;*/
         
 
         break;
@@ -369,8 +426,8 @@ Return Value:
         if (!NT_SUCCESS(status)) goto Cleanup;*/
         
         /* ③ IOA: 行为分析 (注入评分 + 因果图) */
-        /*status = IoaObserve(event);
-        if (!NT_SUCCESS(status)) goto Cleanup;*/
+        status = IoaObserve(pair, event);
+        // if (!NT_SUCCESS(status)) goto Cleanup;
 
         break;
     }
@@ -380,9 +437,12 @@ Return Value:
         const PEVENT_PAYLOAD_THREAD_EXIT payload = 
             (const PEVENT_PAYLOAD_THREAD_EXIT)((PUCHAR)event + sizeof(WKD_EVENT_HEADER));
 
+        status = IoaObserve(pair, event);
+        // if (!NT_SUCCESS(status)) goto Cleanup;
+
         /* 从进程线程表摘除并释放该 wkd_thread (ThreadId 截断为 ULONG) */
         PsThreadDetachProcess(targetWkdProcess, payload->ThreadId);
-        InterlockedIncrement(&WkdIoaEngine.Stats.ThreadNodesTerminated);
+        InterlockedIncrement(&WkdIoaEngine.Statistics.ThreadNodesTerminated);
      
         break;
     }
@@ -537,8 +597,7 @@ Return Value:
 
 Cleanup:
     if (!NT_SUCCESS(status)) InterlockedIncrement(&engine->Statistics.EventsRefused);
-    /* 归还查询/创建借出的节点 pin (2026-08-25 HashMap ref/deref 契约):
-     * 修复原条件反转 bug (写成了 !target 才 Deref, 恰好永不执行 → 泄漏)。 */
+    if (pair) AeDereferenceProcessPair(pair);
     if (targetWkdProcess) PsDereferenceWkdProcess(targetWkdProcess);
     if (sourceWkdProcess) PsDereferenceWkdProcess(sourceWkdProcess);
     DefEventFree(event);
@@ -681,6 +740,15 @@ NTSTATUS CgEngineStart(_In_ PORC_ENGINE Engine)
     //     return STATUS_UNSUCCESSFUL;
     // }
 
+    /* 聚合边 + 进程对 过期清理线程 */
+    Engine->PairCleanupRunning = TRUE;
+    Engine->PairCleanupThread = CreateThread(NULL, 0, OrcpProcessPairCleanuper, Engine, 0, &tid);
+    if (!Engine->PairCleanupThread) {
+        Engine->PairCleanupRunning = FALSE;
+        WkdMsgQueueStopProcessing(&Engine->MessageQueue);
+        return STATUS_UNSUCCESSFUL;
+    }
+
     /* 环形缓冲区消费线程 (由 GrbStartConsumer 管理) */
     status = GrbStartConsumer(WkdIoaEngine.RingBuffer);
     if (!NT_SUCCESS(status)) {
@@ -690,6 +758,9 @@ NTSTATUS CgEngineStart(_In_ PORC_ENGINE Engine)
         Engine->MaintenanceRunning = FALSE;
         WaitForSingleObject(Engine->MaintenanceThread, 5000);
         CloseHandle(Engine->MaintenanceThread);
+        Engine->PairCleanupRunning = FALSE;
+        WaitForSingleObject(Engine->PairCleanupThread, 5000);
+        CloseHandle(Engine->PairCleanupThread);
         WkdMsgQueueStopProcessing(&Engine->MessageQueue);
         return STATUS_UNSUCCESSFUL;
     }
@@ -706,6 +777,9 @@ NTSTATUS CgEngineStart(_In_ PORC_ENGINE Engine)
         Engine->MaintenanceRunning = FALSE;
         WaitForSingleObject(Engine->MaintenanceThread, 5000);
         CloseHandle(Engine->MaintenanceThread);
+        Engine->PairCleanupRunning = FALSE;
+        WaitForSingleObject(Engine->PairCleanupThread, 5000);
+        CloseHandle(Engine->PairCleanupThread);
         WkdMsgQueueStopProcessing(&Engine->MessageQueue);
         return STATUS_UNSUCCESSFUL;
     }
@@ -761,6 +835,13 @@ NTSTATUS CgEngineStop(_In_ PORC_ENGINE Engine)
         WaitForSingleObject(Engine->MaintenanceThread, 5000);
         CloseHandle(Engine->MaintenanceThread);
         Engine->MaintenanceThread = NULL;
+    }
+
+    Engine->PairCleanupRunning = FALSE;
+    if (Engine->PairCleanupThread) {
+        WaitForSingleObject(Engine->PairCleanupThread, 5000);
+        CloseHandle(Engine->PairCleanupThread);
+        Engine->PairCleanupThread = NULL;
     }
 
     WkdMsgQueueStopProcessing(&Engine->MessageQueue);

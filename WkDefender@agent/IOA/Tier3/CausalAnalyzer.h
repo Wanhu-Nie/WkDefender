@@ -34,8 +34,8 @@ typedef struct _T3_ANALYZER_CALLBACKS {
      * 返回收集到的候选数量，0=无候选。
      */
     ULONG (*Collect)(
-        _In_    GUID                SrcNodeId,
-        _In_    GUID                TgtNodeId,
+        _In_    GUID                SourceNodeId,
+        _In_    GUID                TargetNodeId,
         _In_    IOA_GRAPH_EDGE_TYPE TargetType,
         _In_    LARGE_INTEGER       WinStart,
         _In_    LARGE_INTEGER       WinEnd,

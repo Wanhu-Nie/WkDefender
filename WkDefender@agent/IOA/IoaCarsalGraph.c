@@ -261,7 +261,7 @@ Return Value:
     PLIST_ENTRY e = Src->OutEdgesHead.Flink;
     while (e != &Src->OutEdgesHead) {
         PIOA_GRAPH_EDGE edge = CONTAINING_RECORD(e, IOA_GRAPH_EDGE, SrcOutLink);
-        if (edge->Type == EdgeType && DefGuidEqual(&edge->TgtNodeId, &Tgt->NodeId)) {
+        if (edge->Type == EdgeType && DefGuidEqual(&edge->TargetNodeId, &Tgt->NodeId)) {
             edge->LastSeen = Timestamp;
             edge->OccurrenceCount++;
             edge->Confidence = (edge->Confidence + Confidence) / 2;
@@ -279,8 +279,8 @@ Return Value:
     CoCreateGuid(&edge->EdgeId);
     edge->Type       = EdgeType;
     edge->EventClass = EventClass;
-    WkdCopyGuid(&edge->SrcNodeId, &Src->NodeId);
-    WkdCopyGuid(&edge->TgtNodeId, &Tgt->NodeId);
+    WkdCopyGuid(&edge->SourceNodeId, &Src->NodeId);
+    WkdCopyGuid(&edge->TargetNodeId, &Tgt->NodeId);
     edge->SrcNode = Src;
     edge->TgtNode = Tgt;
     edge->FirstSeen = Timestamp;
@@ -546,19 +546,19 @@ Return Value:
     NTSTATUS status;
 
     if (!Mgr || !Desc) return STATUS_INVALID_PARAMETER;
-    if (DefIsNullNodeId(Desc->SrcNodeId)) return STATUS_INVALID_PARAMETER;
+    if (DefIsNullNodeId(Desc->SourceNodeId)) return STATUS_INVALID_PARAMETER;
 
     EnterCriticalSection(&Mgr->Lock);
 
     /* 确保源进程节点存在 */
-    status = IoaCarsalGraphEnsureNode(Mgr, Desc->SrcNodeId, DefNode_Process, &srcNode);
+    status = IoaCarsalGraphEnsureNode(Mgr, Desc->SourceNodeId, DefNode_Process, &srcNode);
     if (!NT_SUCCESS(status)) {
         LeaveCriticalSection(&Mgr->Lock);
         return status;
     }
 
     /* 确定目标节点类型 */
-    if (!DefIsNullNodeId(Desc->TgtNodeId)) {
+    if (!DefIsNullNodeId(Desc->TargetNodeId)) {
         switch (Desc->EdgeType) {
         case DefEdge_Creates:
         case DefEdge_Terminates:
@@ -594,7 +594,7 @@ Return Value:
     }
 
     /* 确保目标节点存在 */
-    status = IoaCarsalGraphEnsureNode(Mgr, Desc->TgtNodeId, tgtNodeType, &tgtNode);
+    status = IoaCarsalGraphEnsureNode(Mgr, Desc->TargetNodeId, tgtNodeType, &tgtNode);
     if (!NT_SUCCESS(status)) {
         LeaveCriticalSection(&Mgr->Lock);
         return status;
@@ -617,8 +617,8 @@ Return Value:
 PIOA_GRAPH_EDGE
 IoaCarsalGraphLookupEdge(
     _In_ PIOA_CARSAL_GRAPH   Mgr,
-    _In_ GUID                 SrcNodeId,
-    _In_ GUID                 TgtNodeId,
+    _In_ GUID                 SourceNodeId,
+    _In_ GUID                 TargetNodeId,
     _In_ IOA_GRAPH_EDGE_TYPE        EdgeType
     )
 /*++
@@ -630,8 +630,8 @@ Routine Description:
 
 Arguments:
     Mgr      — 因果图实例。
-    SrcNodeId — 源节点 GUID。
-    TgtNodeId — 目标节点 GUID。
+    SourceNodeId — 源节点 GUID。
+    TargetNodeId — 目标节点 GUID。
     EdgeType  — 边类型。
 
 Return Value:
@@ -642,11 +642,11 @@ Return Value:
     PLIST_ENTRY e;
 
     if (!Mgr) return NULL;
-    if (DefIsNullNodeId(SrcNodeId) || DefIsNullNodeId(TgtNodeId)) return NULL;
+    if (DefIsNullNodeId(SourceNodeId) || DefIsNullNodeId(TargetNodeId)) return NULL;
 
     EnterCriticalSection(&Mgr->Lock);
 
-    srcNode = IoaCarsalGraphLookupNode(Mgr, SrcNodeId);
+    srcNode = IoaCarsalGraphLookupNode(Mgr, SourceNodeId);
     if (!srcNode) {
         LeaveCriticalSection(&Mgr->Lock);
         return NULL;
@@ -657,7 +657,7 @@ Return Value:
     while (e != &srcNode->OutEdgesHead) {
         PIOA_GRAPH_EDGE edge = CONTAINING_RECORD(e, IOA_GRAPH_EDGE, SrcOutLink);
         if (edge->Type == EdgeType &&
-            DefGuidEqual(&edge->TgtNodeId, &TgtNodeId)) {
+            DefGuidEqual(&edge->TargetNodeId, &TargetNodeId)) {
             LeaveCriticalSection(&Mgr->Lock);
             return edge;
         }
@@ -785,8 +785,8 @@ Return Value:
             continue;
         }
         Out[count].Type = edge->Type;
-        Out[count].SrcNodeId = edge->SrcNodeId;
-        Out[count].TgtNodeId = edge->TgtNodeId;
+        Out[count].SourceNodeId = edge->SourceNodeId;
+        Out[count].TargetNodeId = edge->TargetNodeId;
         Out[count].Timestamp = edge->LastSeen;
         Out[count].Score = edge->Weight;
         count++;
@@ -802,8 +802,8 @@ Return Value:
             continue;
         }
         Out[count].Type = edge->Type;
-        Out[count].SrcNodeId = edge->SrcNodeId;
-        Out[count].TgtNodeId = edge->TgtNodeId;
+        Out[count].SourceNodeId = edge->SourceNodeId;
+        Out[count].TargetNodeId = edge->TargetNodeId;
         Out[count].Timestamp = edge->LastSeen;
         Out[count].Score = edge->Weight;
         count++;

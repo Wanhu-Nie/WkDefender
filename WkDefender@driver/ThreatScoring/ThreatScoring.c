@@ -30,7 +30,7 @@ PTS_ENGINE WkdTsEngine = NULL;
 #pragma alloc_text(PAGE, TsShutdown)
 #pragma alloc_text(PAGE, TsSetThresholds)
 #pragma alloc_text(PAGE, TsAllocateProcessPairContext)
-#pragma alloc_text(PAGE, TsFreeProcessPairContext)
+#pragma alloc_text(PAGE, TsDestroyProcessPairContext)
 #pragma alloc_text(PAGE, TsReportIndicatorLocked)
 #pragma alloc_text(PAGE, TsSettleScores)
 #pragma alloc_text(PAGE, TsCalculateScore)
@@ -940,7 +940,7 @@ _Use_decl_annotations_
 NTSTATUS
 TsAllocateProcessPairContext(
     _In_opt_ PTS_ENGINE Engine,
-    _In_ PAE_PROCESS_PAIR Pair
+    _Inout_ PAE_PROCESS_PAIR Pair
     )
 /*++
 Routine Description:
@@ -980,15 +980,16 @@ Return Value:
     InterlockedIncrement(&Engine->TotalContexts);
     InterlockedIncrement(&Engine->ActiveContexts);
 
-    context->Pair = Pair;
-    Pair->TsContext = context;
-
+    if (InterlockedCompareExchangePointer(&Pair->TsContext, context, NULL)) {
+        /* 更新指针时竞争失败，输家释放内存 */
+        ExFreePoolWithTag(context, TS_POOL_TAG_CONTEXT);
+    }
     return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
 VOID
-TsFreeProcessPairContext(
+TsDestroyProcessPairContext(
     _In_opt_ PTS_ENGINE Engine,
     _In_ PAE_PROCESS_PAIR Pair
     )

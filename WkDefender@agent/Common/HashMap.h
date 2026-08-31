@@ -23,6 +23,12 @@
 #pragma once
 
 #include <windows.h>
+ 
+typedef struct _WKD_HASH_MAP_SNAPSHOT {
+    SIZE_T KeySize;
+    UCHAR KeyData[];    // 可变长缓冲区
+} WKD_HASH_MAP_SNAPSHOT, * PWKD_HASH_MAP_SNAPSHOT;
+
 
 /**************************************************/
 /*               回调类型                           */
@@ -44,7 +50,8 @@ VOID
 typedef
 BOOLEAN
 (*PFN_HASH_MAP_SHOULD_REMOVE)(
-    _In_ PVOID Value
+    _In_ PVOID Value,
+    _In_ BOOLEAN HoldLock
     );
 
 /* 摘除回调（独占锁内调用）：释放 Value 引用（-1），
@@ -147,7 +154,8 @@ BOOLEAN
 CoRemoveHashMapEntry(
     _Inout_ PWKD_HASH_MAP HashMap,
     _In_ const PVOID Key,
-    _In_ SIZE_T KeySize
+    _In_ SIZE_T KeySize,
+    _In_opt_ BOOLEAN HoldLock
     );
 
 /* 全表枚举（供清理/统计）。回调在锁内（逐桶共享锁），
@@ -155,15 +163,35 @@ CoRemoveHashMapEntry(
 typedef
 BOOLEAN
 (*PFN_HASH_MAP_ENUM)(
-    _In_     PVOID Key,
-    _In_     SIZE_T KeySize,
-    _In_     PVOID Value,
-    _Inout_  PVOID Context
+    _In_ const PVOID Key,
+    _In_ SIZE_T KeySize,
+    _In_ const PVOID Value,
+    _Inout_ PVOID Context
     );
 
-VOID
-CoHashMapEnumerate(
-    _In_ PWKD_HASH_MAP Map,
+NTSTATUS
+CoEnumerateHashMap(
+    _In_ const PWKD_HASH_MAP HashMap,
     _In_ PFN_HASH_MAP_ENUM Callback,
     _Inout_opt_ PVOID Context
+    );
+
+/**************************************************/
+/*              快照枚举 API                        */
+/**************************************************/
+
+/* 两阶段 key-only 快照，逐桶共享锁遍历。
+ *   Buffer == NULL → 查询模式：输出条目数 (*Capacity) 与所需字节 (*BufferSize
+ *                    = 条目数 * sizeof(WKD_HASH_MAP_SNAPSHOT))，返回
+ *                    STATUS_INFO_LENGTH_MISMATCH 供调用方分配。
+ *   Buffer != NULL → 枚举模式：逐桶加共享锁拷贝 key，返回实际写入条目数
+ *                    (*Capacity)。若并发插入导致超过缓冲容量则截断
+ *                    (full=TRUE, 返回 STATUS_INFO_LENGTH_MISMATCH)，剩余条目
+ *                    延迟至下一轮处理（仅推迟老化回收，无数据丢失）。 */
+NTSTATUS
+CoCaptureHashMapSnapshot(
+    _In_ const PWKD_HASH_MAP HashMap,
+    _In_opt_ PVOID Buffer,
+    _Inout_ PSIZE_T BufferSize,
+    _Out_opt_ PULONG Capacity
     );

@@ -14,8 +14,8 @@
 
 typedef struct _WKD_DYNAMIC_ARRAY {
     PVOID Data;                   // 数据缓冲区
-    ULONG ElementSize;            // 单个元素大小（字节）
-    volatile ULONG Count;         // 当前元素数量
+    SIZE_T ElementSize;            // 单个元素大小（字节）
+    ULONG Count;                  // 当前元素数量
     ULONG Capacity;               // 当前容量（元素数）
     POOL_TYPE PoolType;           // 内存池类型
     ULONG PoolTag;                // 内存池标签
@@ -39,7 +39,7 @@ FORCEINLINE
 VOID
 DaInitialize(
     _Out_ PWKD_DYNAMIC_ARRAY Array,
-    _In_ ULONG ElementSize,
+    _In_ SIZE_T ElementSize,
     _In_ POOL_TYPE PoolType,
     _In_ ULONG PoolTag
     )

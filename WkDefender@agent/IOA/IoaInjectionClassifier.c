@@ -2081,10 +2081,10 @@ IoaQueryInjectionChain(
     }
 
     RtlZeroMemory(Info, sizeof(*Info));
-    IoaPairResolveNodeIds(PairCtx, &Info->SrcNodeId, &Info->TgtNodeId);
+    IoaPairResolveNodeIds(PairCtx, &Info->SourceNodeId, &Info->TargetNodeId);
     Info->DataBitmap64    = BM_DATA_U64(&PairCtx->InteractionBitmap);
     Info->SemBitmap64     = BM_SEM_U64(&PairCtx->InteractionBitmap);
-    Info->TotalEventCount = PairCtx->TotalEventCount;
+    Info->TotalEvents = PairCtx->TotalEdges;
 
     /* 复用分类器重算当前判定 (对齐 InjGetChainInfo 输出 DetectedTechnique/Confidence) */
     if (NT_SUCCESS(IoaClassifyInjection(PairCtx, NULL, NULL, NULL,

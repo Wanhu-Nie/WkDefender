@@ -66,8 +66,8 @@ typedef union _T3_EVENT_PARAMS {
 
 typedef struct _T3_CANDIDATE_INFO {
     GUID                EdgeId;
-    GUID                SrcNodeId;          /* 源进程节点 GUID */
-    GUID                TgtNodeId;          /* 目标进程节点 GUID (用于内容深化) */
+    GUID                SourceNodeId;          /* 源进程节点 GUID */
+    GUID                TargetNodeId;          /* 目标进程节点 GUID (用于内容深化) */
     IOA_GRAPH_EDGE_TYPE EdgeType;
     LARGE_INTEGER       Timestamp;
 
@@ -316,8 +316,8 @@ NTSTATUS T3DeepForensics(
  */
 NTSTATUS T3HandleBlockingQuery(
     _In_    PIOA_TIER3_ENGINE   Engine,
-    _In_    GUID                SrcNodeId,
-    _In_    GUID                TgtNodeId,
+    _In_    GUID                SourceNodeId,
+    _In_    GUID                TargetNodeId,
     _In_    IOA_GRAPH_EDGE_TYPE OperationType,
     _Out_   BOOLEAN*            OutAllow,
     _Out_   PT3_STATE_UPDATE    OutState

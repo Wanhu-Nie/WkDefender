@@ -22,7 +22,7 @@ _IRQL_requires_max_(APC_LEVEL)
 static
 VOID
 CopAcquireHashMapLockExclusive(
-    _In_ PWKD_HASH_MAP HashMap,
+    _Inout_ PWKD_HASH_MAP HashMap,
     _In_opt_ ULONG BucketIndex
     )
 {
@@ -38,7 +38,7 @@ _IRQL_requires_max_(APC_LEVEL)
 static
 VOID
 CopAcquireHashMapLockShared(
-    _In_ PWKD_HASH_MAP HashMap,
+    _Inout_ PWKD_HASH_MAP HashMap,
     _In_opt_ ULONG BucketIndex
 )
 {
@@ -473,14 +473,14 @@ _Use_decl_annotations_
 BOOLEAN
 CoRemoveHashMapEntry(
     _Inout_ PWKD_HASH_MAP HashMap,
-    _In_ PVOID Key,
-    _In_ ULONG KeySize
+    _In_ const PVOID Key,
+    _In_ SIZE_T KeySize
     )
 {
     ULONG bucketIndex;
-    PWKD_HASH_MAP_ENTRY entry, prevEntry;
+    PWKD_HASH_MAP_ENTRY entry, previous = NULL;
 
-    if (!HashMap || !HashMap->Entries || !Key || !KeySize) {
+    if (!HashMap || !HashMap->Entries || !Key || KeySize == 0) {
         return FALSE;
     }
 
@@ -489,7 +489,6 @@ CoRemoveHashMapEntry(
 
     CopAcquireHashMapLockExclusive(HashMap, bucketIndex);
 
-    prevEntry = NULL;
     entry = &HashMap->Entries[bucketIndex];
     while (entry && entry->Occupied) {
         if (CopKeyEqual(entry->Key, entry->KeySize, Key, KeySize)) {
@@ -502,15 +501,15 @@ CoRemoveHashMapEntry(
             }
 
             /* 摘除前保存 Value，供摘除后 Dereference 配对释放（与插入时 Reference 成对） */
-            PVOID removedValue = (PVOID)(ULONG_PTR)entry->Value;
+            PVOID removedValue = (PVOID)entry->Value;
 
             //
             // 找到目标，释放旧 Key（如有堆分配）
             //
             ExFreePoolWithTag(entry->Key, HASH_MAP_ENTRY_TAG);
 
-            if (prevEntry) {
-                prevEntry->Next = entry->Next;
+            if (previous) {
+                previous->Next = entry->Next;
                 ExFreePoolWithTag(entry, HASH_MAP_ENTRY_TAG);
             } 
             else if (entry->Next) {
@@ -550,7 +549,7 @@ CoRemoveHashMapEntry(
             return TRUE;
         }
 
-        prevEntry = entry;
+        previous = entry;
         entry = entry->Next;
     }
 
@@ -561,7 +560,7 @@ CoRemoveHashMapEntry(
 /************************************************
 **              快照枚举 API
 **
-**  CoHashMapSnapshot — 两阶段 key-only 快照。
+**  CoCaptureHashMapSnapshot — 两阶段 key-only 快照。
 **
 **  Buffer == NULL：
 **      返回 ActiveEntries 的近似值（无锁，快速估算）。
@@ -576,59 +575,69 @@ CoRemoveHashMapEntry(
 
 _Use_decl_annotations_
 NTSTATUS
-CoHashMapSnapshot(
-    _In_ PWKD_HASH_MAP HashMap,
+CoCaptureHashMapSnapshot(
+    _In_ const PWKD_HASH_MAP HashMap,
     _In_opt_ PWKD_HASH_MAP_SNAPSHOT Buffer,
-    _Inout_ PULONG Capacity
+    _Inout_ PSIZE_T BufferSize,
+    _Out_opt_ PULONG Capacity
     )
 {
-    ULONG written = 0;
-    ULONG varCapacity = 0;  /* 枚举到的有效项个数 */
+    BOOLEAN queryMode;
+    BOOLEAN full = FALSE;
+    SIZE_T requiredSize = 0;
+    ULONG outCapacity = 0;  // 枚举到的实际项数
 
-    if (!HashMap || !HashMap->Entries || !Capacity) {
+    if (!HashMap || !HashMap->Entries || !BufferSize) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    /* ===== Phase 1：无锁估算 ===== */
-
-    if (!Buffer) {
-        *Capacity = InterlockedCompareExchange(&HashMap->ActiveEntries, 0, 0);
-        return STATUS_INFO_LENGTH_MISMATCH;
+    if (!Buffer) queryMode = TRUE;  // 查询容量模式
+    else {
+        /* 枚举模式 - 初始化缓冲区 */
+        queryMode = FALSE;
+        RtlZeroMemory(Buffer, *BufferSize);
     }
 
-    /* ===== Phase 2：逐桶共享锁快照 ===== */
-
+    if (!HashMap->PerBucketLock) CopAcquireHashMapLockShared(HashMap, 0);
     for (ULONG i = 0; i < HashMap->BucketCount; i++) {
-        CopAcquireHashMapLockShared(HashMap, i);
+        if (HashMap->PerBucketLock) CopAcquireHashMapLockShared(HashMap, i);
 
         PWKD_HASH_MAP_ENTRY entry = &HashMap->Entries[i];
         while (entry && entry->Occupied) {
-
-            if (written < Capacity) {
+            SIZE_T seSize = entry->KeySize + sizeof(SIZE_T);
+            
+            if (queryMode) {
+                requiredSize += entry->KeySize;
+                outCapacity++;
+            }
+            else if (requiredSize + seSize < *BufferSizee) {
                 /*
                  * 必须用 min 截断：KeyData 数组固定为 WKD_HASH_MAP_MAX_KEY_SIZE。
                  * 历史版本误用 max，当 KeySize 小于 MAX 时越界读 entry->Key
                  * 之后的内存；当 KeySize 超过 MAX 时越界写缓冲区（堆破坏）。
                  */
-                ULONG copySize = min(entry->KeySize, WKD_HASH_MAP_MAX_KEY_SIZE);
-                Buffer[written].KeySize = copySize;
-                RtlCopyMemory(Buffer[written].KeyData, entry->Key, copySize);
-                written++;
-            }
-
-            varCapacity++;
+                PWKD_HASH_MAP_SNAPSHOT se =
+                    (PWKD_HASH_MAP_SNAPSHOT)((PUCHAR)Buffer + requiredSize);
+                se->KeySize = entry->KeySize;
+                RtlCopyMemory(se->KeyData, entry->Key, entry->KeySize);
+                requiredSize += seSize;
+                outCapacity++;
+            } else { full = TRUE;  goto Return; }   // 容量不足，提前结束枚举
             entry = entry->Next;
         }
 
-        CopReleaseHashMapLockShared(HashMap, i);
+        if (HashMap->PerBucketLock) CopReleaseHashMapLockShared(HashMap, i);
     }
+    if (!HashMap->PerBucketLock) CopReleaseHashMapLockShared(HashMap, 0);
 
-    *Capacity = written;
-    if (written < varCapacity) {
+Return:
+    if (Capacity) *Capacity = outCapacity;
+    if (queryMode) { 
+        *BufferSize = requiredSize;
         return STATUS_INFO_LENGTH_MISMATCH;
-    } else {
-        return STATUS_SUCCESS;
     }
+    else if (full) return STATUS_INFO_LENGTH_MISMATCH;
+    else return STATUS_SUCCESS;
 }
 
 /************************************************

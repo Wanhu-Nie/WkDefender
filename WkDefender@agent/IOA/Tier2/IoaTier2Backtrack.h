@@ -24,8 +24,8 @@ typedef struct _IOA_TIER2_ALERT_DESCRIPTOR {
     BOOLEAN             FromFsm;            /* TRUE=来自 FSM 引擎 */
 
     /* ── 进程对标识 (T1/FSM 共享, 供异步消费端重建 FSM 推进上下文) ── */
-    GUID                SrcNodeId;
-    GUID                TgtNodeId;
+    GUID                SourceNodeId;
+    GUID                TargetNodeId;
     IOA_GRAPH_EDGE_TYPE EdgeType;           /* 触发边类型 */
     ULONG               BehaviorFlags;      /* Event->BehaviorFlags */
 
@@ -58,8 +58,8 @@ typedef struct _IOA_TIER2_ALERT_DESCRIPTOR {
 
 /* 子图中的边（压缩表示） */
 typedef struct _T2_SUBGRAPH_EDGE {
-    GUID                SrcNodeId;
-    GUID                TgtNodeId;
+    GUID                SourceNodeId;
+    GUID                TargetNodeId;
     IOA_GRAPH_EDGE_TYPE EdgeType;
     ULONG               OccurrenceCount;
     ULONG               Confidence;
@@ -222,7 +222,7 @@ NTSTATUS T2EvaluateSync(
 /*
  * ── Tier2 异步入队 ──
  *
- * 打包含 SrcNodeId/TgtNodeId 的描述符入队。
+ * 打包含 SourceNodeId/TargetNodeId 的描述符入队。
  * 消费端 T2ProcessAlertQueue 取出后重建 PairCtx 调用 T2AnalyzeInternal。
  */
 NTSTATUS T2EnqueueAsync(

@@ -279,41 +279,6 @@ PmIsModuleCurrent(
     return (Module->LastWriteTime.QuadPart == curMtime.QuadPart);
 }
 
-/**************************************************/
-/*           HashMap 回调契约（模块表, 2026-08-20） */
-/*                                                   */
-/*  Value=WKD_MODULE。key=归一化小写路径字节，哈希/  */
-/*  拷贝/比较由表内统一完成（无谓词注入）。           */
-/*  Reference：Find 命中 pin（RefCount++）。        */
-/*  mtime 防替换为业务层锁外校验（PsFindOrCreate-    */
-/*  Module 命中后比对磁盘当前文件）。                 */
-/**************************************************/
-
-/* Find 命中 pin：RefCount++（与调用方 PsDereferenceWkdModule 配对）。锁内仅原子。 */
-static
-VOID
-PmMapReference(
-    _In_ PVOID Value
-    )
-{
-    if (Value) {
-        InterlockedIncrement(&((PWKD_MODULE)Value)->RefCount);
-    }
-}
-
-/* 摘除解引：RefCount--（表引用 -1，不释放本体）。锁内仅原子。
- * 真正 PspDestroyWkdModule 由发起摘表的 PsDereferenceWkdModule 在锁外完成。 */
-static
-VOID
-PmMapDereference(
-    _In_ PVOID Value
-    )
-{
-    if (Value) {
-        InterlockedDecrement(&((PWKD_MODULE)Value)->RefCount);
-    }
-}
-
 static
 NTSTATUS
 PspCreateModule(
@@ -427,9 +392,9 @@ PmInitialize(
                                         WKD_MODULE_TABLE_BUCKETS,
                                         WKD_MODULE_TABLE_MAX_ENTRIES,
                                         FALSE, TRUE,
-                                        PmMapReference,
+                                        PsReferenceWkdModule,
                                         NULL,   /* ShouldRemove */
-                                        PmMapDereference))) {
+                                        PsDereferenceWkdModule))) {
         return STATUS_UNSUCCESSFUL;
     }
     g_WkdModuleTable.Initialized = TRUE;
@@ -507,21 +472,21 @@ PsDereferenceWkdModule(
     )
 {
     LONG ref;
-    SIZE_T keySize;
 
     if (!WkdModule) return MAXLONG;
-
     ref = InterlockedDecrement(&WkdModule->RefCount);
     if (ref == 1) {
         /* 仅剩表引用: 摘表 (表内 Dereference 同步 -1) → 归零则锁外释放。
          * 表 key 与插入同源 (原始路径字节), 见 PsFindOrCreateModule Phase1。
          * 摘表瞬间有并发 Find pin 时 RefCount>0, 不释放 (保留至 pin 归还)。 */
         CoRemoveHashMapEntry(&g_WkdModuleTable.Map,
-            WkdModule->ImagePath->Buffer, WkdModule->ImagePath->Length);
+            WkdModule->ImagePath->Buffer, WkdModule->ImagePath->Length, FALSE);
+        ref = _InterlockedCompareExchange(&WkdModule->RefCount, 0, 0);
     } else if (ref == 0) {
         /* 无表引用 (替换/卸载路径已摘表), 最后一份引用归零 → 释放 */
         PspDestroyWkdModule(WkdModule);
     }
+    return ref;
 }
 
 _Use_decl_annotations_
@@ -589,7 +554,7 @@ Return Value:
          * 显式复位 InTable, 再归还查找 pin——仅剩表引用场景由
          * PsDereferenceWkdModule 内部归零释放; 仍有视图引用则保留至
          * 视图关闭。随后落新建（与 Phase2 同一路径）。 */
-        CoRemoveHashMapEntry(&g_WkdModuleTable.Map, ImagePath, keySize);
+        CoRemoveHashMapEntry(&g_WkdModuleTable.Map, ImagePath, keySize, FALSE);
         PsDereferenceWkdModule(existing);
     }
 

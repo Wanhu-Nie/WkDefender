@@ -33,7 +33,8 @@ typedef enum _WKD_MESSAGE_PRIORITY {
 // 消息来源组件枚举
 //
 typedef enum _WKD_MESSAGE_SOURCE {
-    WkdMessage_SourceSyscall = 1,       // SyscallHijack模块
+    WkdMessage_SourceUnknow = 0,
+    WkdMessage_SourceSyscall,           // SyscallHijack模块
     WkdMessage_SourceProcessCallback,   // ProcessNotify 进程回调模块
     WkdMessage_SourceThreadCallback,    // ThreadNotify 线程回调模块
     WkdMessage_SourceObjectCallback,    // ObjectNotify 对象回调模块
@@ -55,7 +56,7 @@ typedef enum _WKD_MESSAGE_TYPE {
     // ========================================
     // Layer 1A: 原始事件层（SyscallHijack等监控模块发送）
     // ========================================
-
+    WkdMessage_Unknow = 0,
     // Syscall原始事件
     WkdMessage_SyscallDetected = 0x1000,           // ⭐ 通用syscall检测（兼容旧代码）
     WkdMessage_SyscallOpenProcess = 0x1001,        // NtOpenProcess
@@ -312,7 +313,7 @@ typedef struct _WKD_MESSAGE_BODY_THREAD_CREATE {
     LARGE_INTEGER CreateTime;           // 线程创建时间
     ULONG Flags;                        // bit0=IsRemote, bit1=Create
 
-    /* === 起始地址归属结论（IocDetectThread 计算，供 agent IOC 消费） === */
+    /* === 起始地址归属结论（IocObserveThread 计算，供 agent IOC 消费） === */
     BOOLEAN IsUnusualEntry;             // 起始地址未落在已知模块内 (PsLookupWkdModuleContainingAddress 未命中)
     BOOLEAN IsStartAddrBacked;          // 起始地址为 MEM_IMAGE (ZwQueryVirtualMemory.Type)
 } WKD_MESSAGE_BODY_THREAD_CREATE, *PWKD_MESSAGE_BODY_THREAD_CREATE;

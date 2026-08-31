@@ -39,6 +39,7 @@
 #include "../TokenAnalyzer.h"               /* 令牌分析 (SS TokenAnalyzer+PrivilegeMonitor 迁移) */
 #include "../FileLockManager.h"             /* 文件锁模式关联 (FileLockManager 迁移 2026-08) */
 #include "IoaHeapSprayDetect.h"             /* 堆喷检测 (HeapSpray 迁移 2026-08) */
+// #include "../Notification/EventParser.h"
 
 /* StPersistAlert 前置声明 (Storage/StorageEngine.h, 避免循环 include) */
 NTSTATUS StPersistAlert(_In_ PVOID AlertData);
@@ -139,13 +140,13 @@ Return Value:
     IOA_GRAPH_EDGE_TYPE edgeType;
     GRAPH_EDGE_DESCRIPTOR edgeDesc;
     GRAPH_LAYER_DECISION layer;
-    GUID srcNodeId, tgtNodeId;
+    GUID sourceWkdProcessId, targetWkdProcessId;
 
     /* 默认 Null GUID */
-    RtlZeroMemory(&srcNodeId, sizeof(GUID));
-    RtlZeroMemory(&tgtNodeId, sizeof(GUID));
-    if (SrcNode) WkdCopyGuid(&srcNodeId, &SrcNode->NodeId);
-    if (TgtNode) WkdCopyGuid(&tgtNodeId, &TgtNode->NodeId);
+    RtlZeroMemory(&sourceWkdProcessId, sizeof(GUID));
+    RtlZeroMemory(&targetWkdProcessId, sizeof(GUID));
+    if (SrcNode) WkdCopyGuid(&sourceWkdProcessId, &SrcNode->NodeId);
+    if (TgtNode) WkdCopyGuid(&targetWkdProcessId, &TgtNode->NodeId);
 
     /* 1. 推导边类型 */
     edgeType = IoaMapEventToEdgeType(Event->Type);
@@ -163,8 +164,8 @@ Return Value:
         } else {
             WkdCreateGuid(&edgeDesc.EdgeId);
         }
-        WkdCopyGuid(&edgeDesc.SrcNodeId, &srcNodeId);
-        WkdCopyGuid(&edgeDesc.TgtNodeId, &tgtNodeId);
+        WkdCopyGuid(&edgeDesc.SourceNodeId, &sourceWkdProcessId);
+        WkdCopyGuid(&edgeDesc.TargetNodeId, &targetWkdProcessId);
         edgeDesc.EdgeType      = edgeType;
         edgeDesc.EventClass    = Event->Class;
         edgeDesc.Confidence    = Event->Confidence;
@@ -200,9 +201,9 @@ Return Value:
 
         NTSTATUS rbStatus = GrbWriteEdge(WkdIoaEngine.RingBuffer, &edgeDesc, layer);
         if (NT_SUCCESS(rbStatus)) {
-            WkdIoaEngine.Stats.RingBufferWrites++;
+            WkdIoaEngine.Statistics.RingBufferWrites++;
         } else {
-            WkdIoaEngine.Stats.RingBufferDrops++;
+            WkdIoaEngine.Statistics.RingBufferDrops++;
         }
     }
 
@@ -238,6 +239,7 @@ Return Value:
     RtlZeroMemory(&WkdIoaEngine, sizeof(WkdIoaEngine));
     memcpy(&WkdIoaEngine.Config, Config, sizeof(IOA_ENGINE_CONFIG));
     InitializeCriticalSection(&WkdIoaEngine.Lock);
+    CoInitializeRundownProtection(&WkdIoaEngine.RundownRef);
 
     printf("========================================\n");
     printf("  WkDefender IOA Engine (3-Tier Detection)\n");
@@ -301,7 +303,7 @@ Return Value:
 
     /* 11b. 全局边聚合表 <spn, tpn, type> */
     printf("[IoaEngine] [11b/12] Initializing Edge Aggregate Table...\n");
-    status = EdgeAggTable_Initialize(&WkdIoaEngine.EdgeAggTable);
+    status = IoaInitializeAggregateEdgeTable(&WkdIoaEngine.EdgeAggTable);
     if (!NT_SUCCESS(status)) { goto fail_edgeagg; }
 
     /* 11c. 进程对管理器 <spn, tpn> */
@@ -330,7 +332,7 @@ fail_scorer:
 fail_pairmgr:
     PairManager_Cleanup(WkdIoaEngine.PairManager);
 fail_edgeagg:
-    EdgeAggTable_Cleanup(WkdIoaEngine.EdgeAggTable);
+    IoaCleanupAggregateEdgeTable(WkdIoaEngine.EdgeAggTable);
 fail_rate:
     RaCleanup(WkdIoaEngine.RateAnalyzer);
 fail_tier3:
@@ -372,7 +374,7 @@ Routine Description:
 
     IoaScorer_Cleanup(WkdIoaEngine.Scorer);
     PairManager_Cleanup(WkdIoaEngine.PairManager);
-    EdgeAggTable_Cleanup(WkdIoaEngine.EdgeAggTable);
+    IoaCleanupAggregateEdgeTable(WkdIoaEngine.EdgeAggTable);
     RaCleanup(WkdIoaEngine.RateAnalyzer);
     T3Cleanup(WkdIoaEngine.Tier3);
     GwCleanup(WkdIoaEngine.GraphWalker);
@@ -599,12 +601,12 @@ IoaHandleRealTimeMemoryEvent(
     ULONG oldProtect = 0;
     BOOLEAN rwx;
     BOOLEAN writableOld, execOld, execNew, writableNew;
-    ULONG srcPid;
+    ULONG sourceProcessId;
     PWKD_MEM_SCAN_RESULT scan;
 
     if (Event == NULL) return;
     payload = (PEVENT_PAYLOAD_SYSCALL)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
-    srcPid = (ULONG)(ULONG_PTR)payload->SourceProcessId;
+    sourceProcessId = (ULONG)(ULONG_PTR)payload->SourceProcessId;
 
     if (Event->Type == WkdEvent_MemoryAllocate) {
         /* 对齐 SS OnMemoryAllocation: RWX 分配 + 大块可执行无背衬 */
@@ -616,11 +618,11 @@ IoaHandleRealTimeMemoryEvent(
         if (rwx) {
             /* RWX 分配几乎从不合法 (对齐 SS): 若含 PE 结构 → 定向扫描 */
             printf("[IoaMem] RWX alloc pid=%lu addr=0x%p size=%zu\n",
-                   srcPid, (void*)address, size);
+                   sourceProcessId, (void*)address, size);
             if (size >= 4096) {   /* 对齐 SS MIN_PE_SIZE */
                 scan = (PWKD_MEM_SCAN_RESULT)malloc(sizeof(WKD_MEM_SCAN_RESULT));
                 if (scan != NULL) {
-                    MsScanRegionAt(srcPid, address, size, scan);
+                    MsScanRegionAt(sourceProcessId, address, size, scan);
                     free(scan);
                 }
             }
@@ -629,7 +631,7 @@ IoaHandleRealTimeMemoryEvent(
                    size >= 64 * 1024) {
             /* 大块可执行分配 (手动映射常分配大 RX) — 记录 */
             printf("[IoaMem] Large exec alloc pid=%lu addr=0x%p size=%zu\n",
-                   srcPid, (void*)address, size);
+                   sourceProcessId, (void*)address, size);
         }
     } else if (Event->Type == WkdEvent_MemoryProtect) {
         /* 对齐 SS OnProtectionChange: RW->RX 过渡 (反射加载/手动映射标志) */
@@ -649,11 +651,11 @@ IoaHandleRealTimeMemoryEvent(
 
         if (writableOld && !execOld && execNew && !writableNew) {
             printf("[IoaMem] RW->RX protect pid=%lu addr=0x%p size=%zu\n",
-                   srcPid, (void*)address, size);
+                   sourceProcessId, (void*)address, size);
             if (size >= 4096) {
                 scan = (PWKD_MEM_SCAN_RESULT)malloc(sizeof(WKD_MEM_SCAN_RESULT));
                 if (scan != NULL) {
-                    MsScanRegionAt(srcPid, address, size, scan);
+                    MsScanRegionAt(sourceProcessId, address, size, scan);
                     free(scan);
                 }
             }
@@ -780,9 +782,11 @@ Arguments:
     PairCtx->DirtyFlags |= IOA_PAIR_DIRTY_THREAD_HIJACK;
 }
 
+_Use_decl_annotations_
 NTSTATUS
 IoaObserve(
-    _In_ PWKD_EVENT_HEADER Event
+    _Inout_ PAE_PROCESS_PAIR Pair,
+    _In_ const PWKD_EVENT_HEADER Event
     )
 /*++
 Routine Description:
@@ -808,9 +812,8 @@ Return Value:
 --*/
 {
     NTSTATUS status = STATUS_SUCCESS;
-    PWKD_PROCESS srcNode = NULL, tgtNode = NULL;
+    PWKD_PROCESS sourceWkdProcess = NULL, targetWkdProcess = NULL;
     PIOA_AGGREGATE_EDGE aggEdge = NULL;
-    PAE_PROCESS_PAIR pairCtx = NULL;
     IOA_GRAPH_EDGE_TYPE edgeType;
     ULONG rawScore;
     ULONG finalScore;
@@ -818,11 +821,12 @@ Return Value:
     BOOLEAN injConfirmed = FALSE;   /* 阶段4.5 注入分类确认 */
     ULONG injFinalRisk = 0;         /* 阶段4.5 注入风险分 */
 
-    if (!WkdIoaEngine.Initialized || !Event) {
-        return STATUS_INVALID_PARAMETER;
+    if (!Pair || !Event) return STATUS_INVALID_PARAMETER;
+    if (!CoAcquireRundownProtection(&WkdIoaEngine.RundownRef)) {
+        return STATUS_REQUEST_ABORTED;
     }
 
-    WkdIoaEngine.Stats.EventsIngested++;
+    InterlockedIncrement(&WkdIoaEngine.Statistics.EventsIngested);
 
     /* ── 阶段1: 进程节点获取 ──
      * 实体创建唯一出口已上移至 OrcpWkdMessageDispatcher 分发层
@@ -830,15 +834,18 @@ Return Value:
      * 已建立的节点。ProcessCreate 经 PsLookupWkdProcessByStrictProcessId 取得刚创建的
      * 节点（IoapHandleProcessCreate 已回填 Event->Source/TargetProcessId）。 */
     {
-        ULONG srcPid = 0, tgtPid = 0;
+        HANDLE sourceProcessId, targetProcessId;
+
+        //status = NtfExtractEventPids(Event, &sourceProcessId, &targetProcessId);
+        //if (NT_SUCCESS(status)) goto Cleanup;
 
         switch (Event->Type) {
         case WkdEvent_ThreadCreate:
         case WkdEvent_RemoteThreadCreate: {
             PEVENT_PAYLOAD_THREAD_CREATE payload =
                 (PEVENT_PAYLOAD_THREAD_CREATE)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
-            srcPid = (ULONG)(ULONG_PTR)payload->CreatorProcessId;
-            tgtPid = (ULONG)(ULONG_PTR)payload->ProcessId;
+            sourceProcessId = (ULONG)(ULONG_PTR)payload->CreatorProcessId;
+            targetProcessId = (ULONG)(ULONG_PTR)payload->ProcessId;
 
             /*
              * Shellcode 模式检测（对齐 PS TnpCheckShellcodePatterns，9 种模式）
@@ -916,8 +923,8 @@ Return Value:
              * 与 EVENT_PAYLOAD_SYSCALL 布局一致，按单进程事件解析节点 */
             PEVENT_PAYLOAD_FILE_EVENT payload =
                 (PEVENT_PAYLOAD_FILE_EVENT)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
-            srcPid = (ULONG)(ULONG_PTR)payload->SourceProcessId;
-            tgtPid = (ULONG)(ULONG_PTR)payload->TargetProcessId;
+            sourceProcessId = (ULONG)(ULONG_PTR)payload->SourceProcessId;
+            targetProcessId = (ULONG)(ULONG_PTR)payload->TargetProcessId;
             break;
         }
         case WkdEvent_NamedPipeCreate: {
@@ -925,8 +932,8 @@ Return Value:
              * Source=Target=创建者，供因果图 ListensOn 边（服务端监听语义） */
             PEVENT_PAYLOAD_NAMED_PIPE payload =
                 (PEVENT_PAYLOAD_NAMED_PIPE)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
-            srcPid = (ULONG)(ULONG_PTR)payload->SourceProcessId;
-            tgtPid = (ULONG)(ULONG_PTR)payload->TargetProcessId;
+            sourceProcessId = (ULONG)(ULONG_PTR)payload->SourceProcessId;
+            targetProcessId = (ULONG)(ULONG_PTR)payload->TargetProcessId;
             break;
         }
         case WkdEvent_ImageLoad: {
@@ -936,15 +943,13 @@ Return Value:
              * 由 OrcpWkdMessageDispatcher 桥接 ScanManager.ScanFileDirect。 */
             PEVENT_PAYLOAD_IMAGE_LOAD payload =
                 (PEVENT_PAYLOAD_IMAGE_LOAD)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
-            srcPid = (ULONG)(ULONG_PTR)payload->SourceProcessId;
-            tgtPid = (ULONG)(ULONG_PTR)payload->TargetProcessId;
+            sourceProcessId = (ULONG)(ULONG_PTR)payload->SourceProcessId;
+            targetProcessId = (ULONG)(ULONG_PTR)payload->TargetProcessId;
             break;
         }
         default: {
-            PEVENT_PAYLOAD_SYSCALL payload =
-                (PEVENT_PAYLOAD_SYSCALL)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
-            srcPid = (ULONG)(ULONG_PTR)payload->SourceProcessId;
-            tgtPid = (ULONG)(ULONG_PTR)payload->TargetProcessId;
+            sourceProcessId = Pair->SourceProcessId;
+            targetProcessId = Pair->TargetProcessId;
 
             /* 实时内存监控 (对齐 SS OnMemoryAllocation/OnProtectionChange, cpp L1835-1901)
                ※ 死代码: 依赖驱动 Sm 启用 (NtAllocateVirtualMemory/NtProtectVirtualMemory
@@ -955,16 +960,12 @@ Return Value:
              }*/
             break;
         }
-        }   /* switch (Event->Type) — 2026-08-24 补缺失闭合, 否则吞掉后续全部定义 */
+        }
 
-        srcNode = NULL;
-        if (NT_SUCCESS(PsLookupWkdProcessByStrictProcessId(&WkdProcessTree, (HANDLE)(ULONG_PTR)srcPid, NULL, &srcNode))) {
-            Event->SourceProcessId = srcNode->NodeId;
-        }
-        tgtNode = NULL;
-        if (NT_SUCCESS(PsLookupWkdProcessByStrictProcessId(&WkdProcessTree, (HANDLE)(ULONG_PTR)tgtPid, NULL, &tgtNode))) {
-            Event->TargetProcessId = tgtNode->NodeId;
-        }
+        status = PsLookupWkdProcessByProcessId(NULL, sourceProcessId, &sourceWkdProcess);
+        if (!NT_SUCCESS(status)) goto Cleanup;
+        status = PsLookupWkdProcessByProcessId(NULL, targetProcessId, &targetWkdProcess);
+        if (!NT_SUCCESS(status)) goto Cleanup;
     }
 
     /* ── 阶段1b: 统计基线喂入 (SS AnomalyDetector 迁移 2026-08-05) ──
@@ -974,71 +975,48 @@ Return Value:
     //    RaFeedEvent(WkdIoaEngine.RateAnalyzer, Event);
     //}
 
-    /* ── Debug: 拦截目标进程 haha.exe ── */
-    if (tgtNode && tgtNode->ImageFileName && tgtNode->ImageFileName->Buffer) {
-        if (_wcsicmp(tgtNode->ImageFileName->Buffer, L"haha.exe") == 0) {
-            printf("[IoaObserve] BLOCKED: haha.exe detected! "
-                   "EventType=0x%04x SrcName=%ls\n",
-                   Event->Type,
-                   srcNode && srcNode->ImageFileName ? 
-                       (srcNode->ImageFileName->Buffer ? 
-                        srcNode->ImageFileName->Buffer : L"?") 
-                       : L"?");
-        }
-    }
-
     /* ── 阶段2: 边聚合 + PairContext ── */
     edgeType = IoaMapEventToEdgeType(Event->Type);
 
-    if (srcNode && tgtNode &&
-        !DefIsNullNodeId(srcNode->NodeId) &&
-        !DefIsNullNodeId(tgtNode->NodeId) &&
+    if (!DefIsNullNodeId(sourceWkdProcess->NodeId) &&
+        !DefIsNullNodeId(targetWkdProcess->NodeId) &&
         edgeType != DefEdge_Unknown) {
 
-        aggEdge = IoaGetOrCreateAggregateEdge(
-            WkdIoaEngine.EdgeAggTable,
-            srcNode->NodeId, tgtNode->NodeId, edgeType, Event->Timestamp);
-        if (aggEdge) {
-            IoaUpdateProcessPairEdgeAggregate(aggEdge, Event, Event->EventId);
-        }
+        aggEdge = IoaFindOrCreateAggregateEdge(NULL,
+            sourceWkdProcess->NodeId, targetWkdProcess->NodeId,
+            edgeType, Event->Timestamp);
+        if (!aggEdge) goto Cleanup;
+        /* 将事件所携带的边插入聚合边 */
+        IoaUpdateAggregateEdge(aggEdge, Event);
 
-        /* 2026-08-23 pair 键 PID 化; 改造点三上提后创建职责已移至
-         * OrcpWkdMessageDispatcher (switch 前统一建 pair), 此处降级只查。
-         * 查不到 pair 说明分发层未建 (异常), 跳过对级处理并计数。 */
-        status = AeLookupProcessPair(srcNode->ProcessId, tgtNode->ProcessId, &pairCtx);
-        if (!NT_SUCCESS(status)) {
-            pairCtx = NULL;
-        }
-        if (!pairCtx) {
-            /* 分发层应已为所有 <src,tgt> 交互建 pair, 此处缺失属异常 */
-            InterlockedIncrement64(&WkdIoaEngine.Stats.MissingPairCount);
-        }
+        IoaAggregateEdgeAttachProcessPair(Pair, aggEdge);
+        // PairContext_RefreshScore(pair, sourceWkdProcess);
 
-        if (pairCtx && aggEdge) {
-            PairContext_AttachEdge(pairCtx, aggEdge);
-            // PairContext_RefreshScore(pairCtx, srcNode);
+        /* FindOrCreate 返回已 pin 的边, 本作用域用毕归还引用 (→ 仅剩表引用)。
+         * pair->EdgeAgg 保留裸指针 (既有语义, 由过期清理摘链保护), 此处不额外 pin。 */
+        IoaDereferenceAggregateEdge(aggEdge);
 
-            pairCtx->LastSeen = Event->Timestamp;
-            InterlockedIncrement64(&pairCtx->SequenceNumber);
-            pairCtx->DirtyFlags |= IOA_PAIR_DIRTY_TIER1;
+        Pair->LastSeen = Event->Timestamp;
+        InterlockedIncrement64(&Pair->SequenceNumber);
+        Pair->DirtyFlags |= IOA_PAIR_DIRTY_TIER1;
 
-            /* 时序位图更新 (写入 T1Feature, 供 60s 窗口衰减) */
-            if (edgeType < 64) {
-                InterlockedOr64(
-                    (LONG64 volatile*)&pairCtx->T1Feature.RecentEdgeMask,
-                    1ULL << (ULONGLONG)edgeType);
-                pairCtx->T1Feature.EdgeLastSeen[edgeType] = Event->Timestamp;
-            }
-        }
+        /* 时序位图更新 (写入 T1Feature, 供 60s 窗口衰减) */
+        //if (edgeType < 64) {
+        //    InterlockedOr64(
+        //        (LONG64 volatile*)&pair->T1Feature.RecentEdgeMask,
+        //        1ULL << (ULONGLONG)edgeType);
+        //    pair->T1Feature.EdgeLastSeen[edgeType] = Event->Timestamp;
+        //}
+        
     }
 
     /* ── 阶段3: Tier1 纯特征采集 (语义层清零 + 速率/谱系/衰减) ── */
-    IoaCollectFeatures(WkdIoaEngine.Tier1, pairCtx, srcNode, tgtNode,
-                       Event->Timestamp);
+    //IoaCollectFeatures(WkdIoaEngine.Tier1, pair, sourceWkdProcess, targetWkdProcess,
+    //                   Event->Timestamp);
 
     /* ── 阶段4: Tier1 语义进化 (数据层写入 + 多轮推导) ── */
-    T1Evaluate(WkdIoaEngine.Tier1, edgeType, Event, srcNode, tgtNode, pairCtx);
-    WkdIoaEngine.Stats.T1Evaluations++;
+    //T1Evaluate(WkdIoaEngine.Tier1, edgeType, Event, sourceWkdProcess, targetWkdProcess, pair);
+    //WkdIoaEngine.Statistics.T1Evaluations++;
 
     /* ── 阶段4.5: 注入类型分类 ──
      * 移植 ShadowStrike ClassifyFromEvents。
@@ -1046,7 +1024,7 @@ Return Value:
      * 并回填注入语义位/事件标志。仅对注入相关边类型调用以减少开销。
      * 死代码模式 (镂空/APC/劫持/区段映射) 依赖驱动补 syscall case, 见
      * IoaInjectionClassifier.h 数据源依赖说明。 */
-    //if (pairCtx &&
+    //if (pair &&
     //    (edgeType == DefEdge_InjectsInto ||
     //     edgeType == DefEdge_Hollows ||
     //     edgeType == DefEdge_Allocates ||
@@ -1057,12 +1035,12 @@ Return Value:
     //    ULONG injConf;
     //    ULONG injRisk;
 
-    //    if (NT_SUCCESS(IoaClassifyInjection(pairCtx, Event, srcNode, tgtNode,
+    //    if (NT_SUCCESS(IoaClassifyInjection(pair, Event, sourceWkdProcess, targetWkdProcess,
     //                                        &injType, &injConf, &injRisk))) {
     //        if (injType != WkdInjection_Unknown) {
     //            /* 注入专用白名单豁免 (三步: 进程对+受保护目录+签名+LOLBin)。
     //             * 命中则不提升风险/严重度, 抑制告警。 */
-    //            if (!ExemptsShouldWhitelistInjection(srcNode, tgtNode)) {
+    //            if (!ExemptsShouldWhitelistInjection(sourceWkdProcess, targetWkdProcess)) {
     //                injConfirmed = TRUE;
     //                injFinalRisk = injRisk;
     //                /* 注入置信度融合进事件置信度 (取较大者) */
@@ -1083,11 +1061,11 @@ Return Value:
      * ※ 独立于阶段4.5 门控: DefEdge_AssociatedWith 由 ThreadCreate 也产生,
      *   不能把 Suspend/Resume 事件塞入门控 (会误判正常线程创建)。
      *   数据源依赖: 驱动补 NtSuspendThread/NtSetContextThread/NtResumeThread case。 */
-    //if (pairCtx &&
+    //if (pair &&
     //    (Event->Type == WkdEvent_ThreadSuspend ||
     //     Event->Type == WkdEvent_ThreadResume ||
     //     Event->Type == WkdEvent_SetThreadContext)) {
-    //    IoapUpdateThreadHijackTracker(pairCtx, Event);
+    //    IoapUpdateThreadHijackTracker(pair, Event);
     //}
 
     /* ── 阶段4.6: 序列规则匹配 (ShadowStrike PatternMatcher 迁移, 2026-08) ──
@@ -1096,9 +1074,9 @@ Return Value:
      * PolicyEngine.EnableRuntimeRules)。命中产分与注入风险合并,
      * 在阶段6c2 进 finalScore (触发 T2/T3 分级 + VerdictEngine 融合),
      * 告警由引擎内部构造 IOA_ALERT → IoaPersistQueueEnqueue。 */
-    //if (pairCtx && edgeType != DefEdge_Unknown) {
+    //if (pair && edgeType != DefEdge_Unknown) {
     //    ULONG seqScore = 0;
-    //    PolicyEngine_EvaluateSequenceRules(pairCtx, Event, srcNode, tgtNode,
+    //    PolicyEngine_EvaluateSequenceRules(pair, Event, sourceWkdProcess, targetWkdProcess,
     //                                       edgeType, &seqScore);
     //    if (seqScore > 0 && seqScore > injFinalRisk) {
     //        injConfirmed = TRUE;       /* 复用现有"确认"提升路径 */
@@ -1112,9 +1090,9 @@ Return Value:
      * WpaAnalyzeCommandLine 10 类检测 + Base64 解码。命中产分复用阶段6c2
      * injConfirmed 提升 finalScore 路径 (触发 T2/T3 分级 + VerdictEngine 融合)。
      * 接入时在此构造 IOA_ALERT → IoaPersistQueueEnqueue。 */
-    //if (g_IoaCmdLineAnalyzerEnabled && srcNode &&
+    //if (g_IoaCmdLineAnalyzerEnabled && sourceWkdProcess &&
     //    Event->Type == WkdEvent_ProcessCreate) {
-    //    PWKD_PROCESS clpNode = tgtNode ? tgtNode : srcNode;
+    //    PWKD_PROCESS clpNode = targetWkdProcess ? targetWkdProcess : sourceWkdProcess;
     //    PCWSTR clpCmdLine = (clpNode->CommandLine && clpNode->CommandLine->Buffer)
     //                        ? clpNode->CommandLine->Buffer : NULL;
     //    PCWSTR clpImage = (clpNode->ImageFileName && clpNode->ImageFileName->Buffer)
@@ -1144,9 +1122,9 @@ Return Value:
      * 命中产分复用阶段6c2 injConfirmed 提升 finalScore 路径 (触发 T2/T3 分级 +
      * VerdictEngine 融合)。接入时在此构造 IOA_ALERT → IoaPersistQueueEnqueue,
      * 并可将结果写回 WKD_PROCESS.ExtraData (进程表进程画像)。 */
-    //if (g_IoaEnvironmentAnalyzerEnabled && srcNode &&
+    //if (g_IoaEnvironmentAnalyzerEnabled && sourceWkdProcess &&
     //    Event->Type == WkdEvent_ProcessCreate) {
-    //    PWKD_PROCESS envNode = tgtNode ? tgtNode : srcNode;
+    //    PWKD_PROCESS envNode = targetWkdProcess ? targetWkdProcess : sourceWkdProcess;
     //    WKD_ENV_ANALYSIS envResult;
     //    ULONG envPid = (ULONG)(ULONG_PTR)envNode->ProcessId;
 
@@ -1164,7 +1142,7 @@ Return Value:
      * (对齐 g_IoaCmdLineAnalyzerEnabled)。调用 WpaAnalyzeToken 全量令牌采集 +
      * 无条件攻击检测 (7 类令牌操控 + 高完整性模拟令牌 + 危险特权组合) +
      * WpaRecordBaseline 建立基线。
-     * 命中置 srcNode->BehaviorFlags 的 DEF_BEHAVIOR_FLAG_PRIVILEGE_ABUSE/ELEVATED
+     * 命中置 sourceWkdProcess->BehaviorFlags 的 DEF_BEHAVIOR_FLAG_PRIVILEGE_ABUSE/ELEVATED
      * (PROCESS_INTRINSIC 掩码位); DEF_BEHAVIOR_FLAG_TOKEN_MANIPULATE 属
      * PAIR_INTERACTION 掩码, 留给 syscall 边 (阶段4.5 上游)。
      * 运行期基线对比 (WpaCheckForEscalation 9 类提权 + WpaDetectUACBypass 10 模式)
@@ -1172,17 +1150,17 @@ Return Value:
      * syscall 后激活。启用前需在引擎初始化处调用 WpaTokenAnalyzerInitialize()。
      * 产分复用阶段6c2 injConfirmed 提升 finalScore 路径 (触发 T2/T3 分级 +
      * VerdictEngine 融合)。接入时在此构造 IOA_ALERT → IoaPersistQueueEnqueue。 */
-    //if (g_IoaTokenAnalyzerEnabled && srcNode &&
+    //if (g_IoaTokenAnalyzerEnabled && sourceWkdProcess &&
     //    Event->Type == WkdEvent_ProcessCreate) {
-    //    PWKD_PROCESS taNode = tgtNode ? tgtNode : srcNode;
+    //    PWKD_PROCESS taNode = targetWkdProcess ? targetWkdProcess : sourceWkdProcess;
     //    ULONG taPid = (ULONG)(ULONG_PTR)taNode->ProcessId;
     //    WPA_TOKEN_INFO taInfo;
 
     //    if (WpaAnalyzeToken((HANDLE)(ULONG_PTR)taPid, &taInfo) == S_OK) {
     //        if (taInfo.DetectedAttack != WpaAttack_None) {
-    //            srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_PRIVILEGE_ABUSE;
+    //            sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_PRIVILEGE_ABUSE;
     //            if (taInfo.IsElevated) {
-    //                srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_ELEVATED;
+    //                sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_ELEVATED;
     //            }
     //        }
 
@@ -1221,23 +1199,23 @@ Return Value:
      * 建立)，判定 9 类提权 (完整性升高/敏感特权新增/非提权→提权/AuthId 变化/跨会话
      * 进 Session0) + UAC 绕过 10 模式 (WpaDetectUACBypass)。
      * 驱动侧令牌句柄无进程反查 → 非模拟类 TargetProcessId 回退源进程；本分支对
-     * srcNode (源进程) 触发即可覆盖；Impersonate 事件的 tgtNode 为被模拟线程所属
+     * sourceWkdProcess (源进程) 触发即可覆盖；Impersonate 事件的 targetWkdProcess 为被模拟线程所属
      * 进程，源进程 (模拟发起者) 的令牌状态同样需要复查。
-     * 提权命中置 srcNode 行为标志 (PROCESS_INTRINSIC) + 产分复用阶段6c2
+     * 提权命中置 sourceWkdProcess 行为标志 (PROCESS_INTRINSIC) + 产分复用阶段6c2
      * injConfirmed 提升 finalScore 路径 (触发 T2/T3 分级 + VerdictEngine 融合)。
      * tkEvent 归引擎事件队列所有 (WpaCheckForEscalation 已入队), 调用方不释放。 */
-    //if (g_IoaTokenAnalyzerEnabled && srcNode &&
+    //if (g_IoaTokenAnalyzerEnabled && sourceWkdProcess &&
     //    (Event->Type == WkdEvent_TokenAdjustPrivileges ||
     //     Event->Type == WkdEvent_TokenDuplicate ||
     //     Event->Type == WkdEvent_TokenSetInformation ||
     //     Event->Type == WkdEvent_TokenImpersonate)) {
     //    PWPA_ESCALATION_EVENT tkEvent = NULL;
-    //    ULONG tkPid = (ULONG)(ULONG_PTR)srcNode->ProcessId;
+    //    ULONG tkPid = (ULONG)(ULONG_PTR)sourceWkdProcess->ProcessId;
 
     //    if (WpaCheckForEscalation((HANDLE)(ULONG_PTR)tkPid, &tkEvent) == S_OK && tkEvent) {
-    //        srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_PRIVILEGE_ABUSE;
+    //        sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_PRIVILEGE_ABUSE;
     //        if (tkEvent->NewIsElevated) {
-    //            srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_ELEVATED;
+    //            sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_ELEVATED;
     //        }
     //        if (tkEvent->SuspicionScore > injFinalRisk) {
     //            injConfirmed = TRUE;
@@ -1255,7 +1233,7 @@ Return Value:
      * 死代码开关: g_IoaFileBehaviorAnalyzerEnabled=FALSE（对齐 g_IoaCmdLine
      * AnalyzerEnabled 模式）。驱动已补 FileEntropy（Q16）/IsCanary(Flags bit0)/
      * shadow 事件源（0x1306），高熵/Canary/卷影分支现已可达。 */
-    //if (g_IoaFileBehaviorAnalyzerEnabled && srcNode &&
+    //if (g_IoaFileBehaviorAnalyzerEnabled && sourceWkdProcess &&
     //    (Event->Type == WkdEvent_FileWrite ||
     //     Event->Type == WkdEvent_FileRename ||
     //     Event->Type == WkdEvent_FileDelete ||
@@ -1304,16 +1282,16 @@ Return Value:
     //        }
     //    }
 
-    //    IoaRansomware_UpdateScore(&srcNode->BehaviorState, &bev);
+    //    IoaRansomware_UpdateScore(&sourceWkdProcess->BehaviorState, &bev);
 
-    //    if (srcNode->BehaviorState.DetectionFlags &
+    //    if (sourceWkdProcess->BehaviorState.DetectionFlags &
     //        (DEF_BEHAVIOR_FLAG_RANSOMWARE_ENC |
     //         DEF_BEHAVIOR_FLAG_RANSOMWARE_DELETE |
     //         DEF_BEHAVIOR_FLAG_RANSOMWARE_SHADOW)) {
-    //        srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_RANSOMWARE_ENC;
-    //        if (srcNode->BehaviorState.MaliceScore > injFinalRisk) {
+    //        sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_RANSOMWARE_ENC;
+    //        if (sourceWkdProcess->BehaviorState.MaliceScore > injFinalRisk) {
     //            injConfirmed = TRUE;
-    //            injFinalRisk = srcNode->BehaviorState.MaliceScore;
+    //            injFinalRisk = sourceWkdProcess->BehaviorState.MaliceScore;
     //        }
     //    }
     //    /* TODO(接入): 构造 IOA_ALERT → IoaPersistQueueEnqueue */
@@ -1327,7 +1305,7 @@ Return Value:
      * 提升路径 (触发 T2/T3 + VerdictEngine 融合, 与 E6 槽位防双计)。
      * 死代码开关: g_IoaLockPatternEnabled=FALSE (对齐 4.9c 惯例)。
      * 注: 锁快照 (RM + 句柄枚举) 成本高, 接入需按需触发。 */
-    //if (g_IoaLockPatternEnabled && srcNode &&
+    //if (g_IoaLockPatternEnabled && sourceWkdProcess &&
     //    (Event->Type == WkdEvent_FileWrite ||
     //     Event->Type == WkdEvent_FileRename ||
     //     Event->Type == WkdEvent_FileDelete)) {
@@ -1344,7 +1322,7 @@ Return Value:
     //                ta->DominantPattern == WkdLockPattern_ProcessInjection ||
     //                ta->DominantPattern == WkdLockPattern_DefenseEvasion) {
     //                if (ta->DominantPattern == WkdLockPattern_Ransomware) {
-    //                    srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_RANSOMWARE_ENC;
+    //                    sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_RANSOMWARE_ENC;
     //                }
     //                if (ta->OverallThreatScore > (DOUBLE)injFinalRisk) {
     //                    injConfirmed = TRUE;
@@ -1365,7 +1343,7 @@ Return Value:
      * injConfirmed 提升路径（触发 T2/T3 + VerdictEngine 融合）。
      * 死代码开关: g_IoaNamedPipeAnalyzerEnabled=FALSE（对齐 g_IoaCmdLineAnalyzer
      * Enabled 模式）。驱动与解析器已接线（NamedPipeMonitor.c + NtfpParseNamedPipe）。 */
-    //if (g_IoaNamedPipeAnalyzerEnabled && srcNode && Event->Type == WkdEvent_NamedPipeCreate) {
+    //if (g_IoaNamedPipeAnalyzerEnabled && sourceWkdProcess && Event->Type == WkdEvent_NamedPipeCreate) {
     //    PEVENT_PAYLOAD_NAMED_PIPE nPayload =
     //        (PEVENT_PAYLOAD_NAMED_PIPE)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
     //    ULONG nClass = nPayload->Classification;
@@ -1373,11 +1351,11 @@ Return Value:
     //    /* 已知 C2 管道 → C2_COMMUNICATION；系统管道冒充 → LATERAL_MOVEMENT；
     //     * 高熵随机名 → C2_COMMUNICATION（C2 框架随机化管道名） */
     //    if (nClass >= DEF_NPM_CLASS_C2_COBALT && nClass <= DEF_NPM_CLASS_C2_GENERIC) {
-    //        srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_C2_COMMUNICATION;
+    //        sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_C2_COMMUNICATION;
     //    } else if (nClass == DEF_NPM_CLASS_SPOOFED_SYSTEM) {
-    //        srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_LATERAL_MOVEMENT;
+    //        sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_LATERAL_MOVEMENT;
     //    } else if (nClass == DEF_NPM_CLASS_HIGH_ENTROPY) {
-    //        srcNode->BehaviorFlags |= DEF_BEHAVIOR_FLAG_C2_COMMUNICATION;
+    //        sourceWkdProcess->BehaviorFlags |= DEF_BEHAVIOR_FLAG_C2_COMMUNICATION;
     //    }
 
     //    /* 产分：威胁分经 injConfirmed 提升路径进 finalScore（触发 T2/T3 + VerdictEngine） */
@@ -1395,12 +1373,12 @@ Return Value:
      *   ParameterBase[1]=实际地址 [3]=实际大小 [5]=PageProtection。
      * 死代码开关: g_IoaHeapSprayEnabled=FALSE。驱动 SmInitialize 注释态
      * (WkdEntry.c:261) 内存事件不可达; 启用后阶段1 default 分支已消费。 */
-    //if (g_IoaHeapSprayEnabled && srcNode && Event->Type == WkdEvent_MemoryAllocate) {
+    //if (g_IoaHeapSprayEnabled && sourceWkdProcess && Event->Type == WkdEvent_MemoryAllocate) {
     //    PEVENT_PAYLOAD_SYSCALL hsPayload =
     //        (PEVENT_PAYLOAD_SYSCALL)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
 
     //    IoaHeapSpray_OnAllocate(
-    //        &srcNode->BehaviorState.HeapSpray,
+    //        &sourceWkdProcess->BehaviorState.HeapSpray,
     //        (ULONG)(ULONG_PTR)hsPayload->SourceProcessId,
     //        (ULONG_PTR)hsPayload->ParameterBase[1],      /* 实际地址 */
     //        (SIZE_T)hsPayload->ParameterBase[3],         /* 实际大小 */
@@ -1408,77 +1386,77 @@ Return Value:
     //}
 
     /* ── 阶段5: 环形缓冲区写入 ── */
-    IoapHandleDynamicEdge(Event, srcNode, tgtNode, pairCtx, &Event->EventId);
+    // IoapHandleDynamicEdge(Event, sourceWkdProcess, targetWkdProcess, Pair, &Event->EventId);
 
     /* ── 阶段6: Policy + Scorer + Dispatch ── */
-    if (pairCtx) {
-        PT1_PAIR_FEATURE f = &pairCtx->T1Feature;
-        PINTERACTION_BITMAP bm = &pairCtx->InteractionBitmap;
+    //if (pair) {
+    //    PT1_PAIR_FEATURE f = &pair->T1Feature;
+    //    PINTERACTION_BITMAP bm = &pair->InteractionBitmap;
 
-        /* 6a. Policy: 分析位图丰富度 → 选择评分策略 */
-        SCORE_STRATEGY strategy = PolicyAnalyze(f, bm);
+    //    /* 6a. Policy: 分析位图丰富度 → 选择评分策略 */
+    //    SCORE_STRATEGY strategy = PolicyAnalyze(f, bm);
 
-        /* 6b. Scorer: 按策略计算原始评分 (Context=InteractionBitmap) */
-        rawScore = IoaScorer_Evaluate(strategy, f, bm);
+    //    /* 6b. Scorer: 按策略计算原始评分 (Context=InteractionBitmap) */
+    //    rawScore = IoaScorer_Evaluate(strategy, f, bm);
 
-        /* 6c. EWMA 平滑 + 时间衰减 */
-        // finalScore = Scorer_ApplyEwmaDecay(f, rawScore);
-        finalScore = rawScore;
+    //    /* 6c. EWMA 平滑 + 时间衰减 */
+    //    // finalScore = Scorer_ApplyEwmaDecay(f, rawScore);
+    //    finalScore = rawScore;
 
-        /* 6c2. 注入确认提升: 阶段4.5 分类器确认注入且风险达标时,
-         * 使注入风险分进入累积评分链路 (触发 T2/T3 分级调度)。 */
-        if (injConfirmed && injFinalRisk >= 50) {
-            finalScore = max(finalScore, injFinalRisk);
-        }
+    //    /* 6c2. 注入确认提升: 阶段4.5 分类器确认注入且风险达标时,
+    //     * 使注入风险分进入累积评分链路 (触发 T2/T3 分级调度)。 */
+    //    if (injConfirmed && injFinalRisk >= 50) {
+    //        finalScore = max(finalScore, injFinalRisk);
+    //    }
 
-        /* 6c2b. 堆喷确认提升 (HeapSpray 迁移 2026-08)
-         * 阶段4.11 聚合判定 SprayInProgress → 评分 (0-1000 → /10 归一)
-         * max 提升 finalScore → 触发 T2/T3 + VerdictEngine 融合。
-         * 告警仅一次 (SprayAlerted 置位防重复)。
-         * 不走 6c3: RA_METRIC_MEM 统计异常与确定性堆喷签名重复计分。 */
-        if (g_IoaHeapSprayEnabled && srcNode &&
-            srcNode->BehaviorState.HeapSpray.SprayInProgress) {
-            ULONG hsScore = srcNode->BehaviorState.HeapSpray.SprayScore;
+    //    /* 6c2b. 堆喷确认提升 (HeapSpray 迁移 2026-08)
+    //     * 阶段4.11 聚合判定 SprayInProgress → 评分 (0-1000 → /10 归一)
+    //     * max 提升 finalScore → 触发 T2/T3 + VerdictEngine 融合。
+    //     * 告警仅一次 (SprayAlerted 置位防重复)。
+    //     * 不走 6c3: RA_METRIC_MEM 统计异常与确定性堆喷签名重复计分。 */
+    //    if (g_IoaHeapSprayEnabled && sourceWkdProcess &&
+    //        sourceWkdProcess->BehaviorState.HeapSpray.SprayInProgress) {
+    //        ULONG hsScore = sourceWkdProcess->BehaviorState.HeapSpray.SprayScore;
 
-            if (hsScore / 10 > injFinalRisk) {
-                injConfirmed = TRUE;
-                injFinalRisk = hsScore / 10;
-            }
+    //        if (hsScore / 10 > injFinalRisk) {
+    //            injConfirmed = TRUE;
+    //            injFinalRisk = hsScore / 10;
+    //        }
 
-            if (!srcNode->BehaviorState.HeapSpray.SprayAlerted) {
-                srcNode->BehaviorState.HeapSpray.SprayAlerted = TRUE;
-                if (WkdIoaEngine.PersistQueue) {
-                    PIOA_ALERT hsAlert = IoaHeapSpray_AllocAlert(
-                        srcNode->NodeId, &srcNode->BehaviorState.HeapSpray);
-                    if (hsAlert) {
-                        IoaPersistQueueEnqueue(WkdIoaEngine.PersistQueue,
-                                               PersistType_Alert, hsAlert,
-                                               (PERSIST_SERDE_WRITE_FN)StPersistAlert,
-                                               TRUE);
-                    }
-                }
-            }
-        }
+    //        if (!sourceWkdProcess->BehaviorState.HeapSpray.SprayAlerted) {
+    //            sourceWkdProcess->BehaviorState.HeapSpray.SprayAlerted = TRUE;
+    //            if (WkdIoaEngine.PersistQueue) {
+    //                PIOA_ALERT hsAlert = IoaHeapSpray_AllocAlert(
+    //                    sourceWkdProcess->NodeId, &sourceWkdProcess->BehaviorState.HeapSpray);
+    //                if (hsAlert) {
+    //                    IoaPersistQueueEnqueue(WkdIoaEngine.PersistQueue,
+    //                                           PersistType_Alert, hsAlert,
+    //                                           (PERSIST_SERDE_WRITE_FN)StPersistAlert,
+    //                                           TRUE);
+    //                }
+    //            }
+    //        }
+    //    }
 
         /* 6c3. 统计异常提升 (SS AnomalyDetector 迁移 2026-08-05)
          * 进程级 Z-Score/MAD 统计基线检测:
          *  - RaCheckForAnomaly 检测当前事件指标 (观测值 = 10s 窗口计数)
          *  - 异常 → 严重度分 max 提升 finalScore → 触发 T2/T3 + E2 融合
          *  - 严重度 ≥ Medium(60) → 构造 IOA_ALERT 持久化告警 */
-        if (srcNode && WkdIoaEngine.RateAnalyzer) {
+        /*if (sourceWkdProcess && WkdIoaEngine.RateAnalyzer) {
             RA_METRIC_TYPE raMetric = RaMapEventTypeToMetric(Event->Type);
             BOOLEAN raIsAnomaly = FALSE;
             RA_ANOMALY_INFO raInfo;
 
             RtlZeroMemory(&raInfo, sizeof(raInfo));
-            RaCheckForAnomaly(WkdIoaEngine.RateAnalyzer, srcNode->NodeId,
+            RaCheckForAnomaly(WkdIoaEngine.RateAnalyzer, sourceWkdProcess->NodeId,
                               raMetric, &raIsAnomaly, &raInfo);
 
             if (raIsAnomaly) {
                 finalScore = max(finalScore, raInfo.SeverityScore);
 
                 if (raInfo.SeverityScore >= 60 && WkdIoaEngine.PersistQueue) {
-                    PIOA_ALERT alert = RaAllocStatAlert(srcNode->NodeId, &raInfo);
+                    PIOA_ALERT alert = RaAllocStatAlert(sourceWkdProcess->NodeId, &raInfo);
                     if (alert) {
                         IoaPersistQueueEnqueue(WkdIoaEngine.PersistQueue,
                                                PersistType_Alert, alert,
@@ -1487,13 +1465,13 @@ Return Value:
                     }
                 }
             }
-        }
+        }*/
 
         /* 6d. Policy: 分级调度决策 */
-        level = PolicyDecideDispatch(strategy, finalScore, f);
+        // level = PolicyDecideDispatch(strategy, finalScore, f);
 
         /* 记录决策统计 */
-        if (level <= T1_DISPATCH_T3_DIRECT) {
+        /*if (level <= T1_DISPATCH_T3_DIRECT) {
             InterlockedIncrement64(
                 &WkdIoaEngine.Tier1->Decisions[level]);
         }
@@ -1504,11 +1482,11 @@ Return Value:
                    "Level=%d SemWord=0x%llx SemPop=%lu SrcGen=0x%lx\n",
                    strategy, rawScore, finalScore, level,
                    semWord, f->SemanticPopcount, f->SrcGenealogyFlags);
-        }
+        }*/
 
         /* 6e. 触发 Tier2 */
         //if (level >= T1_DISPATCH_T2_ASYNC) {
-        //    IoapDispatchTier2(level, pairCtx);
+        //    IoapDispatchTier2(level, pair);
         //}
 
         /* 6f. 写回进程对累积评分 — VerdictEngine 融合信号 E2 读取
@@ -1517,20 +1495,17 @@ Return Value:
          *     写 rawScore 结果, 不改动既有 level 决策逻辑。
          *     并发安全重构 2026-08-23：持 EwmaLock 与 IoaThreatScorer 锁内
          *     读者互斥（后续启用 EWMA 时该写点即为唯一并发写者）。 */
-        AcquireSRWLockExclusive(&f->EwmaLock);
-        f->CumulativeRiskScore = finalScore;
-        ReleaseSRWLockExclusive(&f->EwmaLock);
-    }
+    //    AcquireSRWLockExclusive(&f->EwmaLock);
+    //    f->CumulativeRiskScore = finalScore;
+    //    ReleaseSRWLockExclusive(&f->EwmaLock);
+    //}
 
     /* 持久化已由 Orchestrator 统一异步处理 (OrcpWkdMessageDispatcher) */
+Cleanup:
+    if (targetWkdProcess) PsDereferenceWkdProcess(targetWkdProcess);
+    if (sourceWkdProcess) PsDereferenceWkdProcess(sourceWkdProcess);
 
-    /* 归还阶段1 的节点查找 pin + 阶段2 的 pair 查找 pin
-     * (2026-08-25 HashMap ref/deref 契约: Lookup 命中经回调 pin,
-     * 用完须归还; pair pin 仅护住本函数内同步消费, 不跨函数持有) */
-    if (pairCtx) AeDereferenceProcessPair(pairCtx);
-    if (tgtNode) PsDereferenceWkdProcess(tgtNode);
-    if (srcNode) PsDereferenceWkdProcess(srcNode);
-
+    CoReleaseRundownProtection(&WkdIoaEngine.RundownRef);
     return status;
 }
 
@@ -1576,15 +1551,15 @@ IoaEngine_PrintStats(
     printf("========================================\n");
     printf("  IOA Engine Statistics\n");
     printf("========================================\n");
-    printf("  Events Ingested:        %lld\n", WkdIoaEngine.Stats.EventsIngested);
+    printf("  Events Ingested:        %lld\n", WkdIoaEngine.Statistics.EventsIngested);
     printf("  Process Nodes:          %lld created / %lld terminated\n",
-           WkdIoaEngine.Stats.ProcessNodesCreated,
-           WkdIoaEngine.Stats.ProcessNodesTerminated);
-    printf("  Current Alive:          %lld\n", WkdIoaEngine.Stats.CurrentProcessCount);
-    printf("  Graph Nodes:            %lld\n", WkdIoaEngine.Stats.GraphNodesCreated);
+           WkdIoaEngine.Statistics.ProcessNodesCreated,
+           WkdIoaEngine.Statistics.ProcessNodesTerminated);
+    printf("  Current Alive:          %lld\n", WkdIoaEngine.Statistics.CurrentProcessCount);
+    printf("  Graph Nodes:            %lld\n", WkdIoaEngine.Statistics.GraphNodesCreated);
     printf("  Graph Edges:            %lld created / %lld compacted\n",
-           WkdIoaEngine.Stats.EdgesCreated, WkdIoaEngine.Stats.EdgesCompacted);
-    printf("  Tier 1 Evaluations:     %lld\n", WkdIoaEngine.Stats.T1Evaluations);
+           WkdIoaEngine.Statistics.EdgesCreated, WkdIoaEngine.Statistics.EdgesCompacted);
+    printf("  Tier 1 Evaluations:     %lld\n", WkdIoaEngine.Statistics.T1Evaluations);
     printf("  Tier 1 Rule Hits:       %lld\n", WkdIoaEngine.Tier1->RuleHits);
     printf("  Tier 1 Features:        %lld\n", WkdIoaEngine.Tier1->FeatureCollects);
     printf("  Tier 2 Backtrack Calls: %lld / Verified: %lld\n",
@@ -1626,6 +1601,6 @@ IoaEngine_PrintStats(
            PairManager_GetCount(WkdIoaEngine.PairManager), PairManager_GetPeakCount(WkdIoaEngine.PairManager));
     printf("  EdgeAgg Entries:         %lu\n",
            EdgeAggTable_GetCount(WkdIoaEngine.EdgeAggTable));
-    printf("  MITRE Mappings:         %lld\n", WkdIoaEngine.Stats.MitreMappings);
+    printf("  MITRE Mappings:         %lld\n", WkdIoaEngine.Statistics.MitreMappings);
     printf("========================================\n\n");
 }

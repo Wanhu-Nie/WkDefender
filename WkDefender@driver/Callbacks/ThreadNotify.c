@@ -693,7 +693,7 @@ Arguments:
     //}
 
     /*
-     * 起始地址归属结论（IocDetectThread 计算，供 agent IOC 消费）：
+     * 起始地址归属结论（IocObserveThread 计算，供 agent IOC 消费）：
      *   IsUnusualEntry  — 入口点未落在已知模块区间
      *   IsStartAddrBacked — 入口地址为 MEM_IMAGE 文件映射
      * agent 侧 IocObserveThread 直接读取，无需重做归属检查。
@@ -852,10 +852,10 @@ Arguments:
         //
         // 1.5 调用编排器：IOC 检测 + IOA 记录
         //
-        /*status = AeOrchestratorDispatch(sourceWkdProcess, targetWkdProcess,
+        status = AeOrchestratorDispatch(sourceWkdProcess, targetWkdProcess,
                                         WkdMessage_SourceThreadCallback,
                                         WkdMessage_ThreadCreated,
-                                        wkdThread);*/
+                                        wkdThread);
 
         //
         // 2. 其次：发送 IOA 线程创建事件
@@ -904,6 +904,11 @@ Arguments:
         //    wkdThread->UserTime.QuadPart = (LONGLONG)userTime;
         //    wkdThread->KernelTime.QuadPart = (LONGLONG)kernelTime;
         //}
+
+        status = AeOrchestratorDispatch(sourceWkdProcess, targetWkdProcess,
+            WkdMessage_SourceThreadCallback,
+            WkdMessage_ThreadExited,
+            wkdThread);
 
         //
         // 3. 发送线程退出事件（CbpNotifyThreadCreate 内 Flags bit0=IsRemote/bit1=Create=0

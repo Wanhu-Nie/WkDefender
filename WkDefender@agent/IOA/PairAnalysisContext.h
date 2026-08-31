@@ -156,11 +156,11 @@ AeCreateProcessPairContexts(
 /*
  * 释放进程对的三分析上下文 (对齐 driver PsDereferenceWkdProcessPair refcount==0
  * 分支)。遍历三链释放全部记录节点 + 释放上下文 + 置 NULL。
- * 由 PairManager_CleanupExpired (摘除成功后) / PairManager_Cleanup 调用。
+ * 由 IocCleanupExpiredProcessPair (摘除成功后) / PairManager_Cleanup 调用。
  */
 VOID
 AeDestroyProcessPairContexts(
-    _Inout_ PAE_PROCESS_PAIR PairCtx
+    _Inout_ PAE_PROCESS_PAIR Pair
     );
 
 /*
@@ -172,5 +172,5 @@ AeDestroyProcessPairContexts(
  */
 VOID
 IoaPairTsSettle(
-    _Inout_ PAE_PROCESS_PAIR PairCtx
+    _Inout_ PAE_PROCESS_PAIR Pair
     );

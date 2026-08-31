@@ -49,7 +49,7 @@ typedef struct _WKD_HASH_MAP_ENTRY {
     BOOLEAN Occupied;                   // 槽位是否被占用
     EX_PUSH_LOCK Lock;                  // 桶级推锁（PerBucketLock 模式使用）
     PVOID Key;                          // 键存储（见 KeySize 语义）
-    ULONG KeySize;                      // 键大小
+    SIZE_T KeySize;                      // 键大小
     ULONG64 Value;                      // 值
 } WKD_HASH_MAP_ENTRY, * PWKD_HASH_MAP_ENTRY;
 
@@ -84,7 +84,7 @@ typedef struct _WKD_HASH_MAP {
 #define WKD_HASH_MAP_MAX_KEY_SIZE  32
 
 //
-// CoHashMapSnapshot 输出的快照条目（key-only）。
+// CoCaptureHashMapSnapshot 输出的快照条目（key-only）。
 // KeyData 固定大小，容纳所有当前 key 类型：
 //   AE_PROCESS_PAIR_KEY     = 16 字节 (2*HANDLE)
 //   WKD_BEHAVIOR_KEY = 24 字节 (2*HANDLE + WKD_ASSEMBLY_TYPE + ULONG)
@@ -154,8 +154,8 @@ _IRQL_requires_max_(APC_LEVEL)
 BOOLEAN
 CoRemoveHashMapEntry(
     _Inout_ PWKD_HASH_MAP HashMap,
-    _In_ PVOID Key,
-    _In_ ULONG KeySize
+    _In_ const PVOID Key,
+    _In_ SIZE_T KeySize
     );
 
 /************************************************
@@ -170,10 +170,11 @@ CoRemoveHashMapEntry(
 
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
-CoHashMapSnapshot(
-    _In_ PWKD_HASH_MAP HashMap,
+CoCaptureHashMapSnapshot(
+    _In_ const PWKD_HASH_MAP HashMap,
     _In_opt_ PWKD_HASH_MAP_SNAPSHOT Buffer,
-    _Inout_ PULONG Capacity
+    _Inout_ PSIZE_T BufferSize,
+    _Out_opt_ PULONG Capacity
     );
 
 /************************************************

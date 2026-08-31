@@ -441,8 +441,8 @@ T3PeriodicMaintenance(
 NTSTATUS
 T3HandleBlockingQuery(
     _In_    PIOA_TIER3_ENGINE   Engine,
-    _In_    GUID                SrcNodeId,
-    _In_    GUID                TgtNodeId,
+    _In_    GUID                SourceNodeId,
+    _In_    GUID                TargetNodeId,
     _In_    IOA_GRAPH_EDGE_TYPE OperationType,
     _Out_   BOOLEAN*            OutAllow,
     _Out_   PT3_STATE_UPDATE    OutState
@@ -473,8 +473,8 @@ Routine Description:
         while (entry != &Engine->ChainPool.ChainHead) {
             PTIRE3_ATTACK_CHAIN chain = CONTAINING_RECORD(
                 entry, TIRE3_ATTACK_CHAIN, Link);
-            if (T3QueryAttackChainIncludedProcess(chain, SrcNodeId) &&
-                T3QueryAttackChainIncludedProcess(chain, TgtNodeId)) {
+            if (T3QueryAttackChainIncludedProcess(chain, SourceNodeId) &&
+                T3QueryAttackChainIncludedProcess(chain, TargetNodeId)) {
                 threatScore = chain->ThreatScore;
                 foundChain = TRUE;
                 break;

@@ -340,15 +340,15 @@ typedef struct _WKD_INJECTION_STATISTICS {
 
 /*
  * 注入链信息 (对齐 SS INJ_CHAIN, InjectionDetector.h:216-257)。
- * ※ 死代码: SS 链键为 (SrcPid,TgtPid), wkd 进程对键为 (SrcNodeId,TgtNodeId)
+ * ※ 死代码: SS 链键为 (SrcPid,TgtPid), wkd 进程对键为 (SourceNodeId,TargetNodeId)
  *   GUID; SS 链 5s 滑窗/32 操作上限由 wkd 进程对 60s TTL + 边衰减承担。
  */
 typedef struct _WKD_INJECTION_CHAIN_INFO {
-    GUID                SrcNodeId;
-    GUID                TgtNodeId;
+    GUID                SourceNodeId;
+    GUID                TargetNodeId;
     ULONG64             DataBitmap64;    /* 数据层位图 (SS 操作模式位图对应物) */
     ULONG64             SemBitmap64;     /* 语义层位图 */
-    ULONG               TotalEventCount; /* 边事件累计 (SS Chain->OperationCount 对应物) */
+    ULONG               TotalEvents; /* 边事件累计 (SS Chain->OperationCount 对应物) */
     WKD_INJECTION_TYPE  DetectedTechnique;
     ULONG               ConfidenceScore;
     ULONG               RiskScore;

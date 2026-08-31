@@ -1909,78 +1909,77 @@ IocpCheckMitigations(
 _Use_decl_annotations_
 NTSTATUS
 IocAnalysisProcess(
-    _In_ PAE_PROCESS_PAIR Pair,
-    _In_ PPS_CREATE_NOTIFY_INFO CreateInfo
+    _Inout_ PAE_PROCESS_PAIR Pair,
+    _In_ const PPS_CREATE_NOTIFY_INFO CreateInfo
     )
 {
     NTSTATUS status;
-    PWKD_PROCESS tgtWkdProcess;
+    PWKD_PROCESS targetWkdProcess;
 
     if (!Pair || !CreateInfo) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    tgtWkdProcess = PsLookupWkdProcessByProcessId(Pair->TargetProcessId);
-    if (!tgtWkdProcess) return STATUS_UNSUCCESSFUL;
-
-    /* 2026-08-25 锁下沉: SecurityContext 字段操作持其内嵌推锁 (惰性指针, 判空保护) */
-    if (!tgtWkdProcess->SecurityContext) {
-        PsDereferenceWkdProcess(tgtWkdProcess);
+    targetWkdProcess = PsLookupWkdProcessByProcessId(Pair->TargetProcessId);
+    if (!targetWkdProcess) return STATUS_UNSUCCESSFUL;
+    if (!targetWkdProcess->SecurityContext) {
+        PsDereferenceWkdProcess(targetWkdProcess);
         return STATUS_UNSUCCESSFUL;
     }
-    WkdAcquirePushLockExclusive(&tgtWkdProcess->SecurityContext->Lock);
+
+    WkdAcquirePushLockExclusive(&targetWkdProcess->SecurityContext->Lock);
 
     /* §1 PPID 欺骗检测 */
-    IocpDetectPpidSpoofing(Pair, tgtWkdProcess);
+    IocpDetectPpidSpoofing(Pair, targetWkdProcess);
 
     /* §2 令牌信息 + 特权捕获（含跨会话/提权 IOC） */
-    IocpCapturePrivilegeInfo(Pair, tgtWkdProcess);
+    IocpCapturePrivilegeInfo(Pair, targetWkdProcess);
 
     /* §3 命令行深度分析（2026-08 激活，迁移自 SS BehaviorEngine 事件流） */
-    // IocpDetectCommandLine(Pair, tgtWkdProcess);
+    // IocpDetectCommandLine(Pair, targetWkdProcess);
 
     /* §3.1 LOLBin 识别（对齐 SS BepIsLolBin，迁移自 BehaviorEngine） */
-    //if (tgtWkdProcess->Core.ImagePath &&
-    //    IocCheckLolbin(tgtWkdProcess->Core.ImagePath)) {
-    //    tgtWkdProcess->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_LOLBIN;
+    //if (targetWkdProcess->Core.ImagePath &&
+    //    IocCheckLolbin(targetWkdProcess->Core.ImagePath)) {
+    //    targetWkdProcess->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_LOLBIN;
     //    AeReportIndicator(Pair, TsSourceIOC, TsIndicator_CmdLine_LOLBin);
     //}
 
     /* §3.2 剪贴板窃取检测（T1115，迁移自 SS ClipboardMonitor） */
-    // IocpDetectClipboardAbuse(Pair, tgtWkdProcess);
+    // IocpDetectClipboardAbuse(Pair, targetWkdProcess);
 
     /* §3.3 WSL/容器逃逸检测（T1611/T1059.004，迁移自 SS WSLMonitor）
      *   镜像分类 + 父链判定 + WSL 父 spawn native 逃逸目标 */
-    // IocpDetectWsl(Pair, tgtWkdProcess, CreateInfo->ImageFileName);
+    // IocpDetectWsl(Pair, targetWkdProcess, CreateInfo->ImageFileName);
 
     /* §4 签名验证 */
-    // IocpVerifySignature(Pair, tgtWkdProcess);
+    // IocpVerifySignature(Pair, targetWkdProcess);
 
     /* §5 进程 Ghosting 检测（T1055.013，对齐 SS PhAnalyzeAtCreation 门控：
      *   !IsSystem 才做——系统进程跳过比对，控制创建热路径成本） */
-    //if (!tgtWkdProcess->SecurityContext->IsSystem) {
-    //    IocpDetectGhosting(Pair, tgtWkdProcess);
+    //if (!targetWkdProcess->SecurityContext->IsSystem) {
+    //    IocpDetectGhosting(Pair, targetWkdProcess);
     //}
 
     /* §6 父进程谱系分析（迁移自 SS PapAnalyzeParentProcess/PapDetectBehaviorFlags
      * 已知父名单(19) + 组合失配规则(对齐 SS 30 条)；父非已知→SuspiciousAncestry，
      * 组合失配→SuspiciousAncestry（谱系异常，不再归入 PPID 指示器）） */
-    // IocpAnalyzeParentProcess(Pair, tgtWkdProcess);
+    // IocpAnalyzeParentProcess(Pair, targetWkdProcess);
 
     /* §7 脚本宿主标记（对齐 SS BepIsScriptHost，迁移自 BehaviorEngine） */
-    //if (tgtWkdProcess->Core.ImagePath &&
-    //    IocpIsScriptHost(tgtWkdProcess->Core.ImagePath)) {
-    //    tgtWkdProcess->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_SCRIPT_HOST;
+    //if (targetWkdProcess->Core.ImagePath &&
+    //    IocpIsScriptHost(targetWkdProcess->Core.ImagePath)) {
+    //    targetWkdProcess->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_SCRIPT_HOST;
     //}
 
     /* §8 缓解缺失检测（迁移自 SS PapAnalyzePEHeaders + PapAnalyzeSecurityMitigations，
      * 门控 !IsSystem 对齐 §5 Ghosting；运行时 DEP 由 Phase 6 填充 DepEnabled） */
-    //if (!tgtWkdProcess->SecurityContext->IsSystem) {
-    //    IocpCheckMitigations(Pair, tgtWkdProcess);
+    //if (!targetWkdProcess->SecurityContext->IsSystem) {
+    //    IocpCheckMitigations(Pair, targetWkdProcess);
     //}
 
-    WkdReleasePushLockExclusive(&tgtWkdProcess->SecurityContext->Lock);
-    PsDereferenceWkdProcess(tgtWkdProcess);
+    WkdReleasePushLockExclusive(&targetWkdProcess->SecurityContext->Lock);
+    PsDereferenceWkdProcess(targetWkdProcess);
 
     return STATUS_SUCCESS;
 }

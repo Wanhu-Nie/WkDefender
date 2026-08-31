@@ -268,9 +268,9 @@ typedef struct _WKD_SEQUENCE_RULE {
 
 /* 序列匹配状态 (对齐 PM_MATCH_STATE_INTERNAL) */
 typedef struct _WKD_SEQ_MATCH_STATE {
-    /* 键 (哈希输入: DJB(SrcNodeId||TgtNodeId||RuleIndex)) */
-    GUID    SrcNodeId;
-    GUID    TgtNodeId;
+    /* 键 (哈希输入: DJB(SourceNodeId||TargetNodeId||RuleIndex)) */
+    GUID    SourceNodeId;
+    GUID    TargetNodeId;
     ULONG   RuleIndex;                              /* Rules[] 索引 */
 
     /* 逐事件追踪 (对齐 PM_MATCH_STATE_INTERNAL) */

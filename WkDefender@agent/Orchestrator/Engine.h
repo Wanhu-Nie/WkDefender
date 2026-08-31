@@ -18,6 +18,7 @@ typedef struct _ORC_ENGINE_CONFIG {
     ULONG   HotCacheMaxEntries;
     ULONG   HotCacheTtlMs;
     ULONG   PruneIntervalMs;
+    ULONG   PairCleanupIntervalMs;          /* 进程对+聚合边 清理线程周期 */
     ULONG   EdgeRetentionWindowMs;
     WCHAR   WarmDbPath[DEF_MAX_PATH];
     WCHAR   ColdDbPath[DEF_MAX_PATH];
@@ -37,7 +38,7 @@ typedef struct _ORC_ENGINE_CONFIG {
     {                                       \
         DEF_HOT_CACHE_MAX_ENTRIES,          \
         DEF_HOT_CACHE_TTL_MS,               \
-        60000, 3600000,                     \
+        60000, 30000, 3600000,              \
         L"cg_warm.db", L"cg_cold.db",       \
         90, DEF_PATH_MAX_DEPTH, 50,         \
         TRUE, TRUE, TRUE, 0,                \
@@ -72,6 +73,10 @@ typedef struct _ORC_ENGINE {
     BOOLEAN             T2AlertRunning;
     HANDLE              T3MaintenanceThread;    /* Tier 3 定期维护 (淘汰过期链+多点关联) */
     BOOLEAN             T3MaintenanceRunning;
+
+    /* 进程对 + 聚合边 过期清理线程 (仅启用此条, 对齐 driver 侧主/子对象清理) */
+    HANDLE              PairCleanupThread;
+    BOOLEAN             PairCleanupRunning;
 
     CRITICAL_SECTION    Lock;
 } ORC_ENGINE, *PORC_ENGINE;

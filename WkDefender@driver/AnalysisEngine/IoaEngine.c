@@ -159,7 +159,7 @@ IoapBehaviorAddRef(
 // 导致行为节点（含 Records 数组）永久泄漏。
 //
 // 约束：桶锁内回调，仅允许无锁/原子操作；
-// PsDereferenceBehavior 内部为 InterlockedDecrement + 可能的
+// PsDereferenceWkdBehavior 内部为 InterlockedDecrement + 可能的
 // DaDestroy/ExFreePoolWithTag，均不获取锁，安全。
 //
 FORCEINLINE
@@ -169,7 +169,7 @@ IoapBehaviorDeref(
     _In_ PVOID Value
     )
 {
-    PsDereferenceBehavior((PWKD_BEHAVIOR)Value);
+    PsDereferenceWkdBehavior((PWKD_BEHAVIOR)Value);
 }
 
 //
@@ -275,13 +275,16 @@ Return Value:
     InterlockedIncrement(&WkdIoaEngine.TotalAnalyzers);
     InterlockedIncrement(&WkdIoaEngine.ActiveAnalyzers);
 
-    Pair->IoaContext = ioaContext;
+    if (InterlockedCompareExchangePointer(&Pair->IoaContext, ioaContext, NULL)) {
+        /* 更新指针时竞争失败，输家释放内存 */
+        ExFreePoolWithTag(ioaContext, 'ioaC');
+    }
     return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
 VOID
-IoaFreeProcessPairContext(
+IoaDestroyProcessPairContext(
     _Inout_ PAE_PROCESS_PAIR Pair
     )
 /*++
@@ -291,7 +294,7 @@ Routine Description:
     再等待运行中的提交路径（AeReportIndicatorEx IOA 分支持 rundown）
     退出，最后无锁释放摘要链全部节点与上下文。
 
-    与 TsFreeProcessPairContext 同模式：提交路径必须先
+    与 TsDestroyProcessPairContext 同模式：提交路径必须先
     ExAcquireRundownProtection(&IoaContext->Rundown) 再使用。
     另须对称解引用 IoaAllocateProcessPairContext 获取的引擎级
     RundownRef，否则 IoaCleanup 的 ExWaitForRundownProtectionRelease
@@ -340,11 +343,8 @@ IoapGetRecordSize(
     )
 {
     PIOA_BEHAVIOR_DISPATCHER dispatcher = IoapLookupDispatcher(Type);
-    if (dispatcher) {
-        return dispatcher->RecordSize;
-    }
-
-    return 0;
+    if (dispatcher) return dispatcher->RecordSize;
+    else return 0;
 }
 
 /**************************************************/
@@ -404,19 +404,20 @@ IoapEsitimateSeverity(
 //
 // 在全局行为节点哈希表中查找指定 <SourceProcessId, TargetProcessId, Type> 的节点。
 // 返回的 PWKD_BEHAVIOR 已被 Reference（即 RefCount++），
-// 调用者使用完毕后需 PsDereferenceBehavior。
+// 调用者使用完毕后需 PsDereferenceWkdBehavior。
 // 返回 NULL 表示未命中。
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 static
 PWKD_BEHAVIOR
-IoapLookupBehavior(
+IoapLookupWkdBehavior(
     _In_ HANDLE SourceProcessId,
     _In_ HANDLE TargetProcessId,
     _In_ WKD_ASSEMBLY_TYPE Type
     )
 {
-    if (!SourceProcessId || !TargetProcessId || !Type) {
+    if (!SourceProcessId || !TargetProcessId ||
+        Type == WkdMessage_Unknow) {
         return NULL;
     }
 
@@ -435,16 +436,17 @@ IoapLookupBehavior(
 _IRQL_requires_(PASSIVE_LEVEL)
 static
 NTSTATUS
-IoapFindOrCreateBehavior(
-    _In_ PAE_PROCESS_PAIR Pair,
+IoapFindOrCreateWkdBehavior(
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _Outptr_ PWKD_BEHAVIOR* Behavior
+    _Out_ PWKD_BEHAVIOR* Behavior
     )
 {
     NTSTATUS status;
     PWKD_BEHAVIOR behavior;
 
-    if (!Pair || !Pair->IoaContext || !Type || !Behavior) {
+    if (!Pair || !Pair->IoaContext ||
+        Type == WkdMessage_Unknow || !Behavior) {
         return STATUS_INVALID_PARAMETER;
     }
     *Behavior = NULL;
@@ -452,9 +454,9 @@ IoapFindOrCreateBehavior(
     /* ---- IOA上下文的Rundown由外部函数IoaAnalysisBehavior持有 ---- */
 
     /* ★ 哈希表 O(1) 查找，替代 O(n) 链表遍历 */
-    behavior = IoapLookupBehavior(
+    behavior = IoapLookupWkdBehavior(
         Pair->SourceProcessId, Pair->TargetProcessId, Type);
-    if (behavior != NULL) goto Success;
+    if (behavior) goto Success;
 
     if (InterlockedCompareExchange(&Pair->IoaContext->ActiveBehaviors, 0, 0) >=
         IOA_MAX_BEHAVIORS_PER_PAIR) {
@@ -473,37 +475,34 @@ IoapFindOrCreateBehavior(
         behavior->Type = Type;
         /* 惰性初始化，真正插入记录时申请内存 */
         DaInitialize(&behavior->Records,
-            (ULONG)IoapGetRecordSize(Type),
+            IoapGetRecordSize(Type),
             POOL_FLAG_NON_PAGED, 'bhRc');
     }
 
     /* 持有Pair的写锁 */
     {
         ULONG retry = 3;    /* 默认3次重试机会 */
-        BOOLEAN alreadyExists = FALSE;
         WKD_BEHAVIOR_KEY insertKey = { Pair->SourceProcessId, Pair->TargetProcessId, Type };
 
-    Loop:
+Retry:
         /* 防止因内存持续不足导致的无限递归 */
         if (0 == retry--) goto Cleanup;
 
         /* ---- 挂入全局哈希表（自动增加引用计数） ---- */
         status = CoInsertHashMap(&WkdBehaviorMap,
-            &insertKey, sizeof(insertKey), (ULONG64)behavior, &alreadyExists);
-        if (NT_SUCCESS(status) && !alreadyExists) {
-            /* ---- 挂入遍历链表（需要持有Pair+Behavior锁确保安全） ---- */
+            &insertKey, sizeof(insertKey), (ULONG64)behavior, NULL);
+        if (NT_SUCCESS(status)) {
+            /* ---- 挂入遍历链表 ---- */
             WkdAcquirePushLockExclusive(&Pair->Lock);
-            WkdAcquirePushLockExclusive(&behavior->Lock);
             InsertTailList(&Pair->IoaContext->BehaviorHead, &behavior->Links);
-            WkdReleasePushLockExclusive(&behavior->Lock);
-            Pair->IoaContext->TotalBehaviors++;
-            Pair->IoaContext->ActiveBehaviors++;
             WkdReleasePushLockExclusive(&Pair->Lock);
+            InterlockedIncrement(&Pair->IoaContext->ActiveBehaviors);
+            InterlockedIncrement(&Pair->IoaContext->TotalBehaviors);
             /* 插入完成，返回Behavor对象 */
             goto Success;
-        } else if (alreadyExists) {
+        } else if (status == STATUS_OBJECT_NAME_COLLISION) {
             /* double-check 命中：其他线程先插入了 → 回退 */
-            PWKD_BEHAVIOR existing = IoapLookupBehavior(
+            PWKD_BEHAVIOR existing = IoapLookupWkdBehavior(
                 Pair->SourceProcessId, Pair->TargetProcessId, Type);
             if (existing) {
                 *Behavior = existing;
@@ -512,7 +511,7 @@ IoapFindOrCreateBehavior(
             }
         } 
         /* 插入失败，重试 */
-        goto Loop;
+        goto Retry;
     }
 
 Success:
@@ -725,7 +724,7 @@ static
 NTSTATUS
 IoapExpandRecordCapacityLocked(
     _Inout_ PWKD_BEHAVIOR Behavior,
-    _In_ ULONG NewCapacity
+    _In_ ULONG RequestCapacity
     );
 
 //
@@ -737,8 +736,8 @@ _IRQL_requires_(APC_LEVEL)
 static
 NTSTATUS
 IoapFindRecordSlotLocked(
-    _Inout_ PWKD_BEHAVIOR Behavior,
-    _Outptr_ PIOA_BEHAVIOR_RECORD_ENTRY_HEADER* Slot,
+    _Inout_ const PWKD_BEHAVIOR Behavior,
+    _Out_ PIOA_BEHAVIOR_RECORD_ENTRY_HEADER* Slot,
     _Out_opt_ PULONG SlotIndex
     )
 {
@@ -746,17 +745,15 @@ IoapFindRecordSlotLocked(
     ULONG capacity;
     ULONG wordCount;
 
-    if (!Behavior || !Slot)
-        goto NotFound;
+    if (!Behavior || !Slot) goto NotFound;
     *Slot = NULL;
     if (SlotIndex) *SlotIndex = 0;
 
 Retry:
     capacity = Behavior->Records.Capacity;
-
+    
     /* 有效记录数达到容量上限 → 无空位 */
-    if (Behavior->Records.Count >= capacity)
-        goto NotFound;
+    if (Behavior->Records.Count >= capacity) goto NotFound;
 
     // 取上整数
     wordCount = (capacity + 63) / 64;
@@ -792,9 +789,7 @@ NotFound:
 
     capacity = (capacity == 0) ?
         WKD_DA_DEFAULT_CAPACITY : capacity * 2;
-    if (capacity > WKD_DA_MAX_CAPACITY) {
-        capacity = WKD_DA_MAX_CAPACITY;
-    }
+    capacity = min(capacity, WKD_DA_MAX_CAPACITY);
 
     status = IoapExpandRecordCapacityLocked(Behavior, capacity);
     if (!NT_SUCCESS(status)) return status;
@@ -806,24 +801,24 @@ NotFound:
 // IoapExpandRecordCapacityLocked — 扩容行为节点记录数组
 // 遍历位图拷贝有效记录到新数组相同索引，位图/Count 保持不变。
 //
-_IRQL_requires_(APC_LEVEL)
+_Use_decl_annotations_
 static
 NTSTATUS
 IoapExpandRecordCapacityLocked(
     _Inout_ PWKD_BEHAVIOR Behavior,
-    _In_ ULONG NewCapacity
+    _In_ ULONG RequestCapacity
     )
 {
     PVOID newData;
     SIZE_T elemSize, newSize;
     ULONG oldCapacity;
 
-    if (!Behavior || !NewCapacity) {
+    if (!Behavior || RequestCapacity == 0) {
         return STATUS_INVALID_PARAMETER;
     }
 
     elemSize = Behavior->Records.ElementSize;
-    newSize = (SIZE_T)NewCapacity * elemSize;
+    newSize = (SIZE_T)RequestCapacity * elemSize;
     oldCapacity = Behavior->Records.Capacity;
 
     newData = ExAllocatePool2(POOL_FLAG_NON_PAGED, newSize, 'bhRc');
@@ -832,7 +827,7 @@ IoapExpandRecordCapacityLocked(
 
     /* 只拷贝位图中标记为有效的记录（相同索引） */
     {
-        ULONG bitmapWords = (oldCapacity + 63) / 64;
+        LONG bitmapWords = (oldCapacity + 63) / 64;
         for (ULONG i = 0; i < bitmapWords; i++) {
             ULONG64 bits = Behavior->ValidBitmap[i];
             if (bits == 0) continue;
@@ -858,8 +853,7 @@ IoapExpandRecordCapacityLocked(
         ExFreePool(Behavior->Records.Data);
 
     Behavior->Records.Data = newData;
-    Behavior->Records.Capacity = NewCapacity;
-    /* Records.Count / ValidBitmap 不变 */
+    Behavior->Records.Capacity = RequestCapacity;
 
     return STATUS_SUCCESS;
 }
@@ -895,7 +889,7 @@ IoapReclaimExpiredRecordsLocked(
         }
 
         earliestExpiry = Behavior->EarliestExpiryTime.QuadPart;
-        if (earliestExpiry >= CurrentTime.QuadPart) {
+        if (earliestExpiry > CurrentTime.QuadPart) {
             return MAXULONG;
         }
     }
@@ -913,7 +907,7 @@ IoapReclaimExpiredRecordsLocked(
 
         if (WKD_IOA_RECORD_EXPIRY(header->TimeStamp) < CurrentTime.QuadPart) {
             /* 过期 — 从累积值中移除贡献 */
-            Behavior->AccumulatedThreat -= (ULONG)header->Severity;
+            Behavior->AccumulatedThreat -= (LONG)header->Severity;
             Behavior->ValidBitmap[i / 64] &= ~(1ULL << (i % 64));
             header->Valid = FALSE;  /* 冗余标记，调试友好 */
             reclaimed++;
@@ -942,13 +936,13 @@ IoapReclaimExpiredRecordsLocked(
 static
 NTSTATUS
 IoapBuilderDefault(
-    _In_ PIOA_BEHAVIOR_RECORD_ENTRY_HEADER RecordHeader,
+    _Inout_ PIOA_BEHAVIOR_RECORD_ENTRY_HEADER RecordHeader,
     _In_ LARGE_INTEGER CurrentTime,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _In_opt_ PVOID Context
+    _In_opt_ const PVOID Context
     )
 {
-    if (!RecordHeader || !CurrentTime.QuadPart || !Type) {
+    if (!RecordHeader || !CurrentTime.QuadPart || Type == WkdMessage_Unknow) {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -1151,7 +1145,7 @@ IoapInitializeDispatchTable(
 _Use_decl_annotations_
 NTSTATUS
 IoaRefreshProcessPair(
-    _In_ PAE_PROCESS_PAIR Pair,
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ LARGE_INTEGER CurrentTime
     )
 /*++
@@ -1187,38 +1181,27 @@ Return Value:
         PLIST_ENTRY entry;
 
         WkdAcquirePushLockShared(&Pair->Lock);
-
         entry = Pair->IoaContext->BehaviorHead.Flink;
         while (entry != &Pair->IoaContext->BehaviorHead) {
             behavior = CONTAINING_RECORD(entry, WKD_BEHAVIOR, Links);
             entry = entry->Flink;           /* Pair读锁下推进安全 */
 
             /* 安全引用Behavior，防止ufa */
-            InterlockedIncrement(&behavior->RefCount);
+            PsReferenceWkdBehavior(behavior);
 
             if (InterlockedCompareExchange(&behavior->Records.Count, 0, 0) == 0) {
                 if (releaseCount < 64) {
                     toRelease[releaseCount++] = behavior;
-                }
-                else {
-                    InterlockedDecrement(&behavior->RefCount);
-                }
+                } else PsDereferenceWkdBehavior(behavior);
             }
             /* 无锁原子读Behavior，第一轮仅判断 */
             else if (InterlockedCompareExchange(
                 &behavior->EarliestExpiryTime.QuadPart, 0, 0) < CurrentTime.QuadPart) {
                 if (refreshCount < 64) {
                     toRefresh[refreshCount++] = behavior;
-                }
-                else {
-                    InterlockedDecrement(&behavior->RefCount);
-                }
-            }
-            else {
-                InterlockedDecrement(&behavior->RefCount);
-            }
+                } else PsDereferenceWkdBehavior(behavior);
+            } else PsDereferenceWkdBehavior(behavior);
         }
-
         WkdReleasePushLockShared(&Pair->Lock);
 
         if (releaseCount == 0 && refreshCount == 0)
@@ -1251,12 +1234,8 @@ Return Value:
              */
             if (releaseCount < 64) {
                 toRelease[releaseCount++] = behavior;
-            } else {
-                InterlockedDecrement(&behavior->RefCount);
-            }
-        } else {
-            InterlockedDecrement(&behavior->RefCount);
-        }
+            } else  PsDereferenceWkdBehavior(behavior);
+        } else PsDereferenceWkdBehavior(behavior);
 
         WkdReleasePushLockExclusive(&behavior->Lock);
     }
@@ -1279,20 +1258,10 @@ Return Value:
 
                 /* Ref持有者仅当前线程，可安全释放 */
                 ASSERT(InterlockedCompareExchange(&behavior->RefCount, 0, 0) == 1);
-                WkdReleasePushLockExclusive(&behavior->Lock);
-                PsDereferenceBehavior(behavior);
-            } else {
-                //
-                // ShouldRemove 回调拒绝移除（Behavior存在持有者）。
-                // 等待下一轮操作
-                //
-                WkdReleasePushLockExclusive(&behavior->Lock);
-                PsDereferenceBehavior(behavior);
             }
-        } else {
-            WkdReleasePushLockExclusive(&behavior->Lock);
-            PsDereferenceBehavior(behavior);
         }
+        WkdReleasePushLockExclusive(&behavior->Lock);
+        PsDereferenceWkdBehavior(behavior);
     }
 
     WkdReleasePushLockExclusive(&Pair->Lock);
@@ -1313,20 +1282,20 @@ _IRQL_requires_max_(APC_LEVEL)
 static
 NTSTATUS
 IoaRecordBehavior(
-    _In_ PAE_PROCESS_PAIR Pair,
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _In_opt_ PVOID Context,
+    _In_opt_ const PVOID Context,
     _Out_ PAE_THREAT_SEVERITY Severity
     )
 {
     NTSTATUS status;
     PIOA_BEHAVIOR_DISPATCHER dispatcher;
-    PWKD_BEHAVIOR var_behavior;
+    PWKD_BEHAVIOR behavior;
     PIOA_BEHAVIOR_RECORD_ENTRY_HEADER slot;
     LARGE_INTEGER currentTime;
     ULONG slotIndex;
 
-    if (!Pair || !Pair->IoaContext ||!Type || !Severity) {
+    if (!Pair || !Pair->IoaContext ||Type == WkdMessage_Unknow || !Severity) {
         return STATUS_INVALID_PARAMETER;
     }
     *Severity = AeThreatSeverityNone;
@@ -1336,17 +1305,17 @@ IoaRecordBehavior(
     /* ---- 获取当前时间 ---- */
     KeQuerySystemTime(&currentTime);
 
-    status = IoapFindOrCreateBehavior(Pair, Type, &var_behavior);
+    status = IoapFindOrCreateWkdBehavior(Pair, Type, &behavior);
     if (!NT_SUCCESS(status)) return status;
 
     /* ---- 获取节点推锁（独占） ---- */
-    WkdAcquirePushLockExclusive(&var_behavior->Lock);
+    WkdAcquirePushLockExclusive(&behavior->Lock);
 
     /* ---- 回收过期记录 ---- */
-    IoapReclaimExpiredRecordsLocked(var_behavior, currentTime);
+    IoapReclaimExpiredRecordsLocked(behavior, currentTime);
 
     /* ---- 找槽位，必要时扩容 ---- */
-    status = IoapFindRecordSlotLocked(var_behavior, &slot, &slotIndex);
+    status = IoapFindRecordSlotLocked(behavior, &slot, &slotIndex);
     if (!NT_SUCCESS(status)) goto Cleanup;
 
     /* ---- 构建记录（填充 ThreatContribution） ---- */
@@ -1360,20 +1329,20 @@ IoaRecordBehavior(
     if (!NT_SUCCESS(status)) goto Cleanup;
 
     /* 位图标记 + 有效计数 */
-    var_behavior->ValidBitmap[slotIndex / 64] |= (1ULL << (slotIndex % 64));
-    var_behavior->Records.Count++;
+    behavior->ValidBitmap[slotIndex / 64] |= (1ULL << (slotIndex % 64));
+    behavior->Records.Count++;
 
     /* ---- 累积威胁贡献（Resolver 连续威胁值；Severity 仅用于评分提交） ---- */
     if (dispatcher->Resolver) {
-        var_behavior->AccumulatedThreat += dispatcher->Resolver(slot);
+        behavior->AccumulatedThreat += dispatcher->Resolver(slot);
     } else {
-        var_behavior->AccumulatedThreat += (ULONG)slot->Severity;
+        behavior->AccumulatedThreat += (ULONG)slot->Severity;
     }
 
     /* 更新节点的最早过期时间 */
-    if (var_behavior->EarliestExpiryTime.QuadPart == 0 ||
-        WKD_IOA_RECORD_EXPIRY(currentTime) < var_behavior->EarliestExpiryTime.QuadPart) {
-        var_behavior->EarliestExpiryTime.QuadPart = WKD_IOA_RECORD_EXPIRY(currentTime);
+    if (behavior->EarliestExpiryTime.QuadPart == 0 ||
+        WKD_IOA_RECORD_EXPIRY(currentTime) < behavior->EarliestExpiryTime.QuadPart) {
+        behavior->EarliestExpiryTime.QuadPart = WKD_IOA_RECORD_EXPIRY(currentTime);
     }
 
     /* ---- MITRE 基础分 severity 上调（L1 前置评分） ----
@@ -1392,21 +1361,15 @@ IoaRecordBehavior(
         }
         *Severity = submitSev;
     }
+
+    InterlockedIncrement(&Pair->IoaContext->ActiveRecords);
+    InterlockedIncrement(&Pair->IoaContext->TotalRecords);
+    InterlockedExchange64(&Pair->LastAccessTime.QuadPart, currentTime.QuadPart);
     status = STATUS_SUCCESS;
 
 Cleanup:
-    WkdReleasePushLockExclusive(&var_behavior->Lock);
-    PsDereferenceBehavior(var_behavior);
-
-    if (NT_SUCCESS(status)) {
-        /* ---- 更新进程对元数据（避免锁序反转导致的死锁问题） ---- */
-        WkdAcquirePushLockExclusive(&Pair->Lock);
-        Pair->LastAccessTime = currentTime;
-        Pair->IoaContext->TotalRecords++;
-        Pair->IoaContext->ActiveRecords++;
-        WkdReleasePushLockExclusive(&Pair->Lock);
-    }
-
+    WkdReleasePushLockExclusive(&behavior->Lock);
+    PsDereferenceWkdBehavior(behavior);
     return status;
 }
 
@@ -1426,16 +1389,16 @@ Cleanup:
 _Use_decl_annotations_
 NTSTATUS
 IoaAnalysisBehavior(
-    _In_ PAE_PROCESS_PAIR Pair,
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _In_opt_ PVOID Context,
+    _In_opt_ const PVOID Context,
     _Out_opt_ PAE_THREAT_SEVERITY Severity
     )
 {
     NTSTATUS status;
     AE_THREAT_SEVERITY severity = AeThreatSeverityNone;
 
-    if (!Pair || !Pair->IoaContext || !Type) {
+    if (!Pair || !Pair->IoaContext || Type == WkdMessage_Unknow) {
         return STATUS_INVALID_PARAMETER;
     }
     if (Severity) *Severity = AeThreatSeverityNone;
@@ -1453,7 +1416,7 @@ IoaAnalysisBehavior(
 
     /* ---- 步骤 2: 提交 IOA 指示记录（统一入口） ----
      * 此处不持任何 IOA 锁（IoaRecordBehavior 已释放 behavior->Lock，
-     * pair->Lock 仅在 IoapFindOrCreateBehavior 插入段短暂持有），
+     * pair->Lock 仅在 IoapFindOrCreateWkdBehavior 插入段短暂持有），
      * 取 TsContext->Lock 无锁序风险。
      */
     {

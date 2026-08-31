@@ -15,8 +15,8 @@
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
 IocAnalysisProcess(
-    _In_ PAE_PROCESS_PAIR Pair,
-    _In_ PPS_CREATE_NOTIFY_INFO CreateInfo
+    _Inout_ PAE_PROCESS_PAIR Pair,
+    _In_ const PPS_CREATE_NOTIFY_INFO CreateInfo
     );
 
 //

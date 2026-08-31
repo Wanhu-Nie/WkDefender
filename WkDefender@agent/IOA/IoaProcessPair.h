@@ -117,8 +117,8 @@ AeDereferenceProcessPair(
 BOOLEAN
 IoaPairResolveNodeIds(
     _In_      PAE_PROCESS_PAIR PairCtx,
-    _Out_opt_ GUID*                     SrcNodeId,
-    _Out_opt_ GUID*                     TgtNodeId
+    _Out_opt_ GUID*                     SourceNodeId,
+    _Out_opt_ GUID*                     TargetNodeId
     );
 
 /*
@@ -127,18 +127,19 @@ IoaPairResolveNodeIds(
  *
  * 参数:
  *   PairCtx — 进程对上下文。
- *   Entry   — 边聚合条目（必须已由 IoaGetOrCreateAggregateEdge 创建）。
+ *   Entry   — 边聚合条目（必须已由 IoaFindOrCreateAggregateEdge 创建）。
  */
-VOID PairContext_AttachEdge(
-    _Inout_ PAE_PROCESS_PAIR PairCtx,
-    _Inout_ PIOA_AGGREGATE_EDGE       Entry
+NTSTATUS
+IoaAggregateEdgeAttachProcessPair(
+    _Inout_ PAE_PROCESS_PAIR Pair,
+    _Inout_ PIOA_AGGREGATE_EDGE AggEdge
     );
 
 /*
  * 刷新进程对的统计计数。
  *
- * 遍历 EdgeListHead，对所有边聚合条目汇总 TotalEventCount 和 ActiveEventCount。
- * 结果写入 PairCtx->TotalEventCount 和 ActiveEventCount。
+ * 遍历 EdgeListHead，对所有边聚合条目汇总 TotalEvents 和 ActiveEdges。
+ * 结果写入 PairCtx->TotalEvents 和 ActiveEdges。
  *
  * 参数:
  *   PairCtx — 进程对上下文。
@@ -153,8 +154,25 @@ VOID PairContext_RefreshScore(
  * 后台清理过期进程对。
  * 移除超过 PAIR_TTL_MS 无活动的进程对及其关联边聚合。
  */
-VOID PairManager_CleanupExpired(
-    _In_ PIOA_PROCESS_PAIR_MANAGER Manager
+VOID IocCleanupExpiredProcessPair(
+    _In_opt_ PIOA_PROCESS_PAIR_MANAGER Manager
+    );
+
+/*
+ * 注册为"受监视进程对" (调试/存在性巡检用途)。
+ * 按 PID 二元组去重记录; 供 IocCleanupExpiredProcessPair 快照后精确
+ * 直查 PairMap 验证目标进程对 (如 <system,loadpe>/<explorer,loadpe>/
+ * <loadpe,loadpe>) 是否真实存在于表中, 以对照快照枚举是否漏项。
+ *
+ * 调用方: Engine.c 命中目标 loadpe.exe 事件时, 以当前事件源/目标 PID 注册。
+ *
+ * 参数:
+ *   SourcePid — 源进程 PID (不得为 0)。
+ *   TargetPid — 目标进程 PID (不得为 0)。
+ */
+VOID IocRegisterMonitoredProcessPair(
+    _In_ HANDLE SourcePid,
+    _In_ HANDLE TargetPid
     );
 
 /*

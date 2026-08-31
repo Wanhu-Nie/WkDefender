@@ -44,6 +44,12 @@ Return Value:
 {
     if (!WkdProcess) return;
 
+    if (CoCheckUnicodeStringValidity(&WkdProcess->ImagePath) &&
+        _wcsicmp(WkdProcess->ImagePath->Buffer,
+            L"c:\\users\\walker\\desktop\\loadpe.exe") == 0) {
+        printf("==> loadpe.exe destroy!\n");
+    }
+
     /* 释放线程/模块 */
     PsDestroyThreadContext(WkdProcess);
     PsDestroyModuleContext(WkdProcess);
@@ -268,7 +274,19 @@ Return Value:
 
     if (!WkdProcess) return MAXLONG;
     ref = InterlockedDecrement(&WkdProcess->RefCount);
-    if (ref  == 0) {
+    /* 当前仅有 hashmap 持有引用计数，说明进程已退出，进程对和聚合边均已经被清理 */
+    if (ref  == 1) {
+        if (CoCheckUnicodeStringValidity(&WkdProcess->ImagePath) &&
+            _wcsicmp(WkdProcess->ImagePath->Buffer,
+                L"c:\\users\\walker\\desktop\\loadpe.exe") == 0) {
+            printf("found\n");
+        }
+        BOOLEAN removed = CoRemoveHashMapEntry(&WkdProcessTree.PidMap,
+            &WkdProcess->ProcessId,
+            sizeof(HANDLE), FALSE);
+        if (remove) ref = 0;
+    } else if (ref == 0) {
+        /* 进程对象无任何持有者，安全无锁释放 */
         PspDestroyWkdProcess(WkdProcess);
     }
     return ref;
@@ -409,7 +427,7 @@ Return Value:
     /* 枚举销毁全部节点（Cleanup 为单线程收尾场景，锁内销毁可接受；
      * PidMap 回调契约: BOOLEAN (Key, KeySize, Value, Context)）。
      * 枚举回调对每节点解链子 + 释放表引用 → 归零销毁。 */
-    CoHashMapEnumerate(&Tree->PidMap, PtpDestroyNodeEnumCallback, Tree);
+    CoEnumerateHashMap(&Tree->PidMap, PtpDestroyNodeEnumCallback, Tree);
 
     /* 摘除索引（条目 key/entry 内存随表释放; CoHashMapClear 对齐驱动
      * teardown 语义不清引用 — Value 已在上一步全部销毁）。 */
@@ -477,7 +495,7 @@ Cleanup_1:
 
     /* ---- Step 2-2: 新代覆盖 → 解链旧代子节点后销毁, Child 接管索引 ---- */
     if (existing) {
-        if (!CoRemoveHashMapEntry(&Tree->PidMap, &selfPid, sizeof(HANDLE))) {
+        if (!CoRemoveHashMapEntry(&Tree->PidMap, &selfPid, sizeof(HANDLE), FALSE)) {
             /* 防御性回退 (锁内不可达): Remove 失败未摘除, 归还查找 pin
              * 后按「旧者胜出」语义返回。 */
             goto Cleanup_1;
@@ -573,9 +591,8 @@ Return Value:
     process->Alive         = TRUE;
     process->ParentProcessId     = (ULONG)(ULONG_PTR)payload->ParentProcessId;
     process->LastActivity  = Event->Timestamp;
-    /* 调用者引用: 入树后 Insert Reference 再 +1 (表引用), 合计 2;
-     * 调用方 (Engine.c) 用完 PsDereferenceWkdProcess 归还 → 剩表引用。 */
-    process->RefCount       = 1;
+    /* 初始状态+1 - 进程有效；返回给调用者+1 */
+    process->RefCount = 2;
     InitializeListHead(&process->ChildrenHead);
     InitializeListHead(&process->ChildrenLink);
     InitializeListHead(&process->GlobalLink);
@@ -591,18 +608,6 @@ Return Value:
     if (CoCheckUnicodeStringValidity(&payload->ImageFileName))
         CoCopyUnicodeString(&process->ImageFileName, &payload->ImageFileName);
     RtlCopyMemory(&process->ImageHash, &payload->ImageHash, sizeof(DEF_SHA256_HASH));
-
-    /* ---- Debug: 过滤打印目标进程 (2026-08-25 调试辅助, 验证完删除) ---- */
-    if (CoCheckUnicodeStringValidity(&payload->ImagePath) &&
-        _wcsicmp(process->ImagePath->Buffer,
-                 L"c:\\users\\walker\\desktop\\loadpe.exe") == 0) {
-        printf("[PsCreateWkdProcess] >>> TARGET HIT: loadpe.exe <<< "
-               "Pid=%lu ParentPid=%lu SessionId=%lu CreateTime=%lld\n",
-               (ULONG)(ULONG_PTR)process->ProcessId,
-               process->ParentProcessId,
-               process->SessionId,
-               process->CreateTime.QuadPart);
-    }
 
     /* 系统进程检测 */
     //if (process->ImagePath && process->ImagePath->Buffer) {
@@ -703,7 +708,7 @@ Return Value:
     ctx.NodeId = &NodeId;
     ctx.Found  = NULL;
 
-    CoHashMapEnumerate(&Tree->PidMap, PtpFindNodeByGuidCallback, &ctx);
+    CoEnumerateHashMap(&Tree->PidMap, PtpFindNodeByGuidCallback, &ctx);
     return ctx.Found;
 }
 
@@ -872,7 +877,7 @@ Return Value:
             return STATUS_SUCCESS;
         }
         if (CoRemoveHashMapEntry(&Tree->PidMap,
-                                 &SnapshotNode->ProcessId, sizeof(HANDLE))) {
+                                 &SnapshotNode->ProcessId, sizeof(HANDLE), FALSE)) {
             PspUnlinkAndOrphanChildren(existing);   /* 旧代子节点重新孤立 */
             /* Remove 已触发 Dereference (-1 表引用); 此处归还查找 pin,
              * 通常即归零销毁。 */
@@ -996,6 +1001,6 @@ Return Value:
     ctx.ExitCb   = ExitCb;
 
     AcquireSRWLockExclusive(&Tree->Lock);
-    CoHashMapEnumerate(&Tree->PidMap, PtpReconcileEnumCallback, &ctx);
+    CoEnumerateHashMap(&Tree->PidMap, PtpReconcileEnumCallback, &ctx);
     ReleaseSRWLockExclusive(&Tree->Lock);
 }

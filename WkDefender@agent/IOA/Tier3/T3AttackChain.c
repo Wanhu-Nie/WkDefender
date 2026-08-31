@@ -212,9 +212,13 @@ T3pComputeMergeScore(
                 Chain->ProcessSet[i],
                 Evidence->SrcProcessNodeId,
                 DefEdge_Unknown);  /* 任意边类型 */
-            if (agg && agg->ActiveEdgeCount > 0) {
-                score += 10;
-                break;
+            if (agg) {
+                if (agg->ActiveEdges > 0) {
+                    score += 10;
+                    IoaDereferenceAggregateEdge(agg);
+                    break;
+                }
+                IoaDereferenceAggregateEdge(agg);
             }
         }
     }

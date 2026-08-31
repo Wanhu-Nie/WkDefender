@@ -7,6 +7,7 @@
 /**************************************************/
 
 #include "ProcessThread.h"
+#include "ProcessTree.h"
 #include "../tools.h"
 
 /**************************************************/
@@ -96,6 +97,7 @@ Return Value:
     ReleaseSRWLockExclusive(&ctx->Lock);
     InterlockedIncrement(&ctx->ActiveThreads);
     InterlockedIncrement(&ctx->TotalThreads);
+    PsReferenceWkdProcess(WkdProcess);
 
     *WkdThread = thread;
     return STATUS_SUCCESS;
@@ -139,6 +141,7 @@ Return Value:
             free(thread);
             InterlockedDecrement(&ctx->ActiveThreads);
             ReleaseSRWLockExclusive(&ctx->Lock);
+            PsDereferenceWkdProcess(WkdProcess);
             return STATUS_SUCCESS;
         }
         entry = next;

@@ -24,7 +24,7 @@ typedef struct _WKD_BEHAVIOR_KEY {
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 IoaRefreshProcessPair(
-    _In_ PAE_PROCESS_PAIR Pair,
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ LARGE_INTEGER CurrentTime
     );
 
@@ -44,7 +44,7 @@ IoaAllocateProcessPairContext(
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 VOID
-IoaFreeProcessPairContext(
+IoaDestroyProcessPairContext(
     _Inout_ PAE_PROCESS_PAIR Pair
     );
     
@@ -259,16 +259,16 @@ typedef struct _AE_IOA_RECORD {
 typedef struct _AE_IOA_CONTEXT {
     /* ---- 行为链（下沉自 pair 本体） ---- */
     LIST_ENTRY      BehaviorHead;       // 行为节点链表（WKD_BEHAVIOR）
-    volatile ULONG  ActiveBehaviors;    // 当前行为节点数
-    volatile ULONG  TotalBehaviors;     // 累计行为节点数（只增不减）
+    volatile LONG  ActiveBehaviors;    // 当前行为节点数
+    volatile LONG  TotalBehaviors;     // 累计行为节点数（只增不减）
 
     /* ---- 行为记录统计（迁移自 pair->TotalRecords/ActiveRecords） ---- */
-    volatile ULONG  TotalRecords;       // 累计行为记录数（只增不减）
-    volatile ULONG  ActiveRecords;      // 当前IOA所有有效行为记录数
+    volatile LONG  TotalRecords;       // 累计行为记录数（只增不减）
+    volatile LONG  ActiveRecords;      // 当前IOA所有有效行为记录数
 
     /* ---- 摘要记录链 ---- */
     LIST_ENTRY      IoaChain;           // 摘要记录链（FIFO 上限 WKD_MAX_IOA_CHAIN_RECORDS）
-    volatile ULONG  IoaChainCount;      // 当前摘要记录数（FIFO 判断）
+    volatile LONG  IoaChainCount;      // 当前摘要记录数（FIFO 判断）
     LARGE_INTEGER   LastRecordTime;
 } AE_IOA_CONTEXT, *PAE_IOA_CONTEXT;
 
@@ -311,9 +311,9 @@ IoaCleanup(
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
 IoaAnalysisBehavior(
-    _In_ PAE_PROCESS_PAIR Pair,
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _In_opt_ PVOID Context,
+    _In_opt_ const PVOID Context,
     _Out_opt_ PAE_THREAT_SEVERITY Severity
     );
 

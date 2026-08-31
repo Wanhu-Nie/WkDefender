@@ -37,7 +37,7 @@ Routine Description:
 
     排除: PID 0/4 (Idle/System) 及无父进程不计孤儿。
 
-    [死代码] IocDetectThread 整体依赖 AeDispatchThreadCreated 重接线
+    [死代码] IocObserveThread 整体依赖 AeDispatchThreadCreated 重接线
     （ThreadNotify.c 用户决策 2026-08: 线程事件只上送 agent 不驱动评分）。
     活代码等价物: agent IoaGenealogy isOrphan (T1_GFLAG_ORPHAN) +
     IoaInjectionClassifier 注入风险分孤儿修正。
@@ -81,8 +81,8 @@ Return Value:
 
 _Use_decl_annotations_
 NTSTATUS
-IocDetectThread(
-    _In_ PAE_PROCESS_PAIR Pair,
+IocObserveThread(
+    _Inout_ PAE_PROCESS_PAIR Pair,
     _In_ PWKD_THREAD WkdThread
     )
 {
@@ -92,7 +92,7 @@ IocDetectThread(
     if (!Pair || !WkdThread) return STATUS_INVALID_PARAMETER;
 
     wkdProcess = PsLookupWkdProcessByProcessId(WkdThread->ProcessId);
-    if (!NT_SUCCESS(wkdProcess)) DbgBreakPoint();
+    if (!wkdProcess) { DbgBreakPoint(); goto Cleanup; }
 
     /*
      * === 内存分析（对齐 PS TnpGetMemoryProtection） ===
@@ -155,9 +155,9 @@ IocDetectThread(
         }
 
         /* 模块起始地址是否与MemoryRegionBaseAddress一致??? */
-        if (WkdThread->MemoryRegionBaseAddress != instance->Module->ImageSize) {
-            DbgBreakPoint();
-        }
+        //if (WkdThread->MemoryRegionBaseAddress != instance->Module->ImageSize) {
+        //    DbgBreakPoint();
+        //}
     }
 
     /*
@@ -361,7 +361,7 @@ IocDetectThread(
     /*
      * 10. (新增) 孤儿注入器 — 源进程父进程已退出
      *     对齐 SS PR_SCORE_ORPHANED_INJECTOR=200 修正（源节点 IsOrphan）。
-     *     [死代码] 同 IocDetectThread 整体（依赖 AeDispatchThreadCreated 重接线，
+     *     [死代码] 同 IocObserveThread 整体（依赖 AeDispatchThreadCreated 重接线，
      *     ThreadNotify.c 用户决策 2026-08）; 活代码等价物:
      *     agent IoaInjectionClassifier 注入风险分孤儿修正。
      */

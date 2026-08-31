@@ -245,3 +245,137 @@ Return Value:
         free(Strting);
     }
 }
+
+/**************************************************/
+/*           用户态 Rundown Protection 实现          */
+/**************************************************/
+
+/* rundown 已开始标志: 占用 LONG 最高位表示禁止获取 rundown, 低 31 位作引用计数 */
+#define WKD_RUNDOWN_ACTIVE_BIT  0x80000000UL
+
+_Use_decl_annotations_
+NTSTATUS
+CoInitializeRundownProtection(
+    _Out_ PWKD_RUNDOWN_REF RundownRef
+    )
+/*++
+Routine Description:
+    初始化 rundown protection 结构: 计数零化 + 创建 manual-reset 事件。
+
+Arguments:
+    RundownRef — 待初始化结构。
+
+Return Value:
+    STATUS_SUCCESS / STATUS_NO_MEMORY。
+--*/
+{
+    if (!RundownRef) return STATUS_INVALID_PARAMETER;
+
+    RundownRef->RefCount = 1;   /* 表示 Rundown 活跃 */
+    RundownRef->Event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (RundownRef->Event == NULL) {
+        return STATUS_UNSUCCESSFUL;
+    } else return STATUS_SUCCESS;
+}
+
+_Use_decl_annotations_
+VOID
+CoRundownCompleted(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    )
+/*++
+Routine Description:
+    释放事件句柄。调用方须确保已 CoWaitForRundownProtectionRelease。
+    重复调用安全: 第二次起 Event 为 NULL 直接返回。
+
+Arguments:
+    RundownRef — 待清理结构。
+
+Return Value:
+    无。
+--*/
+{
+    if (RundownRef->Event != NULL) {
+        CloseHandle(RundownRef->Event);
+        RundownRef->Event = NULL;
+    }
+    RundownRef->RefCount = 0;
+}
+
+_Use_decl_annotations_
+BOOLEAN
+CoAcquireRundownProtection(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    )
+/*++
+Routine Description:
+    原子地"检查 rundown 位 + 加计数"。用 InterlockedCompareExchange 合成
+    单一原子操作, 避免 TOCTOU: 检查未 rundown 之后、加一之前 rundown 发生
+    导致漏保护的竞态。rundown 已开始则直接失败。
+
+Arguments:
+    RundownRef — 目标结构。
+
+Return Value:
+    TRUE  = 获取成功(调用方须配对 CoReleaseRundownProtection);
+    FALSE = 资源正在卸载, 拒绝新引用。
+--*/
+{
+    LONG old;
+    LONG new;
+
+    do {
+        old = InterlockedCompareExchange(&RundownRef->RefCount, 0, 0);
+        if ((ULONG)old & WKD_RUNDOWN_ACTIVE_BIT) return FALSE;
+        new = old + 1;
+    } while (InterlockedCompareExchange(&RundownRef->RefCount, new, old) != old);
+
+    return TRUE;
+}
+
+_Use_decl_annotations_
+VOID
+CoReleaseRundownProtection(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    )
+/*++
+Routine Description:
+    原子减引用计数。若减之前"已 rundown 且计数恰为 1"→ 减后归零,
+    置位事件唤醒 CoWaitForRundownProtectionRelease。
+
+Arguments:
+    RundownRef — 目标结构。
+
+Return Value:
+    无。
+--*/
+{
+    LONG ref = InterlockedDecrement(&RundownRef->RefCount);
+    if ((ref & WKD_RUNDOWN_ACTIVE_BIT) &&
+        ((ref & ~WKD_RUNDOWN_ACTIVE_BIT) == 1)) {
+        SetEvent(RundownRef->Event);
+    }
+}
+
+_Use_decl_annotations_
+VOID
+CoWaitForRundownProtectionRelease(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    )
+/*++
+Routine Description:
+    标记 rundown 开始(置位最高位), 阻塞直到所有已获取引用释放。
+    置位前若仍有活跃引用, 则等待最后一个 CoReleaseRundownProtection 的 SetEvent。
+
+Arguments:
+    RundownRef — 目标结构。
+
+Return Value:
+    无。
+--*/
+{
+    LONG ref = InterlockedOr(&RundownRef->RefCount, WKD_RUNDOWN_ACTIVE_BIT);
+    if ((ref & ~WKD_RUNDOWN_ACTIVE_BIT) != 0) {
+        WaitForSingleObject(RundownRef->Event, INFINITE);
+    }
+}

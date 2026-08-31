@@ -78,3 +78,49 @@ CoCheckUnicodeStringValidity(_In_ PCUNICODE_STRING String) {
     if (!String || !String->Buffer || String->Length == 0) return FALSE;
     else return TRUE;
 }
+
+/**************************************************/
+/*           用户态 Rundown Protection              */
+/*  (对齐 WkDefender@driver 的                     */
+/*   ExInitializeRundownProtection /               */
+/*   ExAcquireRundownProtection 系列;               */
+/*   用户态无锁原子版: 状态位 + 引用计数打包于一个   */
+/*   volatile LONG, 配合 manual-reset 事件唤醒)      */
+/**************************************************/
+
+typedef struct _WKD_RUNDOWN_REF {
+    volatile LONG  RefCount;    /* 高位=已 rundown 标志; 低 31 位=活跃引用数 */
+    HANDLE         Event;       /* manual-reset, 引用归零时置位 */
+} WKD_RUNDOWN_REF, * PWKD_RUNDOWN_REF;
+
+/* 初始化: 零计数 + 创建 manual-reset 事件。失败返回 STATUS_NO_MEMORY。 */
+NTSTATUS
+CoInitializeRundownProtection(
+    _Out_ PWKD_RUNDOWN_REF RundownRef
+    );
+
+/* 销毁: 释放事件句柄。调用方须先 CoWaitForRundownProtectionRelease,
+   确保无活跃引用。重复调用安全(幂等)。 */
+VOID
+CoRundownCompleted(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    );
+
+/* 获取引用: 原子地"检查 rundown 位 + 加计数"。已 rundown 返回 FALSE,
+   调用方应放弃访问受保护资源。 */
+BOOLEAN
+CoAcquireRundownProtection(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    );
+
+/* 释放引用: 原子减计数; 若减前已 rundown 且计数恰为 1→归零, 置位事件唤醒等待者。 */
+VOID
+CoReleaseRundownProtection(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    );
+
+/* 等待所有引用释放: 置位 rundown 标志, 若仍有活跃引用则阻塞到最后一个 Release。 */
+VOID
+CoWaitForRundownProtectionRelease(
+    _Inout_ PWKD_RUNDOWN_REF RundownRef
+    );

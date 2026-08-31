@@ -77,8 +77,8 @@ IoaCarsalGraphInsertEdge(
 PIOA_GRAPH_EDGE
 IoaCarsalGraphLookupEdge(
     _In_ PIOA_CARSAL_GRAPH   Manager,
-    _In_ GUID                 SrcNodeId,
-    _In_ GUID                 TgtNodeId,
+    _In_ GUID                 SourceNodeId,
+    _In_ GUID                 TargetNodeId,
     _In_ IOA_GRAPH_EDGE_TYPE        EdgeType
     );
 
@@ -103,8 +103,8 @@ IoaCarsalGraphLookupEdgeByEventId(
 
 typedef struct _IOA_RELATIONSHIP_INFO {
     IOA_GRAPH_EDGE_TYPE Type;
-    GUID                SrcNodeId;
-    GUID                TgtNodeId;
+    GUID                SourceNodeId;
+    GUID                TargetNodeId;
     LARGE_INTEGER       Timestamp;      /* 边 LastSeen */
     ULONG               Score;          /* 边 Weight (0-100) */
 } IOA_RELATIONSHIP_INFO, *PIOA_RELATIONSHIP_INFO;

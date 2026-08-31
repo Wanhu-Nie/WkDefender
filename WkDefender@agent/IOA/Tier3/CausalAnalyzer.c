@@ -51,7 +51,7 @@ Routine Description:
 static
 HANDLE
 T3pOpenTargetProcess(
-    _In_ GUID TgtNodeId
+    _In_ GUID TargetNodeId
     )
 /*++
 Routine Description:
@@ -62,7 +62,7 @@ Routine Description:
     PWKD_PROCESS tgtNode;
 
     tgtNode = PtTreeLookupByNodeId(
-        &WkdProcessTree, TgtNodeId);
+        &WkdProcessTree, TargetNodeId);
     if (!tgtNode || !tgtNode->Alive) return NULL;
 
     return OpenProcess(
@@ -75,7 +75,7 @@ static
 VOID
 T3pReadTargetMemory(
     _In_    ULONG64  RemoteAddr,
-    _In_    GUID     TgtNodeId,
+    _In_    GUID     TargetNodeId,
     _Out_   UCHAR*   Buffer,
     _In_    ULONG    BufferSize,
     _Out_   PSIZE_T  BytesRead,
@@ -96,7 +96,7 @@ Routine Description:
     if (OutHasDllPath) *OutHasDllPath = FALSE;
     if (BytesRead) *BytesRead = 0;
 
-    hTarget = T3pOpenTargetProcess(TgtNodeId);
+    hTarget = T3pOpenTargetProcess(TargetNodeId);
     if (!hTarget || hTarget == INVALID_HANDLE_VALUE) {
         return;
     }
@@ -264,7 +264,7 @@ Routine Description:
         ULONG targetPid = 0;
         if (Candidate) {
             PWKD_PROCESS tgtNode = PtTreeLookupByNodeId(
-                &WkdProcessTree, Candidate->TgtNodeId);
+                &WkdProcessTree, Candidate->TargetNodeId);
             if (tgtNode) {
                 targetPid = (ULONG)(ULONG_PTR)tgtNode->ProcessId;
             }
@@ -448,7 +448,7 @@ Routine Description:
 
         T3pReadTargetMemory(
             OutItem->Params.MemoryWrite.BaseAddress,
-            Candidate->TgtNodeId,
+            Candidate->TargetNodeId,
             buffer, 64,
             &actualRead, &hasMZ, &hasDllPath);
 
@@ -587,7 +587,7 @@ Routine Description:
         {
             UCHAR buffer[64];
             SIZE_T actualRead = 0;
-            T3pReadTargetMemory(reqAddr, Candidates[0].TgtNodeId,
+            T3pReadTargetMemory(reqAddr, Candidates[0].TargetNodeId,
                                  buffer, 64, &actualRead, &hasMZ, &hasDllPath);
             FusedItem->Params.MemoryWrite.HasMZ      = hasMZ;
             FusedItem->Params.MemoryWrite.HasDllPath  = hasDllPath;

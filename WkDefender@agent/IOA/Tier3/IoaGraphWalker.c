@@ -252,11 +252,11 @@ Return Value:
                         BOOLEAN dup = FALSE;
                         ULONG v;
                         for (v = 0; v < vCount; v++) {
-                            if (DefGuidEqual(&visited[v], &edge->SrcNodeId)) { dup = TRUE; break; }
+                            if (DefGuidEqual(&visited[v], &edge->SourceNodeId)) { dup = TRUE; break; }
                         }
                         if (!dup && vCount < GW_CHAIN_MAX_NODES) {
-                            WkdCopyGuid(&visited[vCount], &edge->SrcNodeId); vCount++;
-                            WkdCopyGuid(&queue[qTail], &edge->SrcNodeId); qTail++;
+                            WkdCopyGuid(&visited[vCount], &edge->SourceNodeId); vCount++;
+                            WkdCopyGuid(&queue[qTail], &edge->SourceNodeId); qTail++;
                             GwFillPathNode(&BackwardPath[outIdx], edge->SrcNode, edge->Type, depth);
                             outIdx++;
                             found = TRUE;
@@ -295,11 +295,11 @@ Return Value:
                         BOOLEAN dup = FALSE;
                         ULONG v;
                         for (v = 0; v < vCount; v++) {
-                            if (DefGuidEqual(&visited[v], &edge->TgtNodeId)) { dup = TRUE; break; }
+                            if (DefGuidEqual(&visited[v], &edge->TargetNodeId)) { dup = TRUE; break; }
                         }
                         if (!dup && vCount < GW_CHAIN_MAX_NODES) {
-                            WkdCopyGuid(&visited[vCount], &edge->TgtNodeId); vCount++;
-                            WkdCopyGuid(&queue[qTail], &edge->TgtNodeId); qTail++;
+                            WkdCopyGuid(&visited[vCount], &edge->TargetNodeId); vCount++;
+                            WkdCopyGuid(&queue[qTail], &edge->TargetNodeId); qTail++;
                             GwFillPathNode(&ForwardPath[outIdx], edge->TgtNode, edge->Type, depth);
                             outIdx++;
                             found = TRUE;

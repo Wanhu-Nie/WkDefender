@@ -378,17 +378,17 @@ _Must_inspect_result_
 NTSTATUS
 TsAllocateProcessPairContext(
     _In_opt_ PTS_ENGINE Engine,
-    _In_ PAE_PROCESS_PAIR Pair
+    _Inout_ PAE_PROCESS_PAIR Pair
     );
 
 //
-// TsFreeProcessPairContext — 销毁进程对的 TsContext
+// TsDestroyProcessPairContext — 销毁进程对的 TsContext
 // 由 PsDereferenceWkdProcessPair refcount==0 分支调用。
 // 释放双链全部记录 + 释放 TsContext + 置 NULL。
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 VOID
-TsFreeProcessPairContext(
+TsDestroyProcessPairContext(
     _In_opt_ PTS_ENGINE Engine,
     _In_ PAE_PROCESS_PAIR Pair
     );

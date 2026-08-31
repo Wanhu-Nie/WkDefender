@@ -30,7 +30,7 @@ typedef struct _WKD_SEQ_ENGINE {
     WKD_SEQUENCE_RULE Rules[WKD_SEQ_MAX_RULES];
     ULONG             RuleCount;
 
-    /* 状态稀疏哈希 <SrcNodeId,TgtNodeId,RuleIndex> (对齐 FSM PatternHashBuckets) */
+    /* 状态稀疏哈希 <SourceNodeId,TargetNodeId,RuleIndex> (对齐 FSM PatternHashBuckets) */
     LIST_ENTRY        StateHashBuckets[WKD_SEQ_STATE_HASH_BUCKETS];
     volatile LONG     StateCount;
 
@@ -1201,8 +1201,8 @@ Routine Description:
 
 static ULONG
 SeqHashState(
-    _In_ GUID   SrcNodeId,
-    _In_ GUID   TgtNodeId,
+    _In_ GUID   SourceNodeId,
+    _In_ GUID   TargetNodeId,
     _In_ ULONG  RuleIndex
     )
 {
@@ -1210,11 +1210,11 @@ SeqHashState(
     PUCHAR p;
     ULONG i;
 
-    p = (PUCHAR)&SrcNodeId;
+    p = (PUCHAR)&SourceNodeId;
     for (i = 0; i < sizeof(GUID); i++) {
         hash = ((hash << 5) + hash) ^ p[i];
     }
-    p = (PUCHAR)&TgtNodeId;
+    p = (PUCHAR)&TargetNodeId;
     for (i = 0; i < sizeof(GUID); i++) {
         hash = ((hash << 5) + hash) ^ p[i];
     }
@@ -1225,12 +1225,12 @@ SeqHashState(
 /* 查找活跃匹配状态 (对齐 PM stateExists 检查 L1297-1325) */
 static PWKD_SEQ_MATCH_STATE
 SeqLookupState(
-    _In_ GUID   SrcNodeId,
-    _In_ GUID   TgtNodeId,
+    _In_ GUID   SourceNodeId,
+    _In_ GUID   TargetNodeId,
     _In_ ULONG  RuleIndex
     )
 {
-    ULONG bucket = SeqHashState(SrcNodeId, TgtNodeId, RuleIndex);
+    ULONG bucket = SeqHashState(SourceNodeId, TargetNodeId, RuleIndex);
     PLIST_ENTRY entry;
 
     for (entry = g_SeqEngine.StateHashBuckets[bucket].Flink;
@@ -1240,8 +1240,8 @@ SeqLookupState(
             CONTAINING_RECORD(entry, WKD_SEQ_MATCH_STATE, HashLink);
         if (state->RuleIndex == RuleIndex &&
             !state->IsComplete && !state->IsStale && !state->IsRemoved &&
-            DefGuidEqual(&state->SrcNodeId, &SrcNodeId) &&
-            DefGuidEqual(&state->TgtNodeId, &TgtNodeId)) {
+            DefGuidEqual(&state->SourceNodeId, &SourceNodeId) &&
+            DefGuidEqual(&state->TargetNodeId, &TargetNodeId)) {
             return state;
         }
     }
@@ -1251,8 +1251,8 @@ SeqLookupState(
 /* 创建匹配状态 (对齐 PmpCreateMatchState) */
 static PWKD_SEQ_MATCH_STATE
 SeqCreateState(
-    _In_ GUID             SrcNodeId,
-    _In_ GUID             TgtNodeId,
+    _In_ GUID             SourceNodeId,
+    _In_ GUID             TargetNodeId,
     _In_ ULONG            RuleIndex,
     _In_ PWKD_EVENT_HEADER Event
     )
@@ -1263,8 +1263,8 @@ SeqCreateState(
     if (!state) return NULL;
 
     RtlZeroMemory(state, sizeof(WKD_SEQ_MATCH_STATE));
-    WkdCopyGuid(&state->SrcNodeId, &SrcNodeId);
-    WkdCopyGuid(&state->TgtNodeId, &TgtNodeId);
+    WkdCopyGuid(&state->SourceNodeId, &SourceNodeId);
+    WkdCopyGuid(&state->TargetNodeId, &TargetNodeId);
     state->RuleIndex       = RuleIndex;
     state->CurrentStep     = 0;
     state->MatchedEvents   = 0;
@@ -1364,8 +1364,8 @@ SeqAllocAndEnqueueAlert(
 
     CoCreateGuid(&alert->AlertId);
     alert->Timestamp       = Event->Timestamp;
-    alert->SuspectNodeId   = State->SrcNodeId;   /* 源=执行者 */
-    alert->VictimNodeId    = State->TgtNodeId;   /* 目标=受害实体 */
+    alert->SuspectNodeId   = State->SourceNodeId;   /* 源=执行者 */
+    alert->VictimNodeId    = State->TargetNodeId;   /* 目标=受害实体 */
     alert->Severity        = Rule->Severity;
     alert->Score           = Rule->ScoreContribution;
     alert->Confidence      = State->ConfidenceScore;
@@ -1860,7 +1860,7 @@ Routine Description:
 
                 /* 插入状态哈希 (对齐 PmpInsertStateIntoProcessHash) */
                 {
-                    ULONG bucket = SeqHashState(state->SrcNodeId, state->TgtNodeId, r);
+                    ULONG bucket = SeqHashState(state->SourceNodeId, state->TargetNodeId, r);
                     InsertTailList(&g_SeqEngine.StateHashBuckets[bucket], &state->HashLink);
                     InterlockedIncrement(&g_SeqEngine.StateCount);
                     InterlockedIncrement64(&g_SeqEngine.TotalStatesCreated);
@@ -1890,8 +1890,8 @@ Routine Description:
 
 NTSTATUS
 PolicyEngine_GetSequenceStates(
-    _In_  GUID SrcNodeId,
-    _In_  GUID TgtNodeId,
+    _In_  GUID SourceNodeId,
+    _In_  GUID TargetNodeId,
     _Out_ PWKD_SEQ_MATCH_STATE* States,
     _In_  ULONG                  MaxStates,
     _Out_ PULONG                 StateCount
@@ -1912,7 +1912,7 @@ Routine Description:
 
     EnterCriticalSection(&g_SeqEngine.Lock);
     for (ULONG r = 0; r < g_SeqEngine.RuleCount; r++) {
-        PWKD_SEQ_MATCH_STATE st = SeqLookupState(SrcNodeId, TgtNodeId, r);
+        PWKD_SEQ_MATCH_STATE st = SeqLookupState(SourceNodeId, TargetNodeId, r);
         if (st && count < MaxStates) {
             InterlockedIncrement(&st->RefCount);
             States[count++] = st;

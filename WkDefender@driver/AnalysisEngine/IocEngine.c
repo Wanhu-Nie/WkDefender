@@ -21,7 +21,7 @@
 /*  对称 IoaEngine（WkdIoaEngine.RundownRef）/      */
 /*  TS_ENGINE.Rundown：引擎级 Rundown 保护。        */
 /*  IocAllocateProcessPairContext 获取引用，         */
-/*  IocFreeProcessPairContext 释放引用，            */
+/*  IocDestroyProcessPairContext 释放引用，            */
 /*  IocCleanup 等待全部释放后返回。                 */
 /**************************************************/
 
@@ -297,7 +297,6 @@ Return Value:
     PAE_IOC_CONTEXT iocContext;
 
     if (!Pair) return STATUS_INVALID_PARAMETER;
-
     /* 获取 IOC 引擎 Rundown（对称 IoaAllocateProcessPairContext，B2 修复） */
     if (!ExAcquireRundownProtection(&WkdIocEngine.RundownRef)) {
         return STATUS_REQUEST_ABORTED;
@@ -313,13 +312,16 @@ Return Value:
 
     InitializeListHead(&iocContext->IocChain);
 
-    Pair->IocContext = iocContext;
+    if (InterlockedCompareExchangePointer(&Pair->IocContext, iocContext, NULL)) {
+        /* 更新指针时竞争失败，输家释放内存 */
+        ExFreePoolWithTag(iocContext, POOL_TAG_IOC_CONTEXT);
+    }
     return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
 VOID
-IocFreeProcessPairContext(
+IocDestroyProcessPairContext(
     _Inout_ PAE_PROCESS_PAIR Pair
     )
 /*++
@@ -329,7 +331,7 @@ Routine Description:
     再等待运行中的提交路径（AeReportIndicatorEx IOC 分支持 rundown）
     退出，最后无锁释放证据链全部节点与上下文。
 
-    与 TsFreeProcessPairContext 同模式：提交路径必须先
+    与 TsDestroyProcessPairContext 同模式：提交路径必须先
     ExAcquireRundownProtection(&IocContext->Rundown) 再使用。
 
 Arguments:

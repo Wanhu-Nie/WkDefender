@@ -77,8 +77,8 @@ ULONG T3MergeSegmentedWrites(
  * 由内容深化结果 (HasMZ/HasDllPath) 触发, 补全 FSM 模板缺口。
  */
 ULONG T3QueryExtraEdge(
-    _In_    GUID                  SrcNodeId,
-    _In_    GUID                  TgtNodeId,
+    _In_    GUID                  SourceNodeId,
+    _In_    GUID                  TargetNodeId,
     _In_    LARGE_INTEGER         WindowStart,
     _In_    LARGE_INTEGER         WindowEnd,
     _Out_   PTIRE3_EVIDENCE_ITEM  ExtraItems,

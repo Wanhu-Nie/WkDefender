@@ -14,8 +14,8 @@
 #include "ProcessPairContext.h"
 #include "../Common/Utils.h"
 #include "../AnalysisEngine/IoaEngine.h"    /* AE_IOA_CONTEXT 完整定义 */
-#include "../AnalysisEngine/IocEngine.h"    /* IocAllocateProcessPairContext / IocFreeProcessPairContext */
-#include "../ThreatScoring/ThreatScoring.h" /* TsAllocateProcessPairContext / TsFreeProcessPairContext */
+#include "../AnalysisEngine/IocEngine.h"    /* IocAllocateProcessPairContext / IocDestroyProcessPairContext */
+#include "../ThreatScoring/ThreatScoring.h" /* TsAllocateProcessPairContext / TsDestroyProcessPairContext */
 
 /**************************************************/
 /*               公共位图默认值                     */
@@ -37,54 +37,22 @@
 /* 全局 pair 数量上限（2026-07 迁移：替代已失效的按进程上限） */
 #define AE_MAX_PROCESS_PAIRS         65536
 
-volatile ULONG WkdPairCount = 0;
+volatile LONG WkdPairCount = 0;
 
 WKD_HASH_MAP WkdProcessPairMap = { 0 };
 ULONG64 g_PairPublicBitmap = WKD_PAIR_PUBLIC_BITMAP_DEFAULT;
-
-//
-// Reference 回调 — 查找命中时 pin 住进程对防止 UAF
-//
-static
-VOID
-IoapPairAddRef(
-    _In_ PVOID Value
-    )
-{
-    InterlockedIncrement(&((PAE_PROCESS_PAIR)Value)->RefCount);
-}
-
-//
-// Dereference 回调 — CoRemoveHashMapEntry 摘除条目成功时在桶独占锁内调用，
-// 释放 HashMap 持有的进程对引用（与插入时的 Reference 配对）。
-// 修复前 HashMap 无解引用机制，pair 从 WkdProcessPairMap 摘除后
-// RefCount 恒残留 +1，进程对（含行为节点）永久泄漏。
-//
-// 约束：桶锁内回调，仅允许无锁/原子操作；
-// PsDereferenceWkdProcessPair 内部为 InterlockedDecrement + 可能的
-// ExFreePoolWithTag（断言检查均为原子读），安全。
-//
-static
-VOID
-IoapPairDeref(
-    _In_ PVOID Value
-    )
-{
-    PsDereferenceWkdProcessPair((PAE_PROCESS_PAIR)Value);
-}
 
 //
 // ShouldRemove 回调 — 仅在 ActiveBehaviors == 0 时允许摘除
 //
 static
 BOOLEAN
-IoapPairShouldRemove(
-    _In_ PVOID Value
+IoapShouldRemoveProcessPair(
+    _In_ const PAE_PROCESS_PAIR Pair
     )
 {
     /* 当前只有hashmap和调用者持有ref时才能删除，否则拒绝 */
-    return (InterlockedCompareExchange(
-        &((PAE_PROCESS_PAIR)Value)->RefCount, 0, 0) == 2);
+    return (InterlockedCompareExchange(&Pair->RefCount, 0, 0) == 1);
 }
 
 /**************************************************/
@@ -103,12 +71,9 @@ Routine Description:
 --*/
 {
     CoInitializeHashMap(&WkdProcessPairMap, 256, TRUE,
-                        IoapPairAddRef,
-                        IoapPairShouldRemove,
-                        IoapPairDeref);
-    WkdProcessPairMap.Reference = IoapPairAddRef;
-    WkdProcessPairMap.ShouldRemove = IoapPairShouldRemove;
-    WkdProcessPairMap.Dereference = IoapPairDeref;
+                        PsReferenceWkdProcessPair,
+                        IoapShouldRemoveProcessPair,
+                        PsDereferenceWkdProcessPair);
     g_PairPublicBitmap = WKD_PAIR_PUBLIC_BITMAP_DEFAULT;
 }
 
@@ -119,8 +84,8 @@ Routine Description:
 _Use_decl_annotations_
 PAE_PROCESS_PAIR
 AeLookupProcessPair(
-    _In_ HANDLE      SourceProcessId,
-    _In_ HANDLE      TargetProcessId
+    _In_ HANDLE SourceProcessId,
+    _In_ HANDLE TargetProcessId
     )
 {
     if (!SourceProcessId || !TargetProcessId) {
@@ -236,7 +201,7 @@ NTSTATUS
 AeFindOrCreateProcessPair(
     _In_ HANDLE SourceProcessId,
     _In_ HANDLE TargetProcessId,
-    _Outptr_ PAE_PROCESS_PAIR* Pair
+    _Out_ PAE_PROCESS_PAIR* Pair
     )
 /*++
 
@@ -269,7 +234,6 @@ Return Value:
     NTSTATUS status;
     LARGE_INTEGER time;
     PAE_PROCESS_PAIR pair;
-    ULONG retry = 3;
 
     if (!SourceProcessId || !TargetProcessId || !Pair) {
         return STATUS_INVALID_PARAMETER;
@@ -278,10 +242,7 @@ Return Value:
 
     /* ===== 快路径：桶共享锁查找（热路径，大概率命中） ===== */
     pair = AeLookupProcessPair(SourceProcessId, TargetProcessId);
-    if (pair) {
-        *Pair = pair;
-        return STATUS_SUCCESS;
-    }
+    if (pair) { *Pair = pair; return STATUS_SUCCESS; }
 
     /* ===== 慢路径：预分配 + CoInsertHashMap（内置 double-check） ===== */
 
@@ -294,18 +255,8 @@ Return Value:
     {
         pair = ExAllocatePool2(POOL_FLAG_NON_PAGED,
             sizeof(AE_PROCESS_PAIR), 'prCt');
-        if (!pair) {
-            return STATUS_NO_MEMORY;
-        }
+        if (!pair) return STATUS_NO_MEMORY;
         RtlZeroMemory(pair, sizeof(AE_PROCESS_PAIR));
-
-        /* 创建阶段Pair无锁 - 安全 */
-        status = IocAllocateProcessPairContext(pair);
-        if (!NT_SUCCESS(status)) goto Cleanup;
-        status = IoaAllocateProcessPairContext(pair);
-        if (!NT_SUCCESS(status)) goto Cleanup;
-        status = TsAllocateProcessPairContext(NULL, pair);
-        if (!NT_SUCCESS(status)) goto Cleanup;
 
         KeQuerySystemTime(&time);
         pair->RefCount = 1;     /* 返回给调用者 */
@@ -316,33 +267,62 @@ Return Value:
         pair->LastAccessTime = time;
         ExInitializePushLock(&pair->Lock);
 
+        /* 需要支持惰性分配，因此上下文创建时需要原子更新 AE_PROCESS_PAIR */
+        status = IocAllocateProcessPairContext(pair);
+        if (!NT_SUCCESS(status)) goto Cleanup;
+        status = IoaAllocateProcessPairContext(pair);
+        if (!NT_SUCCESS(status)) goto Cleanup;
+        status = TsAllocateProcessPairContext(NULL, pair);
+        if (!NT_SUCCESS(status)) goto Cleanup;
+
         /* 行为上下文：RtlZeroMemory 已归零全部字段，乘数须显式置默认 100
          * （SS BepCalculateEventThreatScore：无调节时乘原分，0 会让结算归零） */
         pair->BehaviorContext.ScoreMultiplierPercent = 100;
     }
 
-    /* ---- (2) CoInsertHashMap（内置桶独占锁 + double-check） ---- */
+    /* ---- (2) 进程对安全属性继承 - (SourceProcess | TargetProcess) ---- */
+    {
+        PWKD_PROCESS sourceWkdProcess, targetWkdProcess;
+
+        sourceWkdProcess = PsLookupWkdProcessByProcessId(SourceProcessId);
+        // WkdProcess无效??? 发生严重错误!!!
+        if (!sourceWkdProcess) { status = STATUS_UNSUCCESSFUL; goto Cleanup; }
+        targetWkdProcess = PsLookupWkdProcessByProcessId(TargetProcessId);
+        if (!targetWkdProcess) { status = STATUS_UNSUCCESSFUL; goto Cleanup; }
+
+        if (sourceWkdProcess->SecurityContext) {
+            pair->BehaviorContext.BehaviorFlags |=
+                sourceWkdProcess->SecurityContext->BehaviorFlags;
+        }
+        if (targetWkdProcess->SecurityContext) {
+            pair->BehaviorContext.BehaviorFlags |=
+                targetWkdProcess->SecurityContext->BehaviorFlags;
+        }
+
+        PsDereferenceWkdProcess(sourceWkdProcess);
+        PsDereferenceWkdProcess(targetWkdProcess);
+    }
+
+    /* ---- (3) CoInsertHashMap（内置桶独占锁 + double-check） ---- */
     {
         AE_PROCESS_PAIR_KEY insertKey = { SourceProcessId, TargetProcessId };
-        BOOLEAN alreadyExist = FALSE;
-        ULONG retry = 3;    /* 默认3次重试机会 */
+        ULONG attempts = 3;    /* 默认3次重试机会 */
 
-    Loop:
-        if (0 == retry--) {
+Retry:
+        if (0 == attempts--) {
             status = STATUS_UNSUCCESSFUL;
             goto Cleanup; /* 机会耗尽 */
         }
 
         status = CoInsertHashMap(&WkdProcessPairMap, &insertKey,
-            sizeof(insertKey), (ULONG64)pair, &alreadyExist);
+            sizeof(insertKey), (ULONG64)pair, NULL);
 
-        if (NT_SUCCESS(status) && !alreadyExist) {
+        if (NT_SUCCESS(status)) {
             /* 无冲突，插入成功 */
             InterlockedIncrement(&WkdPairCount);
-            /* 插入成功，RefCount=2（一个给调用者，一个给 HashMap） */
             *Pair = pair;
             return STATUS_SUCCESS;
-        } else if (alreadyExist) {
+        } else if (status = STATUS_OBJECT_NAME_COLLISION) {
             /* double-check 命中：其他线程先插入了 → 回退 */
             PAE_PROCESS_PAIR existing =
                 AeLookupProcessPair(SourceProcessId, TargetProcessId);
@@ -353,17 +333,28 @@ Return Value:
             }
         }
 
+        /* 插入失败 */
         /* 极端情况：插入后又被删除，直接将当前局部Pair再进行提交（理论上不应发生）*/
-        goto Loop;
+        goto Retry;
     }
 
 Cleanup:
-    /* 销毁阶段的函数内部Pair可能存在竞争 */
-    if (pair->IocContext) IocFreeProcessPairContext(pair);
-    if (pair->IoaContext) IoaFreeProcessPairContext(pair);
-    if (pair->TsContext) TsFreeProcessPairContext(NULL, pair);
-    ExFreePoolWithTag(pair, 'prCt');
+    /* 无任何持有者，可无锁安全释放 */
+    if (pair->IocContext) IocDestroyProcessPairContext(pair);
+    if (pair->IoaContext) IoaDestroyProcessPairContext(pair);
+    if (pair->TsContext) TsDestroyProcessPairContext(NULL, pair);
+    if (pair) ExFreePoolWithTag(pair, 'prCt');
     return status;
+}
+
+_IRQL_requires_(PASSIVE_LEVEL)
+LONG
+PsReferenceWkdProcessPair(
+    _Inout_ PAE_PROCESS_PAIR Pair
+    ) 
+{
+    if (!Pair) return MAXLONG;
+    else return InterlockedIncrement(&Pair->RefCount);
 }
 
 //
@@ -372,14 +363,16 @@ Cleanup:
 // 2026-07 迁移：pair 不做封存——driver 侧分析完毕，后续归 agent。
 //
 _Use_decl_annotations_
-ULONG
+LONG
 PsDereferenceWkdProcessPair(
     _Inout_ PAE_PROCESS_PAIR Pair
     )
 {
-    ULONG refCount = InterlockedDecrement(&Pair->RefCount);
+    LONG ref;
 
-    if (refCount == 0) {
+    if (!Pair) return MAXLONG;
+    ref = InterlockedDecrement(&Pair->RefCount);
+    if (ref == 0) {
         /* ---- Pair无引用计数，可无锁安全释放 ---- */
 
         if (!IsListEmpty(&Pair->IoaContext->BehaviorHead) ||
@@ -388,32 +381,44 @@ PsDereferenceWkdProcessPair(
             DbgBreakPoint();
         }
 
-        IocFreeProcessPairContext(Pair);
-        IoaFreeProcessPairContext(Pair);
-        TsFreeProcessPairContext(NULL, Pair);
+        IocDestroyProcessPairContext(Pair);
+        IoaDestroyProcessPairContext(Pair);
+        TsDestroyProcessPairContext(NULL, Pair);
 
         ExFreePoolWithTag(Pair, 'prCt');
     }
 
-    return refCount;
+    return ref;
 }
 
-//
-// PsDereferenceBehavior — 行为节点引用计数释放。
-// 确保 Behavior 无锁访问。
-//
 _Use_decl_annotations_
-ULONG
-PsDereferenceBehavior(
+LONG
+PsReferenceWkdBehavior(
     _Inout_ PWKD_BEHAVIOR Behavior
     )
 {
-    ULONG refCount = InterlockedDecrement(&Behavior->RefCount);
+    if (!Behavior) return MAXLONG;
+    else return InterlockedIncrement(&Behavior->RefCount);
+}
+//
+// PsDereferenceWkdBehavior — 行为节点引用计数释放。
+// 确保 Behavior 无锁访问。
+//
+_Use_decl_annotations_
+LONG
+PsDereferenceWkdBehavior(
+    _Inout_ PWKD_BEHAVIOR Behavior
+    )
+{
+    LONG ref;
+    
+    if (!Behavior) return MAXLONG;
 
-    if (refCount == 0) {
+    ref = InterlockedDecrement(&Behavior->RefCount);
+    if (ref == 0) {
         DaDestroy(&Behavior->Records);
         ExFreePoolWithTag(Behavior, 'bhNd');
     }
 
-    return refCount;
+    return ref;
 }

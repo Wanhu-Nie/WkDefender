@@ -59,7 +59,11 @@ NTSTATUS IoaEngine_Initialize(_In_ PIOA_ENGINE_CONFIG Config);
 VOID     IoaEngine_Cleanup(VOID);
 
 /* 核心入口: 事件驱动 */
-NTSTATUS IoaObserve(_In_ PWKD_EVENT_HEADER Event);
+NTSTATUS
+IoaObserve(
+    _Inout_ PAE_PROCESS_PAIR Pair,
+    _In_ const PWKD_EVENT_HEADER Event
+    );
 
 /*
  * 实时内存监控事件处理 (对齐 SS ReflectiveDLLDetector

@@ -558,15 +558,15 @@ PspCreateProcessContext(
 )
 {
     NTSTATUS status;
-    PWKD_PROCESS temp_WkdProcess;
+    PWKD_PROCESS wkdProcess;
 
     if (!(WkdProcess && Process && ProcessId && CreateInfo)) {
         return STATUS_INVALID_PARAMETER;
     }
     *WkdProcess = NULL;
 
-    temp_WkdProcess = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(WKD_PROCESS), 'proc');
-    if (!temp_WkdProcess) {
+    wkdProcess = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(WKD_PROCESS), 'proc');
+    if (!wkdProcess) {
         return STATUS_NO_MEMORY;
     }
     /* 分配成功即递增池计数（PspDestroyProcess 无条件递减，严格配对） */
@@ -574,51 +574,51 @@ PspCreateProcessContext(
 
     /* Phase 1: 初始化主结构体 */
     {
-        RtlZeroMemory(temp_WkdProcess, sizeof(WKD_PROCESS));
-        temp_WkdProcess->RefCount = 1;
-        temp_WkdProcess->Core.Alive = TRUE;
-        temp_WkdProcess->Core.ProcessId = ProcessId;
-        temp_WkdProcess->Core.ParentProcessId = CreateInfo->ParentProcessId;
-        temp_WkdProcess->Core.CreatorProcessId = CreateInfo->CreatingThreadId.UniqueProcess;
-        temp_WkdProcess->Core.CreateTime.QuadPart = PsGetProcessCreateTimeQuadPart(Process);
+        RtlZeroMemory(wkdProcess, sizeof(WKD_PROCESS));
+        wkdProcess->RefCount = 1;
+        wkdProcess->Core.Alive = TRUE;
+        wkdProcess->Core.ProcessId = ProcessId;
+        wkdProcess->Core.ParentProcessId = CreateInfo->ParentProcessId;
+        wkdProcess->Core.CreatorProcessId = CreateInfo->CreatingThreadId.UniqueProcess;
+        wkdProcess->Core.CreateTime.QuadPart = PsGetProcessCreateTimeQuadPart(Process);
 
         /* 初始化区段映射画像（PreAcquireSection 迁移 2026-08）：窗口起点继承
          * CreateTime（PID 复用防护由 WKD_PROCESS 表按 PID+CreateTime 保证），
          * 创建后 5s 内视为空心化检测窗口。其余字段 RtlZeroMemory 已清零。 */
-        temp_WkdProcess->SectionMapProfile.WindowStartTime =
-            temp_WkdProcess->Core.CreateTime;
-        temp_WkdProcess->SectionMapProfile.IsEarlyProcess = TRUE;
+        wkdProcess->SectionMapProfile.WindowStartTime =
+            wkdProcess->Core.CreateTime;
+        wkdProcess->SectionMapProfile.IsEarlyProcess = TRUE;
     }
 
     /* Phase 2: 解析字符串字段（非致命——失败时保留 NULL）*/
     {
         if (CoCheckUnicodeStringValidity(CreateInfo->ImageFileName)) {
             CoNormalizeDosPath((PUNICODE_STRING)CreateInfo->ImageFileName,
-                &temp_WkdProcess->Core.ImagePath);
+                &wkdProcess->Core.ImagePath);
         }
         
         if (CoCheckUnicodeStringValidity(CreateInfo->CommandLine)) {
-            CoCopyUnicodeString(&temp_WkdProcess->CommandLine, CreateInfo->CommandLine);
+            CoCopyUnicodeString(&wkdProcess->CommandLine, CreateInfo->CommandLine);
         }
     }
 
     /* Phase 3: 绑定 EPROCESS，增加引用计数 */
-    status = PsLookupProcessByProcessId(ProcessId, &temp_WkdProcess->Core.EProcess);
+    status = PsLookupProcessByProcessId(ProcessId, &wkdProcess->Core.EProcess);
     if (!NT_SUCCESS(status) ||
-        temp_WkdProcess->Core.EProcess != Process) {
+        wkdProcess->Core.EProcess != Process) {
         status = STATUS_UNSUCCESSFUL;
         goto Cleanup;
     }
 
     /* Phase 4: 初始化相关上下文 */
-    status = PspCreateProcessContextInternal(temp_WkdProcess);
+    status = PspCreateProcessContextInternal(wkdProcess);
     if (!NT_SUCCESS(status)) goto Cleanup;
 
-    *WkdProcess = temp_WkdProcess;
+    *WkdProcess = wkdProcess;
     return STATUS_SUCCESS;;
 
 Cleanup:
-    PspDestroyProcess(temp_WkdProcess);
+    PspDestroyProcess(wkdProcess);
     return status;
 }
 
@@ -988,7 +988,7 @@ PmCreateProcess(
     )
 {
     NTSTATUS status;
-    PWKD_PROCESS temp_WkdProcess = NULL;
+    PWKD_PROCESS wkdProcess = NULL;
 
     // 避免PM发生UAF
     if (!ExAcquireRundownProtection(&g_WkdProcessMonitor.RundownRef)) {
@@ -1010,8 +1010,8 @@ PmCreateProcess(
         goto Cleanup;
     }
 
-    status = PspCreateProcessContext(Process, ProcessId, CreateInfo, &temp_WkdProcess);
-    if (!temp_WkdProcess) {
+    status = PspCreateProcessContext(Process, ProcessId, CreateInfo, &wkdProcess);
+    if (!wkdProcess) {
         goto Cleanup;
     }
 
@@ -1022,9 +1022,9 @@ PmCreateProcess(
 
     // 将Context插入全局链表
     ExInterlockedInsertTailList(&g_WkdProcessMonitor.ActiveProcessHead,
-        &temp_WkdProcess->Links, &g_WkdProcessMonitor.Lock);
+        &wkdProcess->Links, &g_WkdProcessMonitor.Lock);
     InterlockedIncrement(&g_WkdProcessMonitor.Statistics.ActiveProcessCounter);
-    PsReferenceWkdProcess(temp_WkdProcess);
+    PsReferenceWkdProcess(wkdProcess);
 
     // 将WkdProcess插入全局哈希表
     // PID 复用防护（对齐 SS TsOnProcessCreate 创建时间校验语义）：同 PID 已有
@@ -1032,15 +1032,15 @@ PmCreateProcess(
     // 先摘除旧条目再插入，防止新旧上下文串号。
     {
         PWKD_PROCESS existing =
-            PsLookupWkdProcessByProcessId(temp_WkdProcess->Core.ProcessId);
+            PsLookupWkdProcessByProcessId(wkdProcess->Core.ProcessId);
         if (existing) {
             if (existing->Core.CreateTime.QuadPart !=
-                temp_WkdProcess->Core.CreateTime.QuadPart) {
+                wkdProcess->Core.CreateTime.QuadPart) {
                 DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
                     "[WkDefender] PID reuse detected for PID %p, "
                     "removing stale context\n",
-                    temp_WkdProcess->Core.ProcessId);
-                PmHashMapRemove(temp_WkdProcess->Core.ProcessId);
+                    wkdProcess->Core.ProcessId);
+                PmHashMapRemove(wkdProcess->Core.ProcessId);
             }
             PsDereferenceWkdProcess(existing);
         }
@@ -1048,9 +1048,9 @@ PmCreateProcess(
 
     status = CoInsertHashMap(
         &g_WkdProcessMonitor.ProcessTable,
-        &temp_WkdProcess->Core.ProcessId,
+        &wkdProcess->Core.ProcessId,
         sizeof(HANDLE),
-        (ULONG64)temp_WkdProcess,
+        (ULONG64)wkdProcess,
         NULL
     );
 
@@ -1062,14 +1062,14 @@ PmCreateProcess(
      */
     //if (IocAcEnabled() &&
     //    IocAppControlCheckProcessExecution(
-    //        temp_WkdProcess->Core.ImagePath,
+    //        wkdProcess->Core.ImagePath,
     //        NULL,   /* 进程创建路径无哈希（对齐 SS 异步哈希，哈希判定待 SHA256 能力） */
-    //        temp_WkdProcess->Core.ProcessId,
-    //        temp_WkdProcess->Core.ParentProcessId) == AcVerdict_Block) {
+    //        wkdProcess->Core.ProcessId,
+    //        wkdProcess->Core.ParentProcessId) == AcVerdict_Block) {
     //    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
     //        "[WkDefender/AC] Blocked process execution: %wZ (PID=%lu)\n",
-    //        temp_WkdProcess->Core.ImagePath,
-    //        HandleToULong(temp_WkdProcess->Core.ProcessId));
+    //        wkdProcess->Core.ImagePath,
+    //        HandleToULong(wkdProcess->Core.ProcessId));
     //    CreateInfo->CreationStatus = STATUS_ACCESS_DENIED;
     //    status = STATUS_ACCESS_DENIED;
     //    goto Cleanup;
@@ -1081,17 +1081,17 @@ PmCreateProcess(
     // 信任覆盖（对齐 SS PnpIsTrustedProcess）：被排除的"可信外观"进程若 PPID
     // 欺骗 → 不再跳过创建 IOC 分析，使其被 IocpDetectPpidSpoofing 标记上报。
     //
-    if (!temp_WkdProcess->SecurityFlags.Trusted) {
+    if (!wkdProcess->SecurityFlags.Trusted) {
         PWKD_PROCESS parent =
             PsLookupWkdProcessByProcessId(CreateInfo->ParentProcessId);
         if (parent) {
-            IOA_BEHAVIOR_RECORD_ENTRY_PROCESS_CREATE entry;
+            IOA_BEHAVIOR_RECORD_ENTRY_PROCESS_CREATE entry = { 0 };
 
             KeQuerySystemTime(&entry.Header.TimeStamp);
-            entry.ChildProcessId = temp_WkdProcess->Core.ProcessId;
+            entry.ChildProcessId = wkdProcess->Core.ProcessId;
             entry.CreateFlags = CreateInfo->Flags;
 
-            AeOrchestratorDispatch(parent, temp_WkdProcess,
+            AeOrchestratorDispatch(parent, wkdProcess,
                 WkdMessage_SourceProcessCallback, 
                 WkdMessage_ProcessCreated, CreateInfo);
 
@@ -1108,7 +1108,7 @@ PmCreateProcess(
     //
     {
         BOOLEAN denied = FALSE;
-        NTSTATUS sendStatus = PmpNotifyProcessCreation(temp_WkdProcess, &denied);
+        NTSTATUS sendStatus = PmpNotifyProcessCreation(wkdProcess, &denied);
         if (!NT_SUCCESS(sendStatus)) {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
                 "[WkDefender] Failed to send process create event: 0x%08X\n", sendStatus);
@@ -1116,7 +1116,7 @@ PmCreateProcess(
         if (denied) {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
                 "[WkDefender] Agent denied process creation: PID %p\n",
-                temp_WkdProcess->Core.ProcessId);
+                wkdProcess->Core.ProcessId);
             /* 补写 CreationStatus：让 Agent 同步裁决真正阻断进程创建
              * （既有缺口——此前仅销毁 WKD_PROCESS 上下文，创建未被拒） */
             CreateInfo->CreationStatus = STATUS_ACCESS_DENIED;
@@ -1134,12 +1134,12 @@ PmCreateProcess(
      * TODO[ProcessNotify→ETW]: 当前为 DbgPrintEx 回退，替换为 EtwWrite
      */
     //CbEtwEmitProcessCreate(
-    //    temp_WkdProcess->Core.ProcessId,
-    //    temp_WkdProcess->Core.ParentProcessId,
-    //    temp_WkdProcess->Core.ImagePath);
+    //    wkdProcess->Core.ProcessId,
+    //    wkdProcess->Core.ParentProcessId,
+    //    wkdProcess->Core.ImagePath);
 
 Cleanup:
-    PsDereferenceWkdProcess(temp_WkdProcess);
+    PsDereferenceWkdProcess(wkdProcess);
     ExReleaseRundownProtection(&g_WkdProcessMonitor.RundownRef);
 
     return status;
@@ -1239,7 +1239,7 @@ PmpCreateExistingProcess(
 {
     NTSTATUS status;
     PEPROCESS eprocess;
-    PWKD_PROCESS temp_WkdProcess;
+    PWKD_PROCESS wkdProcess;
 
     if (!ProcessInfo || !WkdProcess) {
         return STATUS_INVALID_PARAMETER;
@@ -1252,8 +1252,8 @@ PmpCreateExistingProcess(
         return STATUS_QUOTA_EXCEEDED;
     }
 
-    temp_WkdProcess = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(WKD_PROCESS), 'proc');
-    if (!temp_WkdProcess) {
+    wkdProcess = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(WKD_PROCESS), 'proc');
+    if (!wkdProcess) {
         return STATUS_NO_MEMORY;
     }
 
@@ -1265,18 +1265,18 @@ PmpCreateExistingProcess(
     if (!NT_SUCCESS(status)) goto Cleanup;
 
     /* Step 1: 设置Context的基本信息 */
-    RtlZeroMemory(temp_WkdProcess, sizeof(WKD_PROCESS));
-    temp_WkdProcess->RefCount = 1;  /* 返回给调用者 */
-    temp_WkdProcess->Core.Alive = TRUE;
-    temp_WkdProcess->Core.ProcessId = ProcessInfo->UniqueProcessId;
-    temp_WkdProcess->Core.ParentProcessId = ProcessInfo->InheritedFromUniqueProcessId;
-    temp_WkdProcess->Core.EProcess = eprocess;
-    temp_WkdProcess->Core.CreateTime.QuadPart = PsGetProcessCreateTimeQuadPart(eprocess);
+    RtlZeroMemory(wkdProcess, sizeof(WKD_PROCESS));
+    wkdProcess->RefCount = 1;  /* 返回给调用者 */
+    wkdProcess->Core.Alive = TRUE;
+    wkdProcess->Core.ProcessId = ProcessInfo->UniqueProcessId;
+    wkdProcess->Core.ParentProcessId = ProcessInfo->InheritedFromUniqueProcessId;
+    wkdProcess->Core.EProcess = eprocess;
+    wkdProcess->Core.CreateTime.QuadPart = PsGetProcessCreateTimeQuadPart(eprocess);
 
     /* 初始化区段映射画像（PreAcquireSection 迁移 2026-08），同 PmCreateProcess */
-    temp_WkdProcess->SectionMapProfile.WindowStartTime =
-        temp_WkdProcess->Core.CreateTime;
-    temp_WkdProcess->SectionMapProfile.IsEarlyProcess = TRUE;
+    wkdProcess->SectionMapProfile.WindowStartTime =
+        wkdProcess->Core.CreateTime;
+    wkdProcess->SectionMapProfile.IsEarlyProcess = TRUE;
 
     /* Step 2: 解析字符串 */
     {
@@ -1288,27 +1288,27 @@ PmpCreateExistingProcess(
             rawPath = &ProcessInfo->ImageName;
         }
 
-        status = CoNormalizeDosPath(rawPath, &temp_WkdProcess->Core.ImagePath);
+        status = CoNormalizeDosPath(rawPath, &wkdProcess->Core.ImagePath);
         if (!NT_SUCCESS(status)) goto Cleanup;
 
         /* 获取命令行（非致命——失败时保留 NULL，后续仍可分析） */
-        // PmpQueryProcessCommandLine(eprocess, &temp_WkdProcess->CommandLine);
+        // PmpQueryProcessCommandLine(eprocess, &wkdProcess->CommandLine);
     }
 
     ///* 获取进程完整性等级和安全标志 */
     //{
-    //    PACCESS_TOKEN token = PsReferencePrimaryToken(temp_WkdProcess->Core.EProcess);
+    //    PACCESS_TOKEN token = PsReferencePrimaryToken(wkdProcess->Core.EProcess);
     //    if (token) {
     //        SeQueryInformationToken(token, TokenIntegrityLevel,
-    //            (PVOID)&temp_WkdProcess->IntegrityLevel);
+    //            (PVOID)&wkdProcess->IntegrityLevel);
     //        PsDereferencePrimaryToken(token);
     //    }
-    //    temp_WkdProcess->SecurityFlags.System = HandleToULong(temp_WkdProcess->Core.ProcessId) <= 4;
+    //    wkdProcess->SecurityFlags.System = HandleToULong(wkdProcess->Core.ProcessId) <= 4;
     //}
 
     /* Step 3: 初始化相关上下文
      * （线程上下文已下沉至 PspCreateProcessContextInternal 急切创建，此处无需重复） */
-    status = PspCreateProcessContextInternal(temp_WkdProcess);
+    status = PspCreateProcessContextInternal(wkdProcess);
     if (!NT_SUCCESS(status)) goto Cleanup;
 
     //
@@ -1316,27 +1316,27 @@ PmpCreateExistingProcess(
     //
     ExInterlockedInsertTailList(
         &g_WkdProcessMonitor.ActiveProcessHead,
-        &temp_WkdProcess->Links,
+        &wkdProcess->Links,
         &g_WkdProcessMonitor.Lock);
     InterlockedIncrement( &g_WkdProcessMonitor.Statistics.ActiveProcessCounter);
-    PsReferenceWkdProcess(temp_WkdProcess);
+    PsReferenceWkdProcess(wkdProcess);
 
     // 将WkdProcess插入全局哈希表
     status = CoInsertHashMap(
         &g_WkdProcessMonitor.ProcessTable,
-        &temp_WkdProcess->Core.ProcessId,
+        &wkdProcess->Core.ProcessId,
         sizeof(HANDLE),
-        (ULONG64)temp_WkdProcess,
+        (ULONG64)wkdProcess,
         NULL    // 不存在重复的可能性? pid重用?
     );
     
-    *WkdProcess = temp_WkdProcess;
+    *WkdProcess = wkdProcess;
 
     return STATUS_SUCCESS;
 
 Cleanup:
     if (eprocess) ObDereferenceObject(eprocess);
-    PspDestroyProcess(temp_WkdProcess);
+    PspDestroyProcess(wkdProcess);
 
     return status;
 }
@@ -1375,7 +1375,7 @@ Return Value:
     ULONG msgSize;
     PLIST_ENTRY entry;
     KIRQL oldIrql;
-    PWKD_PROCESS temp_WkdProcess;
+    PWKD_PROCESS wkdProcess;
 
     /*
      * 第一遍遍历：统计进程数
@@ -1409,8 +1409,8 @@ Return Value:
          entry != &g_WkdProcessMonitor.ActiveProcessHead && i < processCount;
          entry = entry->Flink, i++) {
 
-        temp_WkdProcess = CONTAINING_RECORD(entry, WKD_PROCESS, Links);
-        bodySize = PmpCalculateProcessBodySize(temp_WkdProcess);
+        wkdProcess = CONTAINING_RECORD(entry, WKD_PROCESS, Links);
+        bodySize = PmpCalculateProcessBodySize(wkdProcess);
         msgSize = sizeof(WKD_MESSAGE_HEADER) + bodySize;
 
         wkdMsg = ExAllocatePool2(POOL_FLAG_NON_PAGED, msgSize, 'PsSn');
@@ -1431,12 +1431,12 @@ Return Value:
         wkdMsg->Header.Source = WkdMessage_SourceProcessCallback;
         wkdMsg->Header.Priority = WkdMessage_PriorityNormal;
         KeQuerySystemTime(&wkdMsg->Header.Timestamp);
-        wkdMsg->Header.SourceProcessId = temp_WkdProcess->Core.ParentProcessId;
-        wkdMsg->Header.TargetProcessId = temp_WkdProcess->Core.ProcessId;
+        wkdMsg->Header.SourceProcessId = wkdProcess->Core.ParentProcessId;
+        wkdMsg->Header.TargetProcessId = wkdProcess->Core.ProcessId;
         wkdMsg->Header.BodySize = bodySize;
 
         /* 填充 Body */
-        PmpBuildProcessCreateBody(temp_WkdProcess, wkdMsg->Body, bodySize);
+        PmpBuildProcessCreateBody(wkdProcess, wkdMsg->Body, bodySize);
 
         msgArray[i] = wkdMsg;
     }
@@ -1530,24 +1530,24 @@ PmEnumerateProcesses(
             //
             // 检查是否已在表中（回调可能已先于枚举插入）
             //
-            PWKD_PROCESS temp_WkdProcess = PsLookupWkdProcessByProcessId(current->UniqueProcessId);
-            if (!temp_WkdProcess) {
+            PWKD_PROCESS wkdProcess = PsLookupWkdProcessByProcessId(current->UniqueProcessId);
+            if (!wkdProcess) {
                 status = PmpCreateExistingProcess(
                     current,
-                    &temp_WkdProcess);
+                    &wkdProcess);
                 if (NT_SUCCESS(status)) {
                     enumCount++;
-                    PsDereferenceWkdProcess(temp_WkdProcess);
+                    PsDereferenceWkdProcess(wkdProcess);
                 }
             }
             else {
                 //
                 // 进程已通过回调插入到表中，释放查找引用
                 //
-                PsDereferenceWkdProcess(temp_WkdProcess);
+                PsDereferenceWkdProcess(wkdProcess);
             }
 
-            // DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[WkDefender] Process: %wZ\n", temp_WkdProcess->Core.ImagePath);
+            // DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[WkDefender] Process: %wZ\n", wkdProcess->Core.ImagePath);
         }
 
         if (current->NextEntryOffset == 0) {

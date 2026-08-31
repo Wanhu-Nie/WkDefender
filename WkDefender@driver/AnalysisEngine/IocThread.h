@@ -5,7 +5,7 @@
 #include "../Process/ProcessPairContext.h"     /* PAE_PROCESS_PAIR */
 
 //
-// IocDetectThread — 线程创建 IOC 检测流水线
+// IocObserveThread — 线程创建 IOC 检测流水线
 //
 // 检测范围：
 //   1. 远程线程创建（TsIndicator_Injection_RemoteThread）
@@ -24,7 +24,7 @@
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
-IocDetectThread(
-    _In_ PAE_PROCESS_PAIR Pair,
-    _In_ PWKD_THREAD Entry
+IocObserveThread(
+    _Inout_ PAE_PROCESS_PAIR Pair,
+    _In_ PWKD_THREAD WkdThread
     );

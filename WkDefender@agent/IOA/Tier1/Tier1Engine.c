@@ -77,9 +77,9 @@ Routine Description:
         entry = SrcNode->OutPairListHead.Flink;
         while (entry != &SrcNode->OutPairListHead) {
             pc = CONTAINING_RECORD(entry, AE_PROCESS_PAIR, SourceProcessLinks);
-            if (pc->ActiveEventCount > 0) {
+            if (pc->ActiveEdges > 0) {
                 activeTargets++;
-                activeOutEdges += pc->ActiveEventCount;
+                activeOutEdges += pc->ActiveEdges;
             }
             entry = entry->Flink;
         }
@@ -91,9 +91,9 @@ Routine Description:
         entry = TgtNode->InPairListHead.Flink;
         while (entry != &TgtNode->InPairListHead) {
             pc = CONTAINING_RECORD(entry, AE_PROCESS_PAIR, TargetProcessLinks);
-            if (pc->ActiveEventCount > 0) {
+            if (pc->ActiveEdges > 0) {
                 activeSources++;
-                activeInEdges += pc->ActiveEventCount;
+                activeInEdges += pc->ActiveEdges;
             }
             entry = entry->Flink;
         }
@@ -799,7 +799,7 @@ Arguments:
     T1CollectGenealogyFlags(SrcNode, TgtNode, f);
 
     /* ── 3. 活跃事件总数 ── */
-    f->PairEventCount = PairCtx->ActiveEventCount;
+    f->PairEventCount = PairCtx->ActiveEdges;
 
     /* ── 4. RecentEdgeMask 窗口衰减 (纯数据维护) ── */
     {

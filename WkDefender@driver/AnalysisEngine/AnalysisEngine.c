@@ -140,7 +140,7 @@ AepPerformMaintenance(
 /*++
 Routine Description:
     两阶段维护进程对哈希表。
-    Phase 1: CoHashMapSnapshot 获取 key-only 快照（逐桶共享锁）。
+    Phase 1: CoCaptureHashMapSnapshot 获取 key-only 快照（逐桶共享锁）。
     Phase 2: 对快照中的每个 key 执行 AeLookupProcessPair + IoaRefreshProcessPair，
              再 double-check ActiveBehaviors 后回收空 pair。
 
@@ -153,6 +153,7 @@ Routine Description:
     NTSTATUS status;
     LARGE_INTEGER now;
     PWKD_HASH_MAP_SNAPSHOT snapshot = NULL;
+    SIZE_T snapshotSize = 0;
     ULONG capacity = 0;
     ULONG retryCount = 0;
 
@@ -161,32 +162,30 @@ Routine Description:
     /* ============ Phase 1: 估算 + 分配 ============ */
 
     {
-        ULONG estimated = 0;
-
         /* 第一轮，获取快照所需容量 */
-        status = CoHashMapSnapshot(&WkdProcessPairMap, NULL, &estimated);
-        if (estimated == 0) {
-            return;
-        }
-
-        capacity = estimated + (estimated >> 2) + 64;  /* 估算值 + 25% 余量 + 保底 */
+        status = CoCaptureHashMapSnapshot(&WkdProcessPairMap, NULL, &snapshotSize, NULL);
+        if (snapshotSize == 0) return;
+        else snapshotSize = ALIGN_UP_BY(snapshotSize, PAGE_SIZE);
+        
         snapshot = (PWKD_HASH_MAP_SNAPSHOT)ExAllocatePool2(
             POOL_FLAG_PAGED,
-            capacity * sizeof(WKD_HASH_MAP_SNAPSHOT),
+            snapshotSize,
             'pSnp');
-
-        if (!snapshot) {
-            return;
-        }
+        if (!snapshot) return;
     }
 
     /* ============ Phase 2: 获取快照 ============ */
 
-    status = CoHashMapSnapshot(&WkdProcessPairMap, snapshot, &capacity);
+    status = CoCaptureHashMapSnapshot(&WkdProcessPairMap, snapshot, &snapshotSize, &capacity);
+    if (!(NT_SUCCESS(status) ||
+    /* 所提供缓冲区容量不足，存在 hashmap 项被遗漏，非致命 */
+        status == STATUS_INFO_LENGTH_MISMATCH)) {
+        goto Cleanup;
+    }
 
     /*
      * ★ 快照截断说明（已知，属设计允许，暂不修复）：
-     *   快照期间并发插入导致条目数超过缓冲容量时，CoHashMapSnapshot
+     *   快照期间并发插入导致条目数超过缓冲容量时，CoCaptureHashMapSnapshot
      *   返回 STATUS_INFO_LENGTH_MISMATCH，capacity = 实际写入数。
      *   被截断的条目（仅剩在哈希表中的部分）不在本轮回合处理，延迟到
      *   下一轮（60s 后）——仅推迟老化回收，无数据丢失，可接受。
@@ -201,48 +200,31 @@ Routine Description:
 
         /* 快照外安全查找（已不持桶锁） */
         pair = AeLookupProcessPair(key->SourceProcessId, key->TargetProcessId);
-        if (!pair) {
-            continue;   /* 已被其他路径安全清理，TOCTOU 正常 */
-        }
-
-        /* 刷新行为节点 */
+        if (!pair) continue;   /* 已被其他路径安全清理，TOCTOU 正常 */
         IoaRefreshProcessPair(pair, now);
+        PsDereferenceWkdProcessPair(pair);
 
-        /* 尝试回收空 pair（2026-07 迁移：无挂链，仅摘哈希表） */
-        WkdAcquirePushLockExclusive(&pair->Lock);
-
-        if (pair->IoaContext->ActiveBehaviors == 0) {
+        /* 尝试回收空 pair */
+        if (InterlockedCompareExchange(
+            &pair->IoaContext->ActiveBehaviors, 0, 0) == 0) {
             /* CoRemoveHashMapEntry调用者必须持有Ref */
             AE_PROCESS_PAIR_KEY removeKey = { pair->SourceProcessId, pair->TargetProcessId };
             if (CoRemoveHashMapEntry(&WkdProcessPairMap, &removeKey, sizeof(removeKey))) {
                 /* 全局 pair 计数递减 */
                 InterlockedDecrement(&WkdPairCount);
-
-                WkdReleasePushLockExclusive(&pair->Lock);
-                /* 释放 AeLookupProcessPair 获得的 ref（CoLookupHashMapEntry 中 Reference +1） */
-                PsDereferenceWkdProcessPair(pair);
-            } else {
-                /* ShouldRemove 拒绝或被其他线程先删 */
-                WkdReleasePushLockExclusive(&pair->Lock);
-                PsDereferenceWkdProcessPair(pair);
             }
-        } else {
-            WkdReleasePushLockExclusive(&pair->Lock);
-            PsDereferenceWkdProcessPair(pair);
         }
     }
 
     /* ============ Phase 3.5: 多目标源检测（死代码, 对齐 SS 多目标修正 +120） ============ */
 
-    if (g_AeMultiTargetEnabled) {
-        AepDetectMultiTargetSources(snapshot, capacity);
-    }
+    //if (g_AeMultiTargetEnabled) {
+    //    AepDetectMultiTargetSources(snapshot, capacity);
+    //}
 
-    /* ============ 清理 ============ */
 
-    if (snapshot) {
-        ExFreePoolWithTag(snapshot, 'pSnp');
-    }
+Cleanup:
+    if (snapshot) ExFreePoolWithTag(snapshot, 'pSnp');
 }
 
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -255,6 +237,7 @@ AepMaintenanceThread(
     LARGE_INTEGER timeout;
     UNREFERENCED_PARAMETER(Context);
 
+    /* 指定线程的优先级，通常为 LOW_REALTIME_PRIORITY */
     KeSetPriorityThread(KeGetCurrentThread(), LOW_REALTIME_PRIORITY);
 
     while (g_AeMaintenance.Running) {
@@ -292,11 +275,11 @@ AepMaintenanceThread(
 _Use_decl_annotations_
 NTSTATUS
 AeOrchestratorDispatch(
-    _In_ PWKD_PROCESS SourceProcess,
-    _In_ PWKD_PROCESS TargetProcess,
+    _In_ const PWKD_PROCESS SourceProcess,
+    _Inout_ PWKD_PROCESS TargetProcess,
     _In_ WKD_ASSEMBLY_SOURCE Source,
     _In_ WKD_ASSEMBLY_TYPE Type,
-    _In_opt_ PVOID Context
+    _In_opt_ const PVOID Context
     )
 /*++
 Routine Description:
@@ -322,30 +305,18 @@ Return Value:
     PAE_PROCESS_PAIR pair = NULL;
 
     if (!SourceProcess || !TargetProcess ||
-        !Source || !Type) {
+        Source == WkdMessage_SourceUnknow ||
+        Type == WkdMessage_Unknow) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    /* 进程退出事件无 pair 语义（前移短路） */
-    if (Source == WkdMessage_SourceProcessCallback &&
-        Type == WkdMessage_ProcessExited) {
-        return STATUS_SUCCESS;
-    }
-
-    /* ---- Phase 1: 建 pair + pin（前移） ---- */
+    /* ---- Phase 1: 建 pair + pin ---- */
     status = AeFindOrCreateProcessPair(
         SourceProcess->Core.ProcessId,
         TargetProcess->Core.ProcessId, &pair);
     if (!NT_SUCCESS(status)) {
         /* 配额/内存失败：丢弃本事件 */
         return status;
-    }
-
-    /* 合并源进程行为标志到进程对（对齐 SS BE_PROC_CONTEXT.Flags 只增不减，
-     * 迁移自 BehaviorEngine：LOLBIN/脚本宿主等标志累积，供结算侧评分乘数读取） */
-    if (SourceProcess && SourceProcess->SecurityContext) {
-        pair->BehaviorContext.BehaviorFlags |=
-            SourceProcess->SecurityContext->BehaviorFlags;
     }
 
     /* ---- Phase 2: IOC 检测（全部传 pair） ---- */
@@ -365,7 +336,7 @@ Return Value:
     }
 
     case WkdMessage_SourceThreadCallback:
-        IocDetectThread(pair, (PWKD_THREAD)Context);
+        IocObserveThread(pair, (PWKD_THREAD)Context);
         break;
 
     case WkdMessage_SourceObjectCallback:

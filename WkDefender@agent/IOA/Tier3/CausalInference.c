@@ -285,8 +285,8 @@ Routine Description:
 static
 BOOLEAN
 T3pProcessCore(
-    _In_    GUID                    SrcNodeId,
-    _In_    GUID                    TgtNodeId,
+    _In_    GUID                    SourceNodeId,
+    _In_    GUID                    TargetNodeId,
     _In_    IOA_GRAPH_EDGE_TYPE     EdgeType,
     _In_    LARGE_INTEGER           WinStart,
     _In_    LARGE_INTEGER           WinEnd,
@@ -308,7 +308,7 @@ Routine Description:
       阶段6: UpdateMitreProbs — 更新概率分布
 
 Arguments:
-    SrcNodeId, TgtNodeId - 进程节点 GUID。
+    SourceNodeId, TargetNodeId - 进程节点 GUID。
     EdgeType             - 边类型。
     WinStart, WinEnd     - 时间窗口。
     Wishlist             - [in/out] 心愿清单 (传入待满足需求，传出更新后清单)。
@@ -336,7 +336,7 @@ Returns:
     RtlZeroMemory(candidates, sizeof(candidates));
     if (Callbacks->Collect) {
         candidateCount = Callbacks->Collect(
-            SrcNodeId, TgtNodeId, EdgeType,
+            SourceNodeId, TargetNodeId, EdgeType,
             WinStart, WinEnd,
             candidates, 8);
     } else {
@@ -345,7 +345,7 @@ Returns:
         PLIST_ENTRY entry;
 
         agg = IoaLookupAggregateEdge(WkdIoaEngine.EdgeAggTable,
-                                      SrcNodeId, TgtNodeId, EdgeType);
+                                      SourceNodeId, TargetNodeId, EdgeType);
         if (agg) {
             AcquireSRWLockShared(&agg->EdgeLock);
             for (entry = agg->EdgesHead.Flink;
@@ -360,13 +360,15 @@ Returns:
                 if (!edge->Active) continue;
 
                 candidates[candidateCount].EdgeId     = edge->EdgeId;
-                candidates[candidateCount].SrcNodeId  = SrcNodeId;
-                candidates[candidateCount].TgtNodeId  = TgtNodeId;
-                candidates[candidateCount].EdgeType   = edge->EdgeType;
+                candidates[candidateCount].SourceNodeId  = SourceNodeId;
+                candidates[candidateCount].TargetNodeId  = TargetNodeId;
+                // candidates[candidateCount].EdgeType   = edge->EdgeType;
                 candidates[candidateCount].Timestamp   = edge->Timestamp;
                 candidateCount++;
             }
             ReleaseSRWLockShared(&agg->EdgeLock);
+            /* Lookup 返回已 pin 的边, 遍历用毕归还引用 */
+            IoaDereferenceAggregateEdge(agg);
         }
     }
 
@@ -672,8 +674,8 @@ T3MergeSegmentedWrites(
 
 ULONG
 T3QueryExtraEdge(
-    _In_    GUID                  SrcNodeId,
-    _In_    GUID                  TgtNodeId,
+    _In_    GUID                  SourceNodeId,
+    _In_    GUID                  TargetNodeId,
     _In_    LARGE_INTEGER         WindowStart,
     _In_    LARGE_INTEGER         WindowEnd,
     _Out_   PTIRE3_EVIDENCE_ITEM  ExtraItems,
@@ -707,7 +709,7 @@ T3QueryExtraEdge(
         PLIST_ENTRY entry;
 
         agg = IoaLookupAggregateEdge(WkdIoaEngine.EdgeAggTable,
-                                      SrcNodeId, TgtNodeId, extraTypes[t]);
+                                      SourceNodeId, TargetNodeId, extraTypes[t]);
         if (!agg) continue;
 
         AcquireSRWLockShared(&agg->EdgeLock);
@@ -725,16 +727,18 @@ T3QueryExtraEdge(
             RtlZeroMemory(&ExtraItems[found], sizeof(TIRE3_EVIDENCE_ITEM));
             ExtraItems[found].IsExtraEdge = TRUE;
             WkdCopyGuid(&ExtraItems[found].EdgeId, &edge->EdgeId);
-            ExtraItems[found].EdgeType  = edge->EdgeType;
+            // ExtraItems[found].EdgeType  = edge->EdgeType;
             ExtraItems[found].Timestamp = edge->Timestamp;
 
-            printf("[T3Causal] Extra edge found: type=%d "
-                   "(timestamp=%lld)\n",
-                   (int)edge->EdgeType, edge->Timestamp.QuadPart);
+            //printf("[T3Causal] Extra edge found: type=%d "
+            //       "(timestamp=%lld)\n",
+            //       (int)edge->EdgeType, edge->Timestamp.QuadPart);
 
             found++;
         }
         ReleaseSRWLockShared(&agg->EdgeLock);
+        /* Lookup 返回已 pin 的边, 本类型遍历用毕归还引用 */
+        IoaDereferenceAggregateEdge(agg);
     }
 
     return found;

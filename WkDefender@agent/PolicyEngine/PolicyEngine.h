@@ -143,8 +143,8 @@ NTSTATUS PolicyEngine_EvaluateSequenceRules(
 /* ── 序列规则状态查询 (※死代码: 无调用者, 对齐 SS
  *   PmGetActiveStates/PmReleaseState) ── */
 NTSTATUS PolicyEngine_GetSequenceStates(
-    _In_  GUID SrcNodeId,
-    _In_  GUID TgtNodeId,
+    _In_  GUID SourceNodeId,
+    _In_  GUID TargetNodeId,
     _Out_ PWKD_SEQ_MATCH_STATE* States,
     _In_  ULONG                  MaxStates,
     _Out_ PULONG                 StateCount);

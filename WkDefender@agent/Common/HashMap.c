@@ -109,9 +109,7 @@ CopAcquireHashMapLockExclusive(
     )
 {
     if (HashMap->PerBucketLock) {
-        if (BucketIndex) {
-            AcquireSRWLockExclusive(&HashMap->Buckets[BucketIndex].Lock);
-        }
+        AcquireSRWLockExclusive(&HashMap->Buckets[BucketIndex].Lock);
     } else {
         AcquireSRWLockExclusive(&HashMap->GlobalLock);
     }
@@ -125,9 +123,7 @@ CopReleaseHashMapLockExclusive(
     )
 {
     if (HashMap->PerBucketLock) {
-        if (BucketIndex) {
-            ReleaseSRWLockExclusive(&HashMap->Buckets[BucketIndex].Lock);
-        }
+        ReleaseSRWLockExclusive(&HashMap->Buckets[BucketIndex].Lock);
     } else {
         ReleaseSRWLockExclusive(&HashMap->GlobalLock);
     }
@@ -141,9 +137,7 @@ CopAcquireHashMapLockShared(
     )
 {
     if (HashMap->PerBucketLock) {
-        if (BucketIndex) {
-            AcquireSRWLockShared(&HashMap->Buckets[BucketIndex].Lock);
-        }
+        AcquireSRWLockShared(&HashMap->Buckets[BucketIndex].Lock);
     } else {
         AcquireSRWLockShared(&HashMap->GlobalLock);
     }
@@ -157,9 +151,7 @@ CopReleaseHashMapLockShared(
     )
 {
     if (HashMap->PerBucketLock) {
-        if (BucketIndex) {
-            ReleaseSRWLockShared(&HashMap->Buckets[BucketIndex].Lock);
-        }
+        ReleaseSRWLockShared(&HashMap->Buckets[BucketIndex].Lock);
     } else {
         ReleaseSRWLockShared(&HashMap->GlobalLock);
     }
@@ -439,7 +431,8 @@ BOOLEAN
 CoRemoveHashMapEntry(
     _Inout_ PWKD_HASH_MAP HashMap,
     _In_ const PVOID Key,
-    _In_ SIZE_T KeySize
+    _In_ SIZE_T KeySize,
+    _In_opt_ BOOLEAN HoldLock
     )
 /*++
 Routine Description:
@@ -468,7 +461,7 @@ Return Value:
 
         if (CopKeyEqual(entry->Key, entry->KeySize, Key, KeySize)) {
             if (HashMap->ShouldRemove &&
-                !HashMap->ShouldRemove(entry->Value)) {
+                !HashMap->ShouldRemove(entry->Value, HoldLock)) {
                 goto Cleanup;
             }
             if (HashMap->UseRefCallbacks && HashMap->Dereference) {
@@ -492,9 +485,10 @@ Cleanup:
 /*               枚举                               */
 /**************************************************/
 
-VOID
-CoHashMapEnumerate(
-    _In_ PWKD_HASH_MAP HashMap,
+_Use_decl_annotations_
+NTSTATUS
+CoEnumerateHashMap(
+    _In_ const PWKD_HASH_MAP HashMap,
     _In_ PFN_HASH_MAP_ENUM Callback,
     _Inout_opt_ PVOID Context
     )
@@ -507,25 +501,119 @@ Return Value:
     无。
 --*/
 {
-    ULONG i;
+    if (!HashMap || !HashMap->Initialized || !Callback) {
+        return STATUS_INVALID_PARAMETER;
+    }
 
-    if (!HashMap || !HashMap->Initialized || !Callback) return;
-
-    for (i = 0; i < HashMap->BucketCount; i++) {
-        CopAcquireHashMapLockShared(HashMap, i);
+    if (!HashMap->PerBucketLock) CopAcquireHashMapLockShared(HashMap, 0);
+    for (ULONG i = 0; i < HashMap->BucketCount; i++) {
+        if (HashMap->PerBucketLock) CopAcquireHashMapLockShared(HashMap, i);
         {
-            PLIST_ENTRY e = HashMap->Buckets[i].ListHead.Flink;
-            while (e != &HashMap->Buckets[i].ListHead) {
+            PLIST_ENTRY le = HashMap->Buckets[i].ListHead.Flink;
+            while (le != &HashMap->Buckets[i].ListHead) {
                 PWKD_HASH_MAP_ENTRY entry =
-                    CONTAINING_RECORD(e, WKD_HASH_MAP_ENTRY, ListEntry);
-                PLIST_ENTRY next = e->Flink;
+                    CONTAINING_RECORD(le, WKD_HASH_MAP_ENTRY, ListEntry);
+                PLIST_ENTRY next = le->Flink;
                 if (!Callback(entry->Key, entry->KeySize, entry->Value, Context)) {
                     CopReleaseHashMapLockShared(HashMap, i);
-                    return;
+                    return STATUS_UNSUCCESSFUL;
                 }
-                e = next;
+                le = next;
             }
         }
-        CopReleaseHashMapLockShared(HashMap, i);
+        if (HashMap->PerBucketLock) CopReleaseHashMapLockShared(HashMap, i);
     }
+    if (!HashMap->PerBucketLock) CopReleaseHashMapLockShared(HashMap, 0);
+
+    return STATUS_SUCCESS;
+}
+
+/**************************************************/
+/*               快照枚举 (key-only 两阶段)          */
+/**************************************************/
+
+_Use_decl_annotations_
+NTSTATUS
+CoCaptureHashMapSnapshot(
+    _In_ const PWKD_HASH_MAP HashMap,
+    _In_opt_ PVOID Buffer,
+    _Inout_ PSIZE_T BufferSize,
+    _Out_opt_ PULONG Capacity
+    )
+/*++
+Routine Description:
+    两阶段 key-only 快照，逐桶共享锁遍历（与驱动 CoCaptureHashMapSnapshot 对齐）。
+      Buffer == NULL  → 查询模式：统计条目数并输出所需字节 (*BufferSize =
+                        条目数 * sizeof(WKD_HASH_MAP_SNAPSHOT))，返回
+                        STATUS_INFO_LENGTH_MISMATCH 供调用方分配。
+      Buffer != NULL  → 枚举模式：逐桶加共享锁拷贝 key（KeySize + KeyData），
+                        返回实际写入条目数 (*Capacity)。并发插入超容则截断
+                        (full=TRUE, 返回 STATUS_INFO_LENGTH_MISMATCH)，剩余
+                        条目延迟至下一轮（仅推迟老化回收，无数据丢失）。
+    锁定沿用 CopAcquireHashMapLockShared（PerBucketLock 下逐桶锁，含桶 0）。
+
+Return Value:
+    STATUS_SUCCESS / STATUS_INFO_LENGTH_MISMATCH。
+--*/
+{
+    BOOLEAN queryMode;
+    BOOLEAN full = FALSE;
+    ULONG   outCapacity = 0;
+    SIZE_T requiredSize = 0;
+
+    if (!HashMap || !HashMap->Initialized || !BufferSize) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (Capacity) *Capacity = 0;
+
+    if (!Buffer) queryMode = TRUE;
+    else {
+        queryMode = FALSE;
+        RtlZeroMemory(Buffer, *BufferSize);
+    }
+
+    if (!HashMap->PerBucketLock) CopAcquireHashMapLockShared(HashMap, 0);
+    for (ULONG i = 0; i < HashMap->BucketCount; i++) {
+        PLIST_ENTRY le;
+
+        if (HashMap->PerBucketLock) CopAcquireHashMapLockShared(HashMap, i);
+
+        le = HashMap->Buckets[i].ListHead.Flink;
+        while (le != &HashMap->Buckets[i].ListHead) {
+            PWKD_HASH_MAP_ENTRY entry =
+                CONTAINING_RECORD(le, WKD_HASH_MAP_ENTRY, ListEntry);
+            SIZE_T seSize = entry->KeySize + sizeof(SIZE_T);
+
+            if (queryMode) {
+                requiredSize += seSize;
+                outCapacity++;
+            } else if (requiredSize + seSize <= *BufferSize) {
+                PWKD_HASH_MAP_SNAPSHOT se =
+                    (PWKD_HASH_MAP_SNAPSHOT)((PUCHAR)Buffer + requiredSize);
+                se->KeySize = entry->KeySize;
+                RtlCopyMemory(se->KeyData, entry->Key, entry->KeySize);
+                requiredSize += seSize;
+                outCapacity++;
+            } else {
+                full = TRUE;   /* 容量不足，提前结束枚举 */
+                CopReleaseHashMapLockShared(HashMap, i);
+                goto Return;
+            }
+            le = le->Flink;
+        }
+
+        if (HashMap->PerBucketLock) CopReleaseHashMapLockShared(HashMap, i);
+    }
+    if (!HashMap->PerBucketLock) CopReleaseHashMapLockShared(HashMap, 0);
+
+Return:
+    if (Capacity) *Capacity = outCapacity;
+    if (queryMode) {
+        /* 返回调用方需分配的字节数 (条目数 * 快照条目大小) */
+        *BufferSize = requiredSize;
+        return STATUS_INFO_LENGTH_MISMATCH;
+    } else if (full) {
+        printf("[ERROR] the snapshot buffer is full!\n");
+        return STATUS_INFO_LENGTH_MISMATCH;
+    } else return STATUS_SUCCESS;
 }

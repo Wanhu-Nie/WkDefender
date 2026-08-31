@@ -97,7 +97,7 @@ typedef struct _AE_PROCESS_PAIR {
     HANDLE          TargetProcessId;    // 目标进程 PID（哈希表键值）
 
     LARGE_INTEGER   CreateTime;         // 进程对创建时间
-    LARGE_INTEGER   LastAccessTime;     // 最后访问时间（行为记录路径 IoaRecordBehavior 原子更新）
+    volatile LARGE_INTEGER   LastAccessTime;     // 最后访问时间（行为记录路径 IoaRecordBehavior 原子更新）
 
     ULONG64         SyncBitmap;         // 同步位图：控制哪些操作类型需要同步阻塞
 
@@ -119,7 +119,7 @@ typedef struct _AE_PROCESS_PAIR {
 #define WKD_BEHAVIOR_BITMAP_WORDS   ((WKD_BEHAVIOR_BITMAP_SIZE + 63) / 64)  // 16 × ULONG64
 
 typedef struct _WKD_BEHAVIOR {
-    ULONG RefCount;                         // 引用计数
+    LONG RefCount;                         // 引用计数
     EX_PUSH_LOCK Lock;                      // 节点级推锁
 
     LIST_ENTRY Links;                       // 挂入 AE_IOA_CONTEXT::BehaviorHead
@@ -131,7 +131,7 @@ typedef struct _WKD_BEHAVIOR {
     ULONG64 ValidBitmap[WKD_BEHAVIOR_BITMAP_WORDS];  // 有效槽位位图
 
     /* 缓存式威胁评估 */
-    volatile ULONG AccumulatedThreat;       // 累积威胁贡献值
+    LONG AccumulatedThreat;       // 累积威胁贡献值
 
     /* 快速路径 */
     LARGE_INTEGER EarliestExpiryTime;       // 最早有效记录的过期时间点
@@ -220,20 +220,30 @@ NTSTATUS
 AeFindOrCreateProcessPair(
     _In_ HANDLE SourceProcessId,
     _In_ HANDLE TargetProcessId,
-    _Outptr_ PAE_PROCESS_PAIR* Pair
-);
+    _Out_ PAE_PROCESS_PAIR* Pair
+    );
 
 _IRQL_requires_(PASSIVE_LEVEL)
-ULONG
+LONG
+PsReferenceWkdProcessPair(
+    _Inout_ PAE_PROCESS_PAIR Pair
+    );
+
+_IRQL_requires_(PASSIVE_LEVEL)
+LONG
 PsDereferenceWkdProcessPair(
     _Inout_ PAE_PROCESS_PAIR Pair
-);
+    );
 
-_IRQL_requires_(PASSIVE_LEVEL)
-ULONG
-PsDereferenceBehavior(
+LONG
+PsReferenceWkdBehavior(
     _Inout_ PWKD_BEHAVIOR Behavior
-);
+    );
+
+ULONG
+PsDereferenceWkdBehavior(
+    _Inout_ PWKD_BEHAVIOR Behavior
+    );
 
 /**************************************************/
 /*               全局实例                           */

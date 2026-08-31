@@ -1,51 +1,22 @@
 ﻿/**************************************************/
 /*  WkDefender IOA — 全局边聚合表实现                */
-/*  Key: <SrcNodeId, TgtNodeId, EdgeType>           */
+/*  Key: <SourceNodeId, TargetNodeId, EdgeType>           */
 /*                                                  */
 /*  重构: 具体边链表替代 RecentEdgeIds 环形缓冲        */
 /*  FSM 多路归并从 EdgesHead 消费具体边       */
 /**************************************************/
 
 #include "IoaEdgeAggregate.h"
+#include "../Common/HashMap.h"  /* 复用通用哈希表 (WKD_HASH_MAP) */
 #include "../Notification/EventTypes.h"
 #include "IoaProcessPair.h"     /* PAE_PROCESS_PAIR (CleanupExpired 双向摘链) */
 #include <string.h>
 
-/**************************************************/
-/*               内部辅助: 哈希函数                 */
-/**************************************************/
-
-static
-ULONG
-EdgeAggHash(
-    _In_ GUID                SrcNodeId,
-    _In_ GUID                TgtNodeId,
-    _In_ IOA_GRAPH_EDGE_TYPE EdgeType
-    )
-{
-    ULONG hash = 5381;
-    UCHAR* p;
-    ULONG i;
-
-    p = (UCHAR*)&SrcNodeId;
-    for (i = 0; i < sizeof(GUID); i++) {
-        hash = ((hash << 5) + hash) ^ p[i];
-    }
-    p = (UCHAR*)&TgtNodeId;
-    for (i = 0; i < sizeof(GUID); i++) {
-        hash = ((hash << 5) + hash) ^ p[i];
-    }
-    {
-        UCHAR* et = (UCHAR*)&EdgeType;
-        for (i = 0; i < sizeof(IOA_GRAPH_EDGE_TYPE); i++) {
-            hash = ((hash << 5) + hash) ^ et[i];
-        }
-    }
-    return hash % EDGE_AGGREGATE_HASH_BUCKETS;
-}
 
 /**************************************************/
-/*               内部辅助: 窗口重算                 */
+/*  哈希已迁移至 WKD_HASH_MAP                        */
+/*  (IOA_AGGREGATE_EDGE_KEY 定长二进制 key,           */
+/*   见 IoaEdgeAggregate.h), 无需自制哈希函数。       */
 /**************************************************/
 
 static
@@ -59,219 +30,306 @@ EdgeAggRecalcWindow(
 
     if (Entry->WindowStart.QuadPart == 0) {
         Entry->WindowStart = Now;
-        return Entry->ActiveCount;
+        return Entry->ActiveEdges;
     }
 
     windowEndMs = Entry->WindowStart.QuadPart / 10000 + Entry->TimeWindowMs;
     if (Now.QuadPart / 10000 > windowEndMs) {
-        Entry->ActiveCount = 0;
+        Entry->ActiveEdges = 0;
         Entry->WindowStart = Now;
     }
 
-    return Entry->ActiveCount;
+    return Entry->ActiveEdges;
 }
 
 /**************************************************/
 /*                   公开 API                       */
 /**************************************************/
 
+/**************************************************/
+/*          HashMap ref/deref/shouldremove 回调       */
+/*  对齐 driver 侧 (PairManager) 引用契约:             */
+/*   - Insert/Lookup 命中 → Reference (RefCount+1, 表引用/外部 pin) */
+/*   - Remove → ShouldRemove(RefCount<=1) 裁决 → Dereference(-1); */
+/*     归零即释放本体 (free-on-zero)。                 */
+/*  边本体与具体边均走 malloc, 释放统一 free 配对。       */
+/**************************************************/
+
+_Use_decl_annotations_
+LONG
+IoaReferenceAggregateEdge(
+    _In_ PIOA_AGGREGATE_EDGE AggEdge
+    )
+{
+    if (!AggEdge) return MAXLONG;
+    else return InterlockedIncrement(&AggEdge->RefCount);
+}
+
+static
+BOOLEAN
+IoapShouldRemoveAggregateEdge(
+    _In_ const PIOA_AGGREGATE_EDGE AggEdge,
+    _In_ BOOLEAN HoldLock
+    )
+{
+    /* 仅当无外部 pin (RefCount<=1, 仅剩表引用) 方可摘除,
+     * 闭合"枚举→复查→Remove 窗口内并发 pin"的 UAF。 */
+    return (AggEdge->RefCount == (HoldLock ? 2 : 1));
+}
+
+/*
+ * 摘除回调 (HashMap 桶独占锁内调用): RefCount -1; 归零即无并发可达者,
+ * 释放具体边链表 + Edge 本体。锁序: 桶锁(外) → EdgeLock(内), 与读写路径
+ * 单向一致。释放统一用 free (malloc 配对)。
+ */
+VOID
+IoaDereferenceAggregateEdge(
+    _In_ PIOA_AGGREGATE_EDGE AggEdge
+    )
+{
+    LONG ref;
+
+    if (!AggEdge) return MAXLONG;
+
+    ref = InterlockedDecrement(&AggEdge->RefCount);
+    if (ref == 0) {
+        /* 无任何持有者，可安全无锁访问 */
+        IoapDestroyAggregateEdge(AggEdge);
+    }
+
+    return ref;
+}
+
+_Use_decl_annotations_
 NTSTATUS
-EdgeAggTable_Initialize(
-    PIOA_AGGREGATE_EDGE_TABLE* Out
+IoaInitializeAggregateEdgeTable(
+    _Out_ PIOA_AGGREGATE_EDGE_TABLE* Table
     )
 {
     PIOA_AGGREGATE_EDGE_TABLE table;
-    ULONG i;
+    NTSTATUS status;
 
-    table = UtHeapAlloc(sizeof(IOA_AGGREGATE_EDGE_TABLE));
+    if (!Table) return STATUS_INVALID_PARAMETER;
+
+    table = malloc(sizeof(IOA_AGGREGATE_EDGE_TABLE));
     if (!table) return STATUS_NO_MEMORY;
+    RtlZeroMemory(table, sizeof(IOA_AGGREGATE_EDGE_TABLE));
 
-    for (i = 0; i < EDGE_AGGREGATE_HASH_BUCKETS; i++) {
-        InitializeListHead(&table->HashBuckets[i]);
-    }
+    /* 复用通用哈希表: 定长二进制 key (IOA_AGGREGATE_EDGE_KEY),
+     * value = PIOA_AGGREGATE_EDGE 指针。
+     * PerBucketLock=TRUE: 桶级 SRWLOCK, 细粒度并发 (替换原全局锁)。
+     * UseRefCallbacks=TRUE: 启用 ref/deref/shouldremove 强制对称契约 —
+     *   Insert/Lookup 命中 Reference(+1), Remove 经 ShouldRemove 裁决后
+     *   Dereference(-1), 归零释放本体。HashMap 仅管索引与回调, 不触碰 Edge
+     *   生命周期细节。 */
+    status = CoInitializeHashMap(
+        &table->HashMap,
+        EDGE_AGGREGATE_HASH_BUCKETS,
+        EDGE_AGGREGATE_MAX_ENTRIES,
+        TRUE,
+        TRUE,
+        IoaReferenceAggregateEdge, IoapShouldRemoveAggregateEdge,
+        (PFN_HASH_MAP_DEREFERENCE)IoaDereferenceAggregateEdge);
+    if (!NT_SUCCESS(status)) { free(table); return status; }
 
-    InitializeCriticalSection(&table->Lock);
     table->Initialized = TRUE;
-
-    printf("[EdgeAggTable] Initialized: %u hash buckets\n",
+    printf("[EdgeAggTable] Initialized: %u hash buckets (WKD_HASH_MAP, PerBucketLock+RefCallbacks)\n",
            EDGE_AGGREGATE_HASH_BUCKETS);
 
-    *Out = table;
+    *Table = table;
     return STATUS_SUCCESS;
 }
 
-VOID
-EdgeAggTable_Cleanup(
-    PIOA_AGGREGATE_EDGE_TABLE Table
+/*
+ * 整体清理 (进程退出/卸载路径)。
+ *   CoHashMapClear 依 HashMap 语义不调用 Dereference (不清引用, 对齐驱动
+ *   teardown 语义) —— 故须先枚举收集所有 Edge 指针, 再 CoHashMapClear 释放
+ *   索引桶数组, 最后逐条 IoaDereferenceAggregateEdge 扣表引用 → 归零由回调释放
+ *   具体边链表 + Edge 本体 (free-on-zero)。
+ *   表本体由 malloc 分配, 此处以 free 配对释放。
+ */
+typedef struct _EDGE_FREE_NODE {
+    struct _EDGE_FREE_NODE* Next;
+    PIOA_AGGREGATE_EDGE     Edge;
+} EDGE_FREE_NODE, *PEDGE_FREE_NODE;
+
+static
+BOOLEAN
+EdgeAggpCleanupCollect(
+    _In_ PVOID  Key,
+    _In_ SIZE_T KeySize,
+    _In_ PVOID  Value,
+    _In_ PVOID  Context
     )
 {
-    ULONG b;
-    LONG totalFreed = 0;
+    PEDGE_FREE_NODE* head = (PEDGE_FREE_NODE*)Context;
+    PEDGE_FREE_NODE node = (PEDGE_FREE_NODE)UtHeapAlloc(sizeof(EDGE_FREE_NODE));
+    if (!node) return TRUE; /* teardown 路径, 极少数分配失败忽略 */
+    node->Edge = (PIOA_AGGREGATE_EDGE)Value;
+    node->Next = *head;
+    *head = node;
+    return TRUE;
+}
+
+_Use_decl_annotations_
+VOID
+IoaCleanupAggregateEdgeTable(
+    _Inout_ PIOA_AGGREGATE_EDGE_TABLE Table
+    )
+{
+    PEDGE_FREE_NODE collected = NULL;
+    PEDGE_FREE_NODE node;
 
     if (!Table || !Table->Initialized) return;
 
-    EnterCriticalSection(&Table->Lock);
+    /* 清理线程不会并发竞争, 无需 cas */
+    InterlockedExchange8(&Table->Initialized, FALSE);
 
-    for (b = 0; b < EDGE_AGGREGATE_HASH_BUCKETS; b++) {
-        while (!IsListEmpty(&Table->HashBuckets[b])) {
-            PLIST_ENTRY entry = RemoveHeadList(&Table->HashBuckets[b]);
-            PIOA_AGGREGATE_EDGE ea = CONTAINING_RECORD(entry,
-                IOA_AGGREGATE_EDGE, HashLink);
+    /* 阶段1: 枚举收集所有 Edge 指针 (teardown 单线程, 不 pin), 再清空索引桶数组 */
+    CoEnumerateHashMap(&Table->HashMap, (PFN_HASH_MAP_ENUM)EdgeAggpCleanupCollect, &collected);
+    CoHashMapClear(&Table->HashMap);
 
-            /* 获取 ea 的写锁后释放具体边链表 */
-            AcquireSRWLockExclusive(&ea->EdgeLock);
-
-            while (!IsListEmpty(&ea->EdgesHead)) {
-                PLIST_ENTRY ce = RemoveHeadList(&ea->EdgesHead);
-                UtHeapFree(CONTAINING_RECORD(ce, IOA_CONCRETE_EDGE, Link));
-            }
-
-            ReleaseSRWLockExclusive(&ea->EdgeLock);
-            UtHeapFree(ea);
-            totalFreed++;
-        }
+    /* 阶段2: 逐条 IoaDereferenceAggregateEdge 扣表引用 → 归零释放具体边链表 + Edge 本体 */
+    node = collected;
+    while (node) {
+        PEDGE_FREE_NODE next = node->Next;
+        IoaDereferenceAggregateEdge(node->Edge);
+        UtHeapFree(node);
+        node = next;
     }
 
-    Table->Initialized = FALSE;
-    LeaveCriticalSection(&Table->Lock);
-    DeleteCriticalSection(&Table->Lock);
-
-    printf("[EdgeAggTable] Cleanup: %ld entries freed\n", totalFreed);
-    UtHeapFree(Table);
+    printf("[EdgeAggTable] Cleanup: aggregate edge table destroyed\n");
+    free(Table);
 }
 
-/* 内部无锁查找: 仅供已持 Table->Lock 的路径 (GetOrCreate 的
- * double-check) 复用; 外部一律走 IoaLookupAggregateEdge 持锁版本。 */
-static
-PIOA_AGGREGATE_EDGE
-EdgeAggpLookupUnlocked(
-    _In_ PIOA_AGGREGATE_EDGE_TABLE Table,
-    _In_ GUID                      SrcNodeId,
-    _In_ GUID                      TgtNodeId,
-    _In_ IOA_GRAPH_EDGE_TYPE       EdgeType
-    )
-{
-    ULONG bucket;
-    PLIST_ENTRY head, entry;
-
-    bucket = EdgeAggHash(SrcNodeId, TgtNodeId, EdgeType);
-    head = &Table->HashBuckets[bucket];
-
-    for (entry = head->Flink; entry != head; entry = entry->Flink) {
-        PIOA_AGGREGATE_EDGE ea = CONTAINING_RECORD(entry,
-            IOA_AGGREGATE_EDGE, HashLink);
-        if (DefGuidEqual(&ea->SrcNodeId, &SrcNodeId) &&
-            DefGuidEqual(&ea->TgtNodeId, &TgtNodeId) &&
-            ea->EdgeType == EdgeType) {
-            return ea;
-        }
-    }
-    return NULL;
-}
-
+_Use_decl_annotations_
 PIOA_AGGREGATE_EDGE
 IoaLookupAggregateEdge(
     _In_ PIOA_AGGREGATE_EDGE_TABLE Table,
-    _In_ GUID                      SrcNodeId,
-    _In_ GUID                      TgtNodeId,
-    _In_ IOA_GRAPH_EDGE_TYPE       EdgeType
+    _In_ GUID SourceNodeId,
+    _In_ GUID TargetNodeId,
+    _In_ IOA_GRAPH_EDGE_TYPE EdgeType
     )
+/*++
+ * 按 (源/目标/类型) 精确查找聚合边。UseRefCallbacks=TRUE 下命中即 pin
+ * (RefCount+1), 返回的边已被 pin, 调用方用毕须调 IoaDereferenceAggregateEdge。
+ * 对应 driver 侧 PairManager_FindProcessPair 的取值语义: 返回的边在表引用
+ * 存续期间受引用计数保护, 不会凭空释放。
+ * --*/
 {
-    ULONG bucket;
-    PLIST_ENTRY head, entry;
-    PIOA_AGGREGATE_EDGE found = NULL;
+    IOA_AGGREGATE_EDGE_KEY key = { 0 };
 
     if (!Table || !Table->Initialized) return NULL;
+    if (DefIsNullNodeId(SourceNodeId) || DefIsNullNodeId(TargetNodeId)) return NULL;
+    if (EdgeType == DefEdge_Unknown) return NULL;
 
-    bucket = EdgeAggHash(SrcNodeId, TgtNodeId, EdgeType);
-    head = &Table->HashBuckets[bucket];
+    WkdCopyGuid(&key.SourceNodeId, &SourceNodeId);
+    WkdCopyGuid(&key.TargetNodeId, &TargetNodeId);
+    key.EdgeType = EdgeType;
 
-    /* 链头锁原则 (2026-08-25): 哈希桶链读须持表锁 */
-    EnterCriticalSection(&Table->Lock);
-
-    for (entry = head->Flink; entry != head; entry = entry->Flink) {
-        PIOA_AGGREGATE_EDGE ea = CONTAINING_RECORD(entry,
-            IOA_AGGREGATE_EDGE, HashLink);
-        if (DefGuidEqual(&ea->SrcNodeId, &SrcNodeId) &&
-            DefGuidEqual(&ea->TgtNodeId, &TgtNodeId) &&
-            ea->EdgeType == EdgeType) {
-            found = ea;
-            break;
-        }
-    }
-
-    LeaveCriticalSection(&Table->Lock);
-    return found;
+    return (PIOA_AGGREGATE_EDGE)CoLookupHashMapEntry(&Table->HashMap, &key, sizeof(key));
 }
 
+_Use_decl_annotations_
 PIOA_AGGREGATE_EDGE
-IoaGetOrCreateAggregateEdge(
-    _In_ PIOA_AGGREGATE_EDGE_TABLE Table,
-    _In_ GUID                      SrcNodeId,
-    _In_ GUID                      TgtNodeId,
-    _In_ IOA_GRAPH_EDGE_TYPE       EdgeType,
-    _In_ LARGE_INTEGER             Timestamp
+IoaFindOrCreateAggregateEdge(
+    _Inout_opt_ PIOA_AGGREGATE_EDGE_TABLE Table,
+    _In_ GUID SourceNodeId,
+    _In_ GUID TargetNodeId,
+    _In_ IOA_GRAPH_EDGE_TYPE EdgeType,
+    _In_opt_ LARGE_INTEGER Timestamp
     )
 {
-    PIOA_AGGREGATE_EDGE aggEdge;
-    ULONG bucket;
+    NTSTATUS status;
+    PIOA_AGGREGATE_EDGE aggEdge = NULL;
 
-    aggEdge = IoaLookupAggregateEdge(Table, SrcNodeId, TgtNodeId, EdgeType);
-    if (aggEdge) return aggEdge;
+    if (!Table) Table = WkdIoaEngine.EdgeAggTable;
+    if (!Table || !Table->Initialized ||
+        DefIsNullNodeId(SourceNodeId) ||
+        DefIsNullNodeId(TargetNodeId) ||
+        EdgeType == DefEdge_Unknown) return NULL;
 
-    EnterCriticalSection(&Table->Lock);
-
-    aggEdge = EdgeAggpLookupUnlocked(Table, SrcNodeId, TgtNodeId, EdgeType);
-    if (aggEdge) {
-        LeaveCriticalSection(&Table->Lock);
-        return aggEdge;
-    }
-
-    aggEdge = UtHeapAlloc(sizeof(IOA_AGGREGATE_EDGE));
-    if (!aggEdge) {
-        LeaveCriticalSection(&Table->Lock);
-        return NULL;
-    }
-
-    WkdCopyGuid(&aggEdge->SrcNodeId, &SrcNodeId);
-    WkdCopyGuid(&aggEdge->TgtNodeId, &TgtNodeId);
-    aggEdge->EdgeType        = EdgeType;
-    aggEdge->TimeWindowMs    = 5000;
-    aggEdge->RefCount        = 1;
+    /* 阶段1: 查找 (WKD_HASH_MAP 内部桶锁); 命中直接返回 */
+    status = IoaLookupAggregateEdgeByNodeId(
+        SourceNodeId, TargetNodeId, EdgeType, &aggEdge);
+    if (NT_SUCCESS(status)) return aggEdge;
     
-    aggEdge->FirstSeen       = Timestamp;
-    aggEdge->LastSeen        = Timestamp;
+    /* 阶段2: 未命中 → 创建新 Edge */
     {
         LARGE_INTEGER now;
+
+        aggEdge = malloc(sizeof(IOA_AGGREGATE_EDGE));
+        if (!aggEdge) return NULL;
+        RtlZeroMemory(aggEdge, sizeof(IOA_AGGREGATE_EDGE));
+
+        aggEdge->RefCount = 1;
+        aggEdge->SourceNodeId = SourceNodeId;
+        aggEdge->TargetNodeId = TargetNodeId;
+        aggEdge->EdgeType = EdgeType;
+        aggEdge->TimeWindowMs = 5000;
+        aggEdge->FirstSeen = Timestamp;
+        aggEdge->LastSeen = Timestamp;
         GetSystemTimeAsFileTime((LPFILETIME)&now);
         aggEdge->WindowStart = now;
+        InitializeListHead(&aggEdge->EdgesHead);
+        InitializeSRWLock(&aggEdge->EdgeLock);
     }
 
-    /* 初始化具体边链表 + 锁 */
-    InitializeListHead(&aggEdge->EdgesHead);
-    InitializeSRWLock(&aggEdge->EdgeLock);
-    aggEdge->TotalEdgeCount       = 0;
-    aggEdge->ActiveEdgeCount = 0;
-    aggEdge->OwnerPair = NULL;
+        /* 阶段3: 尝试插入索引表。
+         * 并发下若另一线程已插入相同 key, CoInsertHashMapEntry 返回
+         * STATUS_OBJECT_NAME_COLLISION: double-check 回收已存在 Edge,
+         * 释放本线程多余创建的新 Edge (无泄漏/无双插入)。
+         * 无表锁: HashMap 桶锁串行同 key 操作; 新边 Insert 即 Reference(+1)
+         * 落地表引用; 即便此后 CleanupExpired 立刻枚举到该边, 因 RefCount=1
+         * (仅表引用) 会经 ShouldRemove 摘除并释放, 不存在"重插入旧边"的竞态
+         * (old 指针已失效, Retry 重新 CoLookupHashMapEntry 取当前存活边),
+         * 故不再需要全局表锁来杜绝 double-free。 */
+    {   
+        ULONG attempts = 3;
+        IOA_AGGREGATE_EDGE_KEY key = { SourceNodeId, TargetNodeId, EdgeType };
+Retry:
+        if (0 == attempts--) { free(aggEdge); return NULL; };
+        status = CoInsertHashMapEntry(&Table->HashMap, &key, sizeof(key), aggEdge);
+        if (NT_SUCCESS(status)) {
+            InterlockedIncrement(&Table->ActiveAggEdges);
+            InterlockedIncrement(&Table->TotalAggEdges);
+            return aggEdge;
+        }
+        else if (status == STATUS_OBJECT_NAME_COLLISION) {
+            PIOA_AGGREGATE_EDGE existing =
+                (PIOA_AGGREGATE_EDGE)CoLookupHashMapEntry(&Table->HashMap, &key, sizeof(key));
+            /* 释放多余 Edge (具体边链表为空, 无需额外清理) */
+            free(aggEdge);
+            return existing;
+        } else goto Retry;
+    }
+}
 
-    bucket = EdgeAggHash(SrcNodeId, TgtNodeId, EdgeType);
-    InsertTailList(&Table->HashBuckets[bucket], &aggEdge->HashLink);
-    InterlockedIncrement(&Table->EntryCount);
-
-    LeaveCriticalSection(&Table->Lock);
-    return aggEdge;
+_Use_decl_annotations_
+VOID 
+IoapDestroyAggregateEdge(
+    _In_  PIOA_AGGREGATE_EDGE AggEdge
+    )
+{
+    if (!AggEdge) return;
+    while (!IsListEmpty(&AggEdge->EdgesHead)) {
+        PLIST_ENTRY ce = RemoveHeadList(&AggEdge->EdgesHead);
+        free(CONTAINING_RECORD(ce, IOA_CONCRETE_EDGE, Link));
+    }
+    free(AggEdge);
 }
 
 /**************************************************/
 /*           具体边链表操作                          */
 /**************************************************/
 
-VOID
-EdgeAgg_InsertConcrete(
+_Use_decl_annotations_
+NTSTATUS
+IoapInsertConcreteEdge(
     _Inout_ PIOA_AGGREGATE_EDGE AggEdge,
-    _In_    GUID                EdgeId,
-    _In_    GUID                EventId,
-    _In_    LARGE_INTEGER       Timestamp
+    _In_ GUID EventId,
+    _In_ LARGE_INTEGER Timestamp,
+    _In_ LARGE_INTEGER Now
     )
 /*++
 Routine Description:
@@ -281,23 +339,26 @@ Routine Description:
     慢速路径: 从尾部 Blink 向前遍历找到插入点 (罕见，线程池乱序写入)。
 
     持有 EdgeLock 写锁保护链表操作。
-    若链表长度超过 CONCRETE_EDGE_MAX_NODES，淘汰最旧节点。
+    若链表长度超过 MAX_CONCRETES_PER_AGGREGATE_EDGE，淘汰最旧节点。
 --*/
 {
     PIOA_CONCRETE_EDGE entry;
     PLIST_ENTRY tail;
     PLIST_ENTRY pos;
 
-    if (!AggEdge) return;
+    if (!AggEdge || DefIsNullNodeId(EventId) ||
+        Timestamp.QuadPart == 0 || Now.QuadPart == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
 
     /* 分配新节点 (锁外分配，减少锁持有时间) */
-    entry = UtHeapAlloc(sizeof(IOA_CONCRETE_EDGE));
+    entry = malloc(sizeof(IOA_CONCRETE_EDGE));
     if (!entry) return;
+    RtlZeroMemory(entry, sizeof(entry));
 
-    WkdCopyGuid(&entry->EdgeId, &EdgeId);
-    entry->EdgeType = AggEdge->EdgeType;
+    entry->EdgeId = EventId;
     entry->Timestamp = Timestamp;
-    entry->Active    = TRUE;
+    entry->Active = TRUE;
 
     AcquireSRWLockExclusive(&AggEdge->EdgeLock);
 
@@ -336,20 +397,42 @@ Routine Description:
         }
     }
 
-    AggEdge->TotalEdgeCount++;
-    AggEdge->ActiveEdgeCount++;
+    InterlockedIncrement(&AggEdge->ActiveEdges);
+    InterlockedIncrement(&AggEdge->TotalEdges);
+
+    /* 维护最早过期时间 (min): 插入即更新; 回收/图淘汰不抬高 (保持下估计, 快速路径安全) */
+    {
+        LONGLONG newExpiry = Timestamp.QuadPart + (LONGLONG)EDGE_AGGREGATE_TTL_MS * 10000;
+        if (AggEdge->EarliestExpireTime.QuadPart == 0 ||
+            newExpiry < AggEdge->EarliestExpireTime.QuadPart) {
+            AggEdge->EarliestExpireTime.QuadPart = newExpiry;
+        }
+    }
 
     /* 超过上限 → 淘汰最旧节点 (链表头部) */
-    if (AggEdge->TotalEdgeCount > CONCRETE_EDGE_MAX_NODES) {
-        //PLIST_ENTRY oldEntry = RemoveHeadList(&AggEdge->EdgesHead);
-        //PIOA_CONCRETE_EDGE oldNode = CONTAINING_RECORD(oldEntry, IOA_CONCRETE_EDGE, Link);
-        //AggEdge->TotalEdgeCount--;
+    if (InterlockedCompareExchange(&AggEdge->ActiveEdges, 0, 0) >
+        MAX_CONCRETES_PER_AGGREGATE_EDGE) {
+        PIOA_CONCRETE_EDGE oldNode;
+        
+        /* 尝试惰性刷新聚合边以释放空间 */
+        IoaRefreshAggregateEdgeLocked(AggEdge, Now);
 
-        ReleaseSRWLockExclusive(&AggEdge->EdgeLock);
-        // UtHeapFree(oldNode);
-    } else {
-        ReleaseSRWLockExclusive(&AggEdge->EdgeLock);
+        /* 聚合边中的活跃项仍超出上限，直接淘汰早期记录并更新最早过期时间 */
+        if (InterlockedCompareExchange(&AggEdge->ActiveEdges, 0, 0) >
+            MAX_CONCRETES_PER_AGGREGATE_EDGE) {
+            oldNode = CONTAINING_RECORD(
+                RemoveHeadList(&AggEdge->EdgesHead),
+                IOA_CONCRETE_EDGE,
+                Link);
+            
+            InterlockedDecrement(&AggEdge->ActiveEdges);
+            free(oldNode);
+            AggEdge->EarliestExpireTime.QuadPart =
+                CONTAINING_RECORD(&AggEdge->EdgesHead, IOA_CONCRETE_EDGE, Link)->Timestamp.QuadPart;
+        }
     }
+    ReleaseSRWLockExclusive(&AggEdge->EdgeLock);
+    return STATUS_SUCCESS;
 }
 
 VOID
@@ -392,7 +475,7 @@ Routine Description:
     }
 
     if (deactivated > 0) {
-        AggEdge->ActiveEdgeCount -= deactivated;
+        AggEdge->ActiveEdges -= deactivated;
     }
 
     ReleaseSRWLockExclusive(&AggEdge->EdgeLock);
@@ -424,9 +507,10 @@ Routine Description:
 
         if (DefGuidEqual(&node->EdgeId, &EdgeId)) {
             RemoveEntryList(entry);
-            AggEdge->TotalEdgeCount--;
+            AggEdge->TotalEdges--;
+            InterlockedDecrement(&AggEdge->ActiveEdges);
             if (node->Active) {
-                AggEdge->ActiveEdgeCount--;
+                AggEdge->ActiveEdges--;
             }
             UtHeapFree(node);
             /* 不 break — 同一 EdgeId 理论只有一条, 但安全遍历到底 */
@@ -437,11 +521,11 @@ Routine Description:
     ReleaseSRWLockExclusive(&AggEdge->EdgeLock);
 }
 
+_Use_decl_annotations_
 VOID
-IoaUpdateProcessPairEdgeAggregate(
-    _Inout_ PIOA_AGGREGATE_EDGE Edge,
-    _In_    PWKD_EVENT_HEADER   Event,
-    _In_    GUID                EdgeId
+IoaUpdateAggregateEdge(
+    _Inout_ PIOA_AGGREGATE_EDGE AggEdge,
+    _In_ const PWKD_EVENT_HEADER Event
     )
 /*++
 Routine Description:
@@ -451,98 +535,93 @@ Routine Description:
 {
     LARGE_INTEGER now;
 
-    if (!Edge || !Event) return;
+    if (!AggEdge || !Event) return;
 
     GetSystemTimeAsFileTime((LPFILETIME)&now);
 
-    Edge->OccurrenceCount++;
+    //if (AggEdge->OccurrenceCount == 1) {
+    //    AggEdge->Confidence = Event->Confidence;
+    //} else {
+    //    AggEdge->Confidence = (AggEdge->Confidence * 7 + Event->Confidence * 3) / 10;
+    //}
 
-    if (Edge->OccurrenceCount == 1) {
-        Edge->Confidence = Event->Confidence;
-    } else {
-        Edge->Confidence = (Edge->Confidence * 7 + Event->Confidence * 3) / 10;
-    }
-
-    EdgeAggRecalcWindow(Edge, now);
-    Edge->ActiveCount++;
-    Edge->LastSeen = now;
+    // EdgeAggRecalcWindow(AggEdge, now);
+    AggEdge->LastSeen = now;
 
     /* 尾插具体边记录 (传递原始事件GUID供Tier3反查) */
-    EdgeAgg_InsertConcrete(Edge, EdgeId, Event->EventId, Event->Timestamp);
+    IoapInsertConcreteEdge(AggEdge, Event->EventId, Event->Timestamp, now);
+    if (InterlockedCompareExchangePointer(&AggEdge->OwnerPair, NULL, NULL)) {
+        InterlockedIncrement(&AggEdge->OwnerPair->ActiveEdges);
+        InterlockedIncrement(&AggEdge->OwnerPair->TotalEdges);
+    }
 
-    InterlockedIncrement64(&Edge->SequenceNumber);
+    InterlockedIncrement64(&AggEdge->SequenceNumber);
 
-    if (Edge->FirstSeen.QuadPart == 0) {
-        Edge->FirstSeen = now;
+    if (AggEdge->FirstSeen.QuadPart == 0) {
+        AggEdge->FirstSeen = now;
     }
 }
 
-VOID
-EdgeAggTable_CleanupExpired(
-    _In_ PIOA_AGGREGATE_EDGE_TABLE Table
+/*
+ * 刷新聚合边 (对齐 driver 侧 IoaRefreshProcessPair 对行为节点/记录的回收语义):
+ *   回收 EdgesHead 中超过 EDGE_AGGREGATE_TTL_MS 的具体边节点 (释放), 返回是否仍含
+ *   有效 (未过期) 具体边。聚合边是否存活取决于子对象 (具体边) 是否有效 —— 该判定被
+ *   IocCleanupExpiredProcessPair 经 AepRefreshProcessPair 统一回收聚合边时共用,
+ *   消除此前"是否含有效聚合边"判定的割裂。
+ */
+ULONG
+IoaRefreshAggregateEdgeLocked(
+    _Inout_ PIOA_AGGREGATE_EDGE AggEdge,
+    _In_ LARGE_INTEGER Now
     )
 {
-    LARGE_INTEGER now;
-    LONGLONG nowMs;
-    ULONG b;
-    LONG cleaned = 0;
+    PLIST_ENTRY entry;
+    LONG reclaimed = 0;
+    LONGLONG earliestExpiry = 0;
 
-    if (!Table || !Table->Initialized) return;
+    if (!AggEdge || Now.QuadPart == 0) return ULONG_MAX;
 
-    GetSystemTimeAsFileTime((LPFILETIME)&now);
-    nowMs = now.QuadPart / 10000;
+    /* 快速路径 (对齐 driver IoapReclaimExpiredRecordsLocked):
+     *   - 无任何具体边 → 直接判失效;
+     *   - 最早过期时间尚未到达 → 全部有效, 直接返回, 跳过整条链表遍历。 */
+    
+    if (InterlockedCompareExchange(&AggEdge->ActiveEdges, 0, 0) == 0) {
+        AggEdge->EarliestExpireTime.QuadPart = 0;
+        return ULONG_MAX;            /* 无有效具体边 → 聚合边应释放 */
+    }
+    if (AggEdge->EarliestExpireTime.QuadPart > Now.QuadPart) {
+        return ULONG_MAX;             /* 全部未过期, 无需遍历 */
+    }
 
-    EnterCriticalSection(&Table->Lock);
+    /* 慢速路径: 回收过期具体边, 并重算最早过期时间 */
+    entry = AggEdge->EdgesHead.Flink;
+    while (entry != &AggEdge->EdgesHead) {
+        PIOA_CONCRETE_EDGE ce = CONTAINING_RECORD(entry, IOA_CONCRETE_EDGE, Link);
+        PLIST_ENTRY next = entry->Flink;
+        LONGLONG expiry = ce->Timestamp.QuadPart + (LONGLONG)EDGE_AGGREGATE_TTL_MS * 10000;
 
-    for (b = 0; b < EDGE_AGGREGATE_HASH_BUCKETS; b++) {
-        PLIST_ENTRY head = &Table->HashBuckets[b];
-        PLIST_ENTRY entry = head->Flink;
-
-        while (entry != head) {
-            PIOA_AGGREGATE_EDGE ea = CONTAINING_RECORD(entry,
-                IOA_AGGREGATE_EDGE, HashLink);
-            PLIST_ENTRY next = entry->Flink;
-
-            LONGLONG age = nowMs - (ea->LastSeen.QuadPart / 10000);
-            if (age > EDGE_AGGREGATE_TTL_MS && ea->RefCount <= 1) {
-                /* 双向摘链闭环 (2026-08-25): 先从挂靠 pair 的 EdgeListHead
-                 * 摘除 PairLink — 持该 pair 的 EdgeListLock 独占, 与
-                 * PairContext_AttachEdge/RefreshScore 同锁域, 防 FSM/T1
-                 * 遍历踩已释放内存。锁序: Table->Lock(外) →
-                 * EdgeListLock(内), 与 AttachEdge 路径单向一致。 */
-                PAE_PROCESS_PAIR owner = (PAE_PROCESS_PAIR)ea->OwnerPair;
-                if (owner && !IsListEmpty(&ea->PairLink)) {
-                    AcquireSRWLockExclusive(&owner->EdgeListLock);
-                    if (!IsListEmpty(&ea->PairLink)) {
-                        RemoveEntryList(&ea->PairLink);
-                    }
-                    ReleaseSRWLockExclusive(&owner->EdgeListLock);
-                }
-
-                /* 获取 ea 的写锁后释放具体边链表 */
-                AcquireSRWLockExclusive(&ea->EdgeLock);
-
-                while (!IsListEmpty(&ea->EdgesHead)) {
-                    PLIST_ENTRY ce = RemoveHeadList(&ea->EdgesHead);
-                    UtHeapFree(CONTAINING_RECORD(ce, IOA_CONCRETE_EDGE, Link));
-                }
-
-                ReleaseSRWLockExclusive(&ea->EdgeLock);
-                RemoveEntryList(entry);
-                UtHeapFree(ea);
-                InterlockedDecrement(&Table->EntryCount);
-                cleaned++;
+        if (expiry < Now.QuadPart) {
+            /* 过期具体边 → 摘除并释放 */
+            RemoveEntryList(entry);
+            reclaimed++;
+            free(ce);
+        } else {
+            /* 未过期 → 参与最早过期时间重算 (保持缓存下估计, 快速路径可靠) */
+            expiry = ce->Timestamp.QuadPart + (LONGLONG)EDGE_AGGREGATE_TTL_MS * 10000;
+            if (earliestExpiry == 0 || expiry < earliestExpiry) {
+                earliestExpiry = expiry;
             }
-            entry = next;
         }
+
+        entry = next;
     }
 
-    LeaveCriticalSection(&Table->Lock);
-
-    if (cleaned > 0) {
-        printf("[EdgeAggTable] Cleanup: %ld expired entries removed\n", cleaned);
-    }
+    InterlockedAdd(&AggEdge->ActiveEdges, - reclaimed);
+    InterlockedAdd(&AggEdge->OwnerPair->ActiveEdges, -reclaimed);
+    AggEdge->EarliestExpireTime.QuadPart = earliestExpiry;
+    return reclaimed;
 }
+
 
 ULONG
 EdgeAggTable_GetCount(
@@ -550,13 +629,13 @@ EdgeAggTable_GetCount(
     )
 {
     if (!Table) return 0;
-    return (ULONG)Table->EntryCount;
+    return (ULONG)Table->ActiveAggEdges;
 }
 
 NTSTATUS
 T3GetAggregateEdgeTimeWindow(
-    _In_        GUID                SrcNodeId,
-    _In_        GUID                TgtNodeId,
+    _In_        GUID                SourceNodeId,
+    _In_        GUID                TargetNodeId,
     _In_        IOA_GRAPH_EDGE_TYPE EdgeType,
     _Out_opt_   PLARGE_INTEGER      Start,
     _Out_opt_   PLARGE_INTEGER      End
@@ -566,14 +645,14 @@ T3GetAggregateEdgeTimeWindow(
  * 若聚合边不存在, 返回 {0}。
  */
 {
-    if (DefIsNullNodeId(SrcNodeId) || DefIsNullNodeId(TgtNodeId) || !EdgeType)
+    if (DefIsNullNodeId(SourceNodeId) || DefIsNullNodeId(TargetNodeId) || !EdgeType)
         return STATUS_INVALID_PARAMETER;
 
     if (Start)  Start->QuadPart = 0;
     if (End)    End->QuadPart   = 0;
 
     PIOA_AGGREGATE_EDGE agg = 
-        IoaLookupAggregateEdge(WkdIoaEngine.EdgeAggTable, SrcNodeId, TgtNodeId, EdgeType);
+        IoaLookupAggregateEdge(WkdIoaEngine.EdgeAggTable, SourceNodeId, TargetNodeId, EdgeType);
     if (!agg) return STATUS_UNSUCCESSFUL;
 
     if (Start)
@@ -582,5 +661,40 @@ T3GetAggregateEdgeTimeWindow(
     if (End)
         *End = agg->LastSeen;
 
+    /* Lookup 返回已 pin 的边, 读取时间戳后归还引用 */
+    IoaDereferenceAggregateEdge(agg);
     return STATUS_SUCCESS;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+IoaLookupAggregateEdgeByNodeId(
+    _In_ GUID SourceNodeId,
+    _In_ GUID TargetNodeId,
+    _In_ IOA_GRAPH_EDGE_TYPE EdgeType,
+    _Out_ PIOA_AGGREGATE_EDGE* Aggrate
+    )
+{
+    IOA_AGGREGATE_EDGE_KEY key;
+    PIOA_AGGREGATE_EDGE aggEdge;
+    PIOA_AGGREGATE_EDGE_TABLE Table = WkdIoaEngine.EdgeAggTable;
+
+    if (DefIsNullNodeId(SourceNodeId) ||
+        DefIsNullNodeId(TargetNodeId) ||
+        EdgeType == DefEdge_Unknown ||
+        !Aggrate || !Table) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Aggrate = NULL;
+    
+    key.SourceNodeId = SourceNodeId;
+    key.TargetNodeId = TargetNodeId;
+    key.EdgeType = EdgeType;
+
+    aggEdge = (PIOA_AGGREGATE_EDGE)CoLookupHashMapEntry(
+        &Table->HashMap, &key, sizeof(key));
+    if (aggEdge) {
+        *Aggrate = aggEdge;
+        return STATUS_SUCCESS;
+    } else return STATUS_NOT_FOUND;
 }

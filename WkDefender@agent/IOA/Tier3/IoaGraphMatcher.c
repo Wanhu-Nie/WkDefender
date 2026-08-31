@@ -110,7 +110,7 @@ Return Value:
 
     /* TargetRole=0: 边必须指向事件目标进程 */
     if (Constraint->TargetRole == GM_TARGET_ROLE_DIRECT) {
-        if (!DefGuidEqual(&Edge->TgtNodeId, TgtProcessId)) {
+        if (!DefGuidEqual(&Edge->TargetNodeId, TgtProcessId)) {
             return FALSE;
         }
     }

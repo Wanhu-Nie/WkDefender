@@ -211,8 +211,8 @@ Return Value:
     if (!desc) return STATUS_NO_MEMORY;
 
     desc->FromFsm = FALSE;
-    WkdCopyGuid(&desc->SrcNodeId, &SuspectNodeId);
-    WkdCopyGuid(&desc->TgtNodeId, &VictimNodeId);
+    WkdCopyGuid(&desc->SourceNodeId, &SuspectNodeId);
+    WkdCopyGuid(&desc->TargetNodeId, &VictimNodeId);
     desc->EdgeType      = DefEdge_Unknown;
     desc->BehaviorFlags = 0;
     if (RuleName) {
@@ -248,7 +248,7 @@ T2EnqueueAsync(
     )
 /*++
 Routine Description:
-    Tier2 异步入队。携带 SrcNodeId/TgtNodeId 入队。
+    Tier2 异步入队。携带 SourceNodeId/TargetNodeId 入队。
     消费端 T2ProcessAlertQueue 取出后重建 PairCtx 调用 T2AnalyzeInternal。
 --*/
 {
@@ -261,7 +261,7 @@ Routine Description:
 
     desc->FromFsm = FALSE;
     /* 2026-08-23 pair 键 PID 化: NodeId 经谱系树反查 */
-    IoaPairResolveNodeIds(PairCtx, &desc->SrcNodeId, &desc->TgtNodeId);
+    IoaPairResolveNodeIds(PairCtx, &desc->SourceNodeId, &desc->TargetNodeId);
     desc->EdgeType = DefEdge_Unknown;
     desc->BehaviorFlags = 0;
 
@@ -463,13 +463,13 @@ skip_alert:
                 PAE_PROCESS_PAIR asyncPairCtx = NULL;
 
                 if (WkdIoaEngine.PairManager &&
-                    !DefIsNullNodeId(desc->SrcNodeId) &&
-                    !DefIsNullNodeId(desc->TgtNodeId)) {
+                    !DefIsNullNodeId(desc->SourceNodeId) &&
+                    !DefIsNullNodeId(desc->TargetNodeId)) {
                     /* 2026-08-23 pair 键 PID 化: GUID → 节点 → PID */
                     PWKD_PROCESS srcN = PtTreeLookupByNodeId(
-                        &WkdProcessTree, desc->SrcNodeId);
+                        &WkdProcessTree, desc->SourceNodeId);
                     PWKD_PROCESS tgtN = PtTreeLookupByNodeId(
-                        &WkdProcessTree, desc->TgtNodeId);
+                        &WkdProcessTree, desc->TargetNodeId);
                     if (srcN && tgtN &&
                         !srcN->SecCtx.Placeholder && !tgtN->SecCtx.Placeholder) {
                         if (!NT_SUCCESS(AeLookupProcessPair(
@@ -543,7 +543,7 @@ Return Value:
     *MatchedCount = 0;
     *MissCount = 0;
 
-    /* SrcNodeId/TgtNodeId 有效性检查 */
+    /* SourceNodeId/TargetNodeId 有效性检查 */
     if (DefIsNullNodeId(Evidence->SrcProcessNodeId) ||
         DefIsNullNodeId(Evidence->TgtProcessNodeId)) {
         *MissCount = Evidence->CurrentStep;
@@ -565,11 +565,13 @@ Return Value:
                     Evidence->SrcProcessNodeId,
                     Evidence->TgtProcessNodeId,
                     tmpl->Steps[i].TriggerEdge);
-                if (agg && agg->ActiveEdgeCount > 0) {
+                if (agg && agg->ActiveEdges > 0) {
                     matched++;
                 } else {
                     missed++;
                 }
+                /* Lookup 返回已 pin 的边, 本步验证用毕归还引用 */
+                if (agg) IoaDereferenceAggregateEdge(agg);
             }
         }
     }
@@ -667,8 +669,8 @@ Return Value:
 
                     /* 记录边 */
                     PT2_SUBGRAPH_EDGE se = &Subgraph->Edges[Subgraph->EdgeCount];
-                    WkdCopyGuid(&se->SrcNodeId, &edge->SrcNodeId);
-                    WkdCopyGuid(&se->TgtNodeId, &edge->TgtNodeId);
+                    WkdCopyGuid(&se->SourceNodeId, &edge->SourceNodeId);
+                    WkdCopyGuid(&se->TargetNodeId, &edge->TargetNodeId);
                     se->EdgeType        = edge->Type;
                     se->OccurrenceCount = edge->OccurrenceCount;
                     se->Confidence      = edge->Confidence;
@@ -695,13 +697,13 @@ Return Value:
                     if (edge->SrcNode) {
                         BOOLEAN dup = FALSE;
                         for (ULONG v = 0; v < visitedCount; v++) {
-                            if (DefGuidEqual(&visited[v], &edge->SrcNodeId)) { dup = TRUE; break; }
+                            if (DefGuidEqual(&visited[v], &edge->SourceNodeId)) { dup = TRUE; break; }
                         }
                         if (!dup && visitedCount < T2_SUBGRAPH_MAX_NODES) {
-                            WkdCopyGuid(&visited[visitedCount], &edge->SrcNodeId);
+                            WkdCopyGuid(&visited[visitedCount], &edge->SourceNodeId);
                             visitedCount++;
-                            WkdCopyGuid(&queue[qTail], &edge->SrcNodeId); qTail++;
-                            Subgraph->NodeIds[Subgraph->NodeCount] = edge->SrcNodeId;
+                            WkdCopyGuid(&queue[qTail], &edge->SourceNodeId); qTail++;
+                            Subgraph->NodeIds[Subgraph->NodeCount] = edge->SourceNodeId;
                             Subgraph->NodeCount++;
                             layerFound = TRUE;
                         }
@@ -721,8 +723,8 @@ Return Value:
                     /* 仅记录非创建边（出方向只关注操作类边） */
                     if (edge->Type != DefEdge_Creates) {
                         PT2_SUBGRAPH_EDGE se = &Subgraph->Edges[Subgraph->EdgeCount];
-                        WkdCopyGuid(&se->SrcNodeId, &edge->SrcNodeId);
-                        WkdCopyGuid(&se->TgtNodeId, &edge->TgtNodeId);
+                        WkdCopyGuid(&se->SourceNodeId, &edge->SourceNodeId);
+                        WkdCopyGuid(&se->TargetNodeId, &edge->TargetNodeId);
                         se->EdgeType        = edge->Type;
                         se->OccurrenceCount = edge->OccurrenceCount;
                         se->Confidence      = edge->Confidence;
@@ -734,12 +736,12 @@ Return Value:
                         if (edge->TgtNode) {
                             BOOLEAN dup = FALSE;
                             for (ULONG v = 0; v < visitedCount; v++) {
-                                if (DefGuidEqual(&visited[v], &edge->TgtNodeId)) { dup = TRUE; break; }
+                                if (DefGuidEqual(&visited[v], &edge->TargetNodeId)) { dup = TRUE; break; }
                             }
                             if (!dup && visitedCount < T2_SUBGRAPH_MAX_NODES) {
-                                WkdCopyGuid(&visited[visitedCount], &edge->TgtNodeId);
+                                WkdCopyGuid(&visited[visitedCount], &edge->TargetNodeId);
                                 visitedCount++;
-                                Subgraph->NodeIds[Subgraph->NodeCount] = edge->TgtNodeId;
+                                Subgraph->NodeIds[Subgraph->NodeCount] = edge->TargetNodeId;
                                 Subgraph->NodeCount++;
                             }
                         }
@@ -821,7 +823,7 @@ Arguments:
         for (i = 0; i < Subgraph->NodeCount; i++) {
             ULONG inDeg = 0;
             for (ULONG j = 0; j < Subgraph->EdgeCount; j++) {
-                if (DefGuidEqual(&Subgraph->Edges[j].TgtNodeId, &Subgraph->NodeIds[i]))
+                if (DefGuidEqual(&Subgraph->Edges[j].TargetNodeId, &Subgraph->NodeIds[i]))
                     inDeg++;
             }
             if (inDeg > maxInDeg) maxInDeg = inDeg;
@@ -857,7 +859,7 @@ Arguments:
             /* 入度>1 意味着不仅被父进程创建，还被其他进程操作 */
             ULONG inDeg = 0;
             for (ULONG j = 0; j < Subgraph->EdgeCount; j++) {
-                if (DefGuidEqual(&Subgraph->Edges[j].TgtNodeId, &Subgraph->NodeIds[i]) &&
+                if (DefGuidEqual(&Subgraph->Edges[j].TargetNodeId, &Subgraph->NodeIds[i]) &&
                     Subgraph->Edges[j].EdgeType != DefEdge_Creates)
                     inDeg++;
             }

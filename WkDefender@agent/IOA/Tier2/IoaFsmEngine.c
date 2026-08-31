@@ -126,8 +126,8 @@ static const FSM_PATTERN_TEMPLATE g_FsmBuiltinPatterns[FSM_PATTERN_COUNT] = {
 static
 ULONG
 FsmpPatternHash(
-    _In_ GUID   SrcNodeId,
-    _In_ GUID   TgtNodeId,
+    _In_ GUID   SourceNodeId,
+    _In_ GUID   TargetNodeId,
     _In_ UINT8  PatternIndex
     )
 {
@@ -135,11 +135,11 @@ FsmpPatternHash(
     UCHAR* p;
     ULONG i;
 
-    p = (UCHAR*)&SrcNodeId;
+    p = (UCHAR*)&SourceNodeId;
     for (i = 0; i < sizeof(GUID); i++) {
         hash = ((hash << 5) + hash) ^ p[i];
     }
-    p = (UCHAR*)&TgtNodeId;
+    p = (UCHAR*)&TargetNodeId;
     for (i = 0; i < sizeof(GUID); i++) {
         hash = ((hash << 5) + hash) ^ p[i];
     }
@@ -155,19 +155,19 @@ static
 PFSM_PATTERN
 FsmpLookupPattern(
     _In_ PIOA_FSM_ENGINE Engine,
-    _In_ GUID             SrcNodeId,
-    _In_ GUID             TgtNodeId,
+    _In_ GUID             SourceNodeId,
+    _In_ GUID             TargetNodeId,
     _In_ ULONG            PatternIndex
     )
 {
-    ULONG bucket = FsmpPatternHash(SrcNodeId, TgtNodeId, PatternIndex);
+    ULONG bucket = FsmpPatternHash(SourceNodeId, TargetNodeId, PatternIndex);
     PLIST_ENTRY head = &Engine->PatternHashBuckets[bucket];
     PLIST_ENTRY entry;
 
     for (entry = head->Flink; entry != head; entry = entry->Flink) {
         PFSM_PATTERN pe = CONTAINING_RECORD(entry, FSM_PATTERN, HashLink);
-        if (DefGuidEqual(&pe->SrcNodeId, &SrcNodeId) &&
-            DefGuidEqual(&pe->TgtNodeId, &TgtNodeId) &&
+        if (DefGuidEqual(&pe->SourceNodeId, &SourceNodeId) &&
+            DefGuidEqual(&pe->TargetNodeId, &TargetNodeId) &&
             pe->PatternIndex == PatternIndex) {
             return pe;
         }
@@ -179,29 +179,29 @@ static
 PFSM_PATTERN
 FsmpGetOrCreatePattern(
     _In_ PIOA_FSM_ENGINE Engine,
-    _In_ GUID            SrcNodeId,
-    _In_ GUID            TgtNodeId,
+    _In_ GUID            SourceNodeId,
+    _In_ GUID            TargetNodeId,
     _In_ ULONG           PatternIndex
     )
 {
     PFSM_PATTERN pe;
     ULONG bucket;
 
-    pe = FsmpLookupPattern(Engine, SrcNodeId, TgtNodeId, PatternIndex);
+    pe = FsmpLookupPattern(Engine, SourceNodeId, TargetNodeId, PatternIndex);
     if (pe) return pe;
 
     pe = UtHeapAlloc(sizeof(FSM_PATTERN));
     if (!pe) return NULL;
 
-    WkdCopyGuid(&pe->SrcNodeId, &SrcNodeId);
-    WkdCopyGuid(&pe->TgtNodeId, &TgtNodeId);
+    WkdCopyGuid(&pe->SourceNodeId, &SourceNodeId);
+    WkdCopyGuid(&pe->TargetNodeId, &TargetNodeId);
     pe->PatternIndex    = PatternIndex;
     pe->ThreatScore     = 0;
     pe->LastStepTime.QuadPart = 0;
     pe->CurrentStep    = 0;
     pe->RefCount        = 1;
 
-    bucket = FsmpPatternHash(SrcNodeId, TgtNodeId, PatternIndex);
+    bucket = FsmpPatternHash(SourceNodeId, TargetNodeId, PatternIndex);
     InsertTailList(&Engine->PatternHashBuckets[bucket], &pe->HashLink);
     InterlockedIncrement(&Engine->PatternCount);
     Engine->TotalStateEntriesCreated++;
@@ -281,8 +281,8 @@ Routine Description:
     RtlZeroMemory(Packet, sizeof(IOA_FSM_EVIDENCE));
 
     Packet->FsmClass     = Template->FsmClass;
-    WkdCopyGuid(&Packet->SrcProcessNodeId, &Pattern->SrcNodeId);
-    WkdCopyGuid(&Packet->TgtProcessNodeId, &Pattern->TgtNodeId);
+    WkdCopyGuid(&Packet->SrcProcessNodeId, &Pattern->SourceNodeId);
+    WkdCopyGuid(&Packet->TgtProcessNodeId, &Pattern->TargetNodeId);
     Packet->PatternIndex = PatternIndex;
     Packet->CurrentStep  = Pattern->CurrentStep;
     Packet->StartTime    = Pattern->CreationTime;
@@ -360,8 +360,10 @@ IoaMapEventToEdgeType(
 {
     switch (EventType) {
     case WkdEvent_ProcessCreate:        return DefEdge_Creates;
+    case WkdEvent_ProcessExit:          return DefEdge_Creates;
     case WkdEvent_ProcessOpen:          return DefEdge_Opens;
     case WkdEvent_ThreadCreate:         return DefEdge_AssociatedWith;
+    case WkdEvent_ThreadExit:           return DefEdge_AssociatedWith;
     case WkdEvent_RemoteThreadCreate:   return DefEdge_InjectsInto;
     case WkdEvent_MemoryAllocate:       return DefEdge_Allocates;
     case WkdEvent_MemoryProtect:        return DefEdge_Protects;
@@ -483,13 +485,13 @@ Return Value:
         while (entry != &PairCtx->EdgeListHead && roadCount < FSM_MAX_ROADS) {
             PIOA_AGGREGATE_EDGE agg = CONTAINING_RECORD(entry, IOA_AGGREGATE_EDGE, PairLink);
 
-            if (agg->ActiveEdgeCount > 0 && !IsListEmpty(&agg->EdgesHead)) {
+            if (agg->ActiveEdges > 0 && !IsListEmpty(&agg->EdgesHead)) {
                 roads[roadCount].EdgeType   = agg->EdgeType;
                 roads[roadCount].Aggregate  = agg;               /* 保存聚合边指针 */
                 roads[roadCount].Head       = &agg->EdgesHead;
                 roads[roadCount].Cursor     = agg->EdgesHead.Flink;
                 roads[roadCount].End        = &agg->EdgesHead;
-                roads[roadCount].Remaining  = agg->ActiveEdgeCount;
+                roads[roadCount].Remaining  = agg->ActiveEdges;
                 roadCount++;
             }
             entry = entry->Flink;
@@ -539,7 +541,7 @@ Return Value:
                     /* 跳过 inactive 节点 */
                     /* 跳过未知节点 */
                     if (edge->Timestamp.QuadPart <= tracker->LastActivity.QuadPart || 
-                        !edge->Active || edge->EdgeType == DefEdge_Unknown) {
+                        !edge->Active) {
                         roads[r].Cursor = roads[r].Cursor->Flink;
                         continue;
                     }
@@ -593,7 +595,7 @@ Return Value:
                         const PFSM_STATE_TRANSITION step = &pt->Steps[pattern->CurrentStep];
 
                         /* 仅检查边类型匹配 */
-                        if (step->TriggerEdge != edge->EdgeType) continue;
+       /*                 if (step->TriggerEdge != edge->EdgeType) continue;*/
 
                         /*
                          * 计算步骤间隔衰减系数。
@@ -643,7 +645,7 @@ Return Value:
                 else {
                     const PFSM_STATE_TRANSITION firstStep = &pt->Steps[0];
 
-                    if (firstStep->TriggerEdge != edge->EdgeType) continue;
+                    /*if (firstStep->TriggerEdge != edge->EdgeType) continue;*/
 
                     /* 启动新模式 (首步无间隔，不衰减) */
                     pattern = FsmpGetOrCreatePattern(
