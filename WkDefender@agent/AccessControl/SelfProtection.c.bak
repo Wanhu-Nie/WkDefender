@@ -1,0 +1,1660 @@
+﻿/**************************************************/
+/*  WkDefender Agent — 自保护编排层实现（SelfProtection）*/
+/*                                                     */
+/*  纯 C 实现 ShadowStrike SelfDefense 编排层迁移。     */
+/*  2026-09-05：合并原 SelfProtection.c 公共子类型工具,  */
+/*  文件由 SelfDefense.c 重命名而来（原 SelfProtection.c */
+/*  仅含编排辅助函数，见重构档案区）。                   */
+/*                                                     */
+/*  包含：                                            */
+/*   - 公共子类型工具（SpIsSelfProtectionSubType /      */
+/*     SpSubTypeToName）                               */
+/*   - 生命周期 / 组件开关 / 保护级别                  */
+/*   - 威胁响应策略                                    */
+/*   - 看门狗（工作线程心跳 + 自恢复）                 */
+/*   - 授权令牌（纯 C SHA-256 + HMAC-SHA256）           */
+/*   - 受保护进程 / 受保护内存区域表，CRC32 基线        */
+/*   - 反调试引擎集成（Ad*）                           */
+/*   - 消费驱动端 SecurityEvent + UI 告警上报           */
+/*   - 状态 / 统计 / 自检                              */
+/*                                                     */
+/*  编码：UTF-8 with BOM（铁律）                       */
+/**************************************************/
+
+#include "SelfProtection.h"
+
+/* ------------------------------------------------------------------ */
+/* 公共子类型工具（原 SelfProtection.c，2026-09-05 并入；声明见         */
+/* SelfProtection.h）                                                  */
+/* ------------------------------------------------------------------ */
+
+/* 子类型段判定：驱动端自保护事件子类型取值区间。 */
+BOOLEAN
+SpIsSelfProtectionSubType(
+    _In_ ULONG EventSubType
+    )
+{
+    /* 已分配段：0x5001（回调篡改）、0x5002（防卸载）、
+     * 0x5010-0x5014（AD）、0x5020+（IM）、0x5030+（RG）。
+     * 用 0x5000 段起始统一判定（后续驱动端新增子类型亦落入）。 */
+    if (EventSubType >= 0x5000 && EventSubType <= 0x5FFF) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* 子类型 → 可读事件名（用于日志/UI 呈现）。固定字符串，无需释放。 */
+PCWSTR
+SpSubTypeToName(
+    _In_ ULONG EventSubType
+    )
+{
+    switch (EventSubType) {
+    case SP_EVENT_SUBTYPE_CALLBACK_TAMPER:     return L"CallbackCodeTamper";
+    case SP_EVENT_SUBTYPE_ANTIUNLOAD:          return L"DriverUnloadAttempt";
+    case SP_EVENT_SUBTYPE_KERNEL_DEBUGGER:     return L"KernelDebugger";
+    case SP_EVENT_SUBTYPE_USER_DEBUGGER:       return L"UserDebugger";
+    case SP_EVENT_SUBTYPE_HYPERVISOR:          return L"Hypervisor";
+    case SP_EVENT_SUBTYPE_DRIVER_VERIFIER:     return L"DriverVerifier";
+    case SP_EVENT_SUBTYPE_MEMORY_DUMP:         return L"FullMemoryDump";
+    default:
+        /* IM/RG/PP 等其它子类型段：给出通用命名 */
+        if (EventSubType >= SP_EVENT_SUBTYPE_IM_BASE && EventSubType < 0x5030) {
+            return L"IntegrityMonitorEvent";
+        }
+        if (EventSubType >= SP_EVENT_SUBTYPE_REG_BASE && EventSubType < 0x5040) {
+            return L"RegistryProtectionEvent";
+        }
+        if (EventSubType >= SP_EVENT_SUBTYPE_PP_BASE && EventSubType < 0x5050) {
+            return L"ProcessProtectionEvent";
+        }
+        if (EventSubType >= SP_EVENT_SUBTYPE_MP_BASE && EventSubType < 0x5060) {
+            return L"MemoryProtectionEvent";
+        }
+        return L"SelfProtectionEvent";
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 内部密钥结构（不透明 ACCESS_CONTROL_ENGINE 定义）                              */
+/* ------------------------------------------------------------------ */
+
+typedef struct _SELF_PROTECTED_PROCESS_ENTRY {
+    SELF_PROTECTED_PROCESS Proc;
+    BOOLEAN             InUse;
+} SELF_PROTECTED_PROCESS_ENTRY, *PSELF_PROTECTED_PROCESS_ENTRY;
+
+typedef struct _SP_REGION_ENTRY {
+    SELF_PROTECTED_REGION Region;
+    BOOLEAN            InUse;
+} SP_REGION_ENTRY, *PSP_REGION_ENTRY;
+
+typedef struct _SP_REGISTERED_CALLBACK {
+    SP_EVENT_CALLBACK   Callback;
+    PVOID               Context;
+    BOOLEAN             InUse;
+} SP_REGISTERED_CALLBACK, *PSP_REGISTERED_CALLBACK;
+
+struct _ACCESS_CONTROL_ENGINE {
+    CRITICAL_SECTION            Lock;
+
+    SELF_PROTECTION_LEVEL         Level;
+    SP_COMPONENT_FLAGS          Enabled;
+    SP_THREAT_RESPONSE_MAP      ResponseMap[SpThreatResponseCount];
+
+    SELF_PROTECTED_PROCESS_ENTRY  ProtectedProcesses[SDF_MAX_PROTECTED_PROCESSES];
+    ULONG                       ActiveProtected;
+    SP_REGION_ENTRY             ProtectedRegions[SDF_MAX_PROTECTED_REGIONS];
+    ULONG                       ProtectedRegionCount;
+
+    SP_REGISTERED_CALLBACK      Callbacks[SDF_MAX_CALLBACKS];
+
+    /* 看门狗 */
+    HANDLE                      WatchdogThread;
+    HANDLE                      WatchdogStopEvent;
+    volatile BOOLEAN            WatchdogRunning;
+    SP_WATCHDOG_STATE           WatchdogState;
+    LARGE_INTEGER               LastHeartbeat;
+    ULONG                       HeartbeatMissCount;
+
+    /* 反调试引擎 */
+    PAC_ANTIDEBUG_PROTECTION                  AntiDebug;
+
+    /* 进程保护决策引擎 */
+    PPP_ENGINE                  ProcessProtection;
+
+    /* 内存保护引擎（MemoryProtection 模块，MP） */
+    PAC_MEMORY_INTEGRITY_ENGINE                  MemoryProtection;
+
+    /* 授权密钥 */
+    UCHAR                       AuthKey[SDF_MAX_AUTH_TOKEN_LENGTH];
+    ULONG                       AuthKeyLength;
+
+    /* 状态 / 统计 */
+    SP_STATE_BLOCK              State;
+    SP_STATISTICS               Stats;
+
+    BOOLEAN                     Initialized;
+    BOOLEAN                     Running;
+    BOOLEAN                     Paused;
+};
+
+/* ------------------------------------------------------------------ */
+/* 纯 C SHA-256 + HMAC-SHA256（授权令牌用）                           */
+/* ------------------------------------------------------------------ */
+
+typedef struct _SP_SHA256_CTX {
+    ULONG       State[8];
+    ULONG64     BitCount;
+    UCHAR       Buffer[64];
+} SP_SHA256_CTX, *PSP_SHA256_CTX;
+
+static const ULONG spSha256K[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+};
+
+#define SP_ROTR(x,n) (((x) >> (n)) | ((x) << (32 - (n))))
+
+static VOID SpSha256Transform(PSP_SHA256_CTX ctx, const UCHAR data[64])
+{
+    ULONG w[64];
+    ULONG a, b, c, d, e, f, g, h;
+    ULONG t1, t2;
+    ULONG i;
+
+    for (i = 0; i < 16; i++) {
+        w[i] = ((ULONG)data[i * 4] << 24) | ((ULONG)data[i * 4 + 1] << 16) |
+               ((ULONG)data[i * 4 + 2] << 8) | ((ULONG)data[i * 4 + 3]);
+    }
+    for (i = 16; i < 64; i++) {
+        ULONG s0 = SP_ROTR(w[i-15],7) ^ SP_ROTR(w[i-15],18) ^ (w[i-15] >> 3);
+        ULONG s1 = SP_ROTR(w[i-2],17) ^ SP_ROTR(w[i-2],19) ^ (w[i-2] >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+
+    a = ctx->State[0]; b = ctx->State[1]; c = ctx->State[2]; d = ctx->State[3];
+    e = ctx->State[4]; f = ctx->State[5]; g = ctx->State[6]; h = ctx->State[7];
+
+    for (i = 0; i < 64; i++) {
+        ULONG S1 = SP_ROTR(e,6) ^ SP_ROTR(e,11) ^ SP_ROTR(e,25);
+        ULONG ch = (e & f) ^ ((~e) & g);
+        ULONG S0 = SP_ROTR(a,2) ^ SP_ROTR(a,13) ^ SP_ROTR(a,22);
+        ULONG maj = (a & b) ^ (a & c) ^ (b & c);
+        t1 = h + S1 + ch + spSha256K[i] + w[i];
+        t2 = S0 + maj;
+        h = g; g = f; f = e; e = d + t1;
+        d = c; c = b; b = a; a = t1 + t2;
+    }
+
+    ctx->State[0] += a; ctx->State[1] += b; ctx->State[2] += c; ctx->State[3] += d;
+    ctx->State[4] += e; ctx->State[5] += f; ctx->State[6] += g; ctx->State[7] += h;
+}
+
+static VOID SpSha256Init(PSP_SHA256_CTX ctx)
+{
+    ctx->State[0] = 0x6a09e667; ctx->State[1] = 0xbb67ae85;
+    ctx->State[2] = 0x3c6ef372; ctx->State[3] = 0xa54ff53a;
+    ctx->State[4] = 0x510e527f; ctx->State[5] = 0x9b05688c;
+    ctx->State[6] = 0x1f83d9ab; ctx->State[7] = 0x5be0cd19;
+    ctx->BitCount = 0;
+}
+
+static VOID SpSha256Update(PSP_SHA256_CTX ctx, const UCHAR* data, SIZE_T len)
+{
+    SIZE_T i, idx = (SIZE_T)(ctx->BitCount / 8) & 63;
+    ctx->BitCount += (ULONGLONG)len * 8;
+
+    for (i = 0; i < len; i++) {
+        ctx->Buffer[idx++] = data[i];
+        if (idx == 64) {
+            SpSha256Transform(ctx, ctx->Buffer);
+            idx = 0;
+        }
+    }
+}
+
+static VOID SpSha256Final(PSP_SHA256_CTX ctx, UCHAR out[32])
+{
+    ULONG idx = (ULONG)(ctx->BitCount / 8) & 63;
+    ULONG i;
+    UCHAR pad[64];
+    UCHAR bitlen[8];
+    ULONGLONG bits = ctx->BitCount;
+
+    pad[0] = 0x80;
+    for (i = 1; i < 64; i++) pad[i] = 0;
+
+    for (i = 0; i < 8; i++) {
+        bitlen[7 - i] = (UCHAR)(bits >> (i * 8));
+    }
+
+    if (idx < 56) {
+        SpSha256Update(ctx, pad, 56 - idx);
+    } else {
+        SpSha256Update(ctx, pad, 64 + 56 - idx);
+    }
+    SpSha256Update(ctx, bitlen, 8);
+
+    for (i = 0; i < 8; i++) {
+        out[i*4]   = (UCHAR)(ctx->State[i] >> 24);
+        out[i*4+1] = (UCHAR)(ctx->State[i] >> 16);
+        out[i*4+2] = (UCHAR)(ctx->State[i] >> 8);
+        out[i*4+3] = (UCHAR)(ctx->State[i]);
+    }
+}
+
+/* HMAC-SHA256 */
+static VOID SpHmacSha256(
+    _In_reads_bytes_(KeyLen) const UCHAR* Key,
+    _In_ ULONG KeyLen,
+    _In_reads_bytes_(DataLen) const UCHAR* Data,
+    _In_ ULONG DataLen,
+    _Out_writes_bytes_(SDF_AUTH_HASH_LENGTH) UCHAR Out[SDF_AUTH_HASH_LENGTH]
+    )
+{
+    UCHAR keyPad[64];
+    UCHAR ipad[64];
+    UCHAR opad[64];
+    SP_SHA256_CTX ctx;
+    UCHAR inner[32];
+    ULONG i;
+
+    for (i = 0; i < 64; i++) keyPad[i] = 0;
+    if (KeyLen > 64) {
+        /* 超长密钥先哈希 */
+        SpSha256Init(&ctx);
+        SpSha256Update(&ctx, Key, KeyLen);
+        SpSha256Final(&ctx, keyPad);
+    } else if (KeyLen > 0) {
+        for (i = 0; i < KeyLen; i++) keyPad[i] = Key[i];
+    }
+
+    for (i = 0; i < 64; i++) ipad[i] = keyPad[i] ^ 0x36;
+    for (i = 0; i < 64; i++) opad[i] = keyPad[i] ^ 0x5c;
+
+    SpSha256Init(&ctx);
+    SpSha256Update(&ctx, ipad, 64);
+    SpSha256Update(&ctx, Data, DataLen);
+    SpSha256Final(&ctx, inner);
+
+    SpSha256Init(&ctx);
+    SpSha256Update(&ctx, opad, 64);
+    SpSha256Update(&ctx, inner, 32);
+    SpSha256Final(&ctx, Out);
+}
+
+/* ------------------------------------------------------------------ */
+/* 看门狗线程                                                         */
+/* ------------------------------------------------------------------ */
+
+static DWORD WINAPI SpWatchdogThreadProc(LPVOID Param)
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Param;
+    ULONG intervalMs = SDF_WATCHDOG_DEFAULT_INTERVAL_MS;
+    ULONG consecutiveMiss = 0;
+
+    while (Engine->WatchdogRunning) {
+        WaitForSingleObject(Engine->WatchdogStopEvent, intervalMs);
+        if (!Engine->WatchdogRunning) {
+            break;
+        }
+
+        EnterCriticalSection(&Engine->Lock);
+        GetSystemTimeAsFileTime((LPFILETIME)&Engine->LastHeartbeat);
+        /* 心跳由外部 SdfHeartbeat 刷新；若长时间无外部心跳则视为异常 */
+        if (Engine->HeartbeatMissCount > 0) {
+            Engine->HeartbeatMissCount++;
+            if (Engine->HeartbeatMissCount > 30) {
+                Engine->WatchdogState = SpWatchdogRecovering;
+                /* 自恢复：记录统计并复位 */
+                Engine->Stats.WatchdogStartCount++;
+                Engine->HeartbeatMissCount = 0;
+                Engine->WatchdogState = SpWatchdogRunning;
+                (VOID)consecutiveMiss;
+            }
+        }
+        LeaveCriticalSection(&Engine->Lock);
+    }
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* 组件开关辅助                                                       */
+/* ------------------------------------------------------------------ */
+
+static BOOLEAN SpIsComponentBitSet(
+    _In_ SP_COMPONENT_FLAGS Flags,
+    _In_ SP_COMPONENT Component
+    )
+{
+    switch (Component) {
+    case SpComponentProcess:      return Flags.Process ? TRUE : FALSE;
+    case SpComponentService:      return Flags.Service ? TRUE : FALSE;
+    case SpComponentDriver:       return Flags.Driver ? TRUE : FALSE;
+    case SpComponentFile:         return Flags.File ? TRUE : FALSE;
+    case SpComponentRegistry:     return Flags.Registry ? TRUE : FALSE;
+    case SpComponentMemory:       return Flags.Memory ? TRUE : FALSE;
+    case SpComponentWatchdog:     return Flags.Watchdog ? TRUE : FALSE;
+    case SpComponentAccessControl:return Flags.AccessControl ? TRUE : FALSE;
+    case SpComponentAntiDebug:    return Flags.AntiDebug ? TRUE : FALSE;
+    default:                      return FALSE;
+    }
+}
+
+static VOID SpSetComponentBit(
+    _Inout_ PSP_COMPONENT_FLAGS Flags,
+    _In_ SP_COMPONENT Component,
+    _In_ BOOLEAN Enable
+    )
+{
+    switch (Component) {
+    case SpComponentProcess:      Flags->Process = Enable; break;
+    case SpComponentService:      Flags->Service = Enable; break;
+    case SpComponentDriver:       Flags->Driver = Enable; break;
+    case SpComponentFile:         Flags->File = Enable; break;
+    case SpComponentRegistry:     Flags->Registry = Enable; break;
+    case SpComponentMemory:       Flags->Memory = Enable; break;
+    case SpComponentWatchdog:     Flags->Watchdog = Enable; break;
+    case SpComponentAccessControl:Flags->AccessControl = Enable; break;
+    case SpComponentAntiDebug:    Flags->AntiDebug = Enable; break;
+    default: break;
+    }
+}
+
+/* 依据保护级别设置默认组件开关 */
+static VOID SpApplyDefaultComponents(PACCESS_CONTROL_ENGINE Engine)
+{
+    BOOLEAN all = FALSE;
+    switch (Engine->Level) {
+    case SpProtectionPassive:
+        Engine->Enabled.Process = FALSE; Engine->Enabled.Service = FALSE;
+        Engine->Enabled.Driver = FALSE; Engine->Enabled.File = FALSE;
+        Engine->Enabled.Registry = FALSE; Engine->Enabled.Memory = FALSE;
+        Engine->Enabled.Watchdog = FALSE; Engine->Enabled.AccessControl = FALSE;
+        Engine->Enabled.AntiDebug = FALSE;
+        break;
+    case SpProtectionMinimum:
+        /* 最低：仅关键进程自保护 + 反调试 */
+        Engine->Enabled.Process = TRUE; Engine->Enabled.AntiDebug = TRUE;
+        Engine->Enabled.Service = FALSE; Engine->Enabled.Driver = FALSE;
+        Engine->Enabled.File = FALSE; Engine->Enabled.Registry = FALSE;
+        Engine->Enabled.Memory = FALSE; Engine->Enabled.Watchdog = FALSE;
+        Engine->Enabled.AccessControl = FALSE;
+        break;
+    case SpProtectionStandard:
+        all = TRUE;
+        /* fallthrough */
+    case SpProtectionAggressive:
+    case SpProtectionParanoid:
+        if (all) {
+            Engine->Enabled.Process = TRUE; Engine->Enabled.Service = TRUE;
+            Engine->Enabled.Driver = TRUE; Engine->Enabled.File = TRUE;
+            Engine->Enabled.Registry = TRUE; Engine->Enabled.Memory = TRUE;
+            Engine->Enabled.Watchdog = TRUE; Engine->Enabled.AccessControl = TRUE;
+            Engine->Enabled.AntiDebug = TRUE;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 生命周期                                                           */
+/* ------------------------------------------------------------------ */
+
+/* 静态辅助前向声明 */
+static NTSTATUS SpFireEventCallback(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ ULONG EventSubType,
+    _In_ ULONG Severity,
+    _In_ PCWSTR Description
+    );
+
+static NTSTATUS SpAntiDebugOnDetection(
+    _In_ PAC_ANTIDEBUG_PROTECTION_DETECTION_RESULT Result,
+    _In_opt_ PVOID Context
+    );
+
+static NTSTATUS SpProcessProtectionOnBlocked(
+    _In_ PPP_BLOCKED_ACCESS_EVENT Event,
+    _In_opt_ PVOID Context
+    );
+
+static NTSTATUS SpProcessProtectionOnThreat(
+    _In_ PP_THREAT_ACTION Action,
+    _In_ PPP_ACCESS_REQUEST Request,
+    _In_opt_ PVOID Context
+    );
+
+static NTSTATUS SpMemoryProtectionOnEvent(
+    _In_ PMP_PROTECTION_EVENT Event,
+    _In_opt_ PVOID Context
+    );
+
+static NTSTATUS SpMemoryProtectionOnIntegrity(
+    _In_ PMP_PROTECTED_REGION Region,
+    _In_opt_ PVOID Context
+    );
+
+static NTSTATUS SpMemoryProtectionOnHeapCorruption(
+    _In_ PMP_HEAP_INFO Heap,
+    _In_opt_ PVOID Context
+    );
+
+static NTSTATUS SpMemoryProtectionOnStackOverflow(
+    _In_ PMP_STACK_INFO Stack,
+    _In_opt_ PVOID Context
+    );
+
+static VOID SpUpdateStateComponents(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    );
+
+_Use_decl_annotations_
+NTSTATUS
+SpInitializeSelfProtectionEngine(
+    _Out_ PACCESS_CONTROL_ENGINE* Engine,
+    _In_ SELF_PROTECTION_LEVEL Level
+    )
+{
+    PACCESS_CONTROL_ENGINE engine;
+
+    if (!Engine) return STATUS_INVALID_PARAMETER;
+    *Engine = NULL;
+
+    engine = (PACCESS_CONTROL_ENGINE)malloc(sizeof(ACCESS_CONTROL_ENGINE));
+    if (!engine) return STATUS_INSUFFICIENT_RESOURCES;
+    RtlZeroMemory(engine, sizeof(ACCESS_CONTROL_ENGINE));
+
+    InitializeCriticalSection(&engine->Lock);
+
+    engine->Initialized = TRUE;
+    engine->Running = FALSE;
+    engine->Paused = FALSE;
+    engine->Level = Level;
+    engine->AuthKeyLength = 0;
+    engine->WatchdogThread = NULL;
+    engine->WatchdogStopEvent = NULL;
+    engine->WatchdogRunning = FALSE;
+    engine->WatchdogState = SpWatchdogStopped;
+    engine->AntiDebug = NULL;
+    engine->ProcessProtection = NULL;
+    engine->MemoryProtection = NULL;
+
+    SpApplyDefaultComponents(engine);
+
+    /* 创建反调试引擎（回调桥到 SelfDefense 告警上报） */
+    if (engine->Enabled.AntiDebug) {
+        AD_CALLBACKS adCb;
+        ZeroMemory(&adCb, sizeof(adCb));
+        adCb.OnDetection = SpAntiDebugOnDetection;
+        adCb.Context = engine;
+        (VOID)SpInitializeAntiDebugProtection(&engine->AntiDebug, &adCb);
+    }
+
+    /* 创建进程保护决策引擎（回调桥到 SelfDefense 告警上报）。
+     * 该引擎含监控线程（周期健康校验），由 AcStartAccessControlEngine/SdfStop 启停。 */
+    {
+        PP_CALLBACKS ppCb;
+        ZeroMemory(&ppCb, sizeof(ppCb));
+        ppCb.OnBlockedAccess = SpProcessProtectionOnBlocked;
+        ppCb.OnThreat = SpProcessProtectionOnThreat;
+        ppCb.Context = engine;
+        (VOID)PpInitialize(&engine->ProcessProtection, &ppCb);
+    }
+
+    /* 创建内存保护引擎（回调桥到 SelfDefense 告警上报）。
+     * 完整性监视线程由 AcStartAccessControlEngine/SdfStop 启停（对齐 Pp 模式）。 */
+    if (engine->Enabled.Memory) {
+        MP_CALLBACKS mpCb;
+        ZeroMemory(&mpCb, sizeof(mpCb));
+        mpCb.OnEvent = SpMemoryProtectionOnEvent;
+        mpCb.OnIntegrityViolation = SpMemoryProtectionOnIntegrity;
+        mpCb.OnHeapCorruption = SpMemoryProtectionOnHeapCorruption;
+        mpCb.OnStackOverflow = SpMemoryProtectionOnStackOverflow;
+        mpCb.Context = engine;
+        (VOID)MpInitialize(&engine->MemoryProtection, &mpCb, NULL);
+    }
+
+    GetSystemTimeAsFileTime((LPFILETIME)&engine->State.StartTime);
+    engine->State.ProtectionLevel = engine->Level;
+    engine->State.EnabledComponents = engine->Enabled;
+    engine->State.Running = FALSE;
+    engine->State.Paused = FALSE;
+
+    *Engine = engine;
+    return STATUS_SUCCESS;
+}
+
+/* ------------------------------------------------------------------ */
+/* 静态辅助                                                           */
+/* ------------------------------------------------------------------ */
+
+static
+NTSTATUS
+SpFireEventCallback(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ ULONG EventSubType,
+    _In_ ULONG Severity,
+    _In_ PCWSTR Description
+    )
+{
+    ULONG i;
+    NTSTATUS last = STATUS_SUCCESS;
+
+    EnterCriticalSection(&Engine->Lock);
+    for (i = 0; i < SDF_MAX_CALLBACKS; i++) {
+        if (Engine->Callbacks[i].InUse && Engine->Callbacks[i].Callback != NULL) {
+            last = Engine->Callbacks[i].Callback(EventSubType, Severity, Description);
+        }
+    }
+    LeaveCriticalSection(&Engine->Lock);
+
+    /* 统计 */
+    Engine->Stats.TotalEvents++;
+    if (Severity >= SP_SEVERITY_HIGH) {
+        Engine->Stats.TotalAlerts++;
+    }
+    GetSystemTimeAsFileTime((LPFILETIME)&Engine->Stats.LastEventTime);
+
+    return last;
+}
+
+/* 反调试引擎检测回调 → 桥接编排告警上报 */
+static
+NTSTATUS
+SpAntiDebugOnDetection(
+    _In_ PAC_ANTIDEBUG_PROTECTION_DETECTION_RESULT Result,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+
+    if (Engine == NULL || Result == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 将反调试检测映射为自防护事件子类型 + 告警上报 */
+    swprintf_s(desc, 288, L"AntiDebug: %ls", Result->Description);
+    (VOID)SpFireEventCallback(Engine, SP_EVENT_SUBTYPE_USER_DEBUGGER, Result->Severity, desc);
+
+    return STATUS_SUCCESS;
+}
+
+/* 进程保护引擎：阻断访问回调 → 映射为自防护事件并上报 */
+static
+NTSTATUS
+SpProcessProtectionOnBlocked(
+    _In_ PPP_BLOCKED_ACCESS_EVENT Event,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+    ULONG severity = SP_SEVERITY_MEDIUM;
+
+    if (Engine == NULL || Event == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 终止/注入类高危动作提升严重级 */
+    if (Event->Decision.ShouldAlert) {
+        severity = SP_SEVERITY_HIGH;
+    }
+
+    swprintf_s(desc, 288,
+        L"进程保护阻断: 调用方[%lu]对目标[%lu]请求 %ls (0x%X) 被裁剪/拒绝, 决策=%ls, 威胁=%ls",
+        Event->Request.CallerProcessId,
+        Event->Request.TargetProcessId,
+        PpAccessRequestTypeName(Event->Request.Type),
+        Event->Request.DesiredAccess,
+        PpDecisionName(Event->Decision.Decision),
+        PpThreatActionName(Event->ThreatAction));
+
+    (VOID)SpFireEventCallback(Engine, SP_EVENT_SUBTYPE_PP_ACCESS_BLOCKED, severity, desc);
+
+    return STATUS_SUCCESS;
+}
+
+/* 进程保护引擎：威胁分类回调 → 映射为自防护事件并上报 */
+static
+NTSTATUS
+SpProcessProtectionOnThreat(
+    _In_ PP_THREAT_ACTION Action,
+    _In_ PPP_ACCESS_REQUEST Request,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+
+    if (Engine == NULL || Request == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    swprintf_s(desc, 288,
+        L"进程保护威胁: 调用方[%lu]对目标[%lu] %ls 威胁=%ls",
+        Request->CallerProcessId,
+        Request->TargetProcessId,
+        PpAccessRequestTypeName(Request->Type),
+        PpThreatActionName(Action));
+
+    (VOID)SpFireEventCallback(Engine, SP_EVENT_SUBTYPE_PP_THREAT, SP_SEVERITY_HIGH, desc);
+
+    return STATUS_SUCCESS;
+}
+
+/* 内存保护引擎：保护事件回调 → 映射为自防护事件并上报 */
+static
+NTSTATUS
+SpMemoryProtectionOnEvent(
+    _In_ PMP_PROTECTION_EVENT Event,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+    ULONG subtype = SP_EVENT_SUBTYPE_MP_INTEGRITY;
+    ULONG severity = SP_SEVERITY_MEDIUM;
+
+    if (Engine == NULL || Event == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 按事件类型映射子类型与严重级 */
+    switch (Event->Type) {
+    case MpEventDumpAttempt:
+        subtype = SP_EVENT_SUBTYPE_MP_DUMP_ATTEMPT;
+        severity = SP_SEVERITY_HIGH;
+        break;
+    case MpEventHookDetected:
+        subtype = SP_EVENT_SUBTYPE_MP_HOOK;
+        severity = SP_SEVERITY_HIGH;
+        break;
+    case MpEventHeapCorruption:
+        subtype = SP_EVENT_SUBTYPE_MP_HEAP_CORRUPTION;
+        severity = SP_SEVERITY_HIGH;
+        break;
+    case MpEventStackOverflow:
+        subtype = SP_EVENT_SUBTYPE_MP_STACK_OVERFLOW;
+        severity = SP_SEVERITY_HIGH;
+        break;
+    case MpEventMemoryWrite:
+    case MpEventPermissionChange:
+    case MpEventAllocationAttempt:
+    case MpEventFreeAttempt:
+        subtype = SP_EVENT_SUBTYPE_MP_MEMORY_WRITE;
+        severity = SP_SEVERITY_MEDIUM;
+        break;
+    case MpEventIntegrityViolation:
+    default:
+        subtype = SP_EVENT_SUBTYPE_MP_INTEGRITY;
+        severity = SP_SEVERITY_HIGH;
+        break;
+    }
+
+    swprintf_s(desc, 288,
+        L"内存保护[%lu]: %hs (地址=%p, 大小=%Iu, 区域=%hs, 阻断=%s)",
+        (ULONG)Event->EventId,
+        Event->Description,
+        (PVOID)Event->Address,
+        Event->Size,
+        Event->RegionId[0] ? Event->RegionId : "(无)",
+        Event->WasBlocked ? L"是" : L"否");
+
+    (VOID)SpFireEventCallback(Engine, subtype, severity, desc);
+
+    return STATUS_SUCCESS;
+}
+
+/* 内存保护引擎：完整性违规回调 → 上报告警 */
+static
+NTSTATUS
+SpMemoryProtectionOnIntegrity(
+    _In_ PMP_PROTECTED_REGION Region,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+
+    if (Engine == NULL || Region == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    swprintf_s(desc, 288,
+        L"内存完整性违规: 区域=%hs(地址=%p, 大小=%Iu), 状态=%ls, 期望CRC=%08X, 当前CRC=%08X",
+        Region->Id,
+        (PVOID)Region->BaseAddress,
+        Region->Size,
+        MpIntegrityStatusName(Region->Status),
+        Region->ExpectedCrc32,
+        Region->CurrentCrc32);
+
+    (VOID)SpFireEventCallback(Engine, SP_EVENT_SUBTYPE_MP_INTEGRITY, SP_SEVERITY_HIGH, desc);
+
+    return STATUS_SUCCESS;
+}
+
+/* 内存保护引擎：堆损坏回调 → 上报告警 */
+static
+NTSTATUS
+SpMemoryProtectionOnHeapCorruption(
+    _In_ PMP_HEAP_INFO Heap,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+
+    if (Engine == NULL || Heap == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    swprintf_s(desc, 288,
+        L"堆损坏: 句柄=%p, 已提交=%Iu, 块数=%Iu, 标志=0x%X",
+        Heap->HeapHandle,
+        Heap->CommittedSize,
+        Heap->BlockCount,
+        Heap->Flags);
+
+    (VOID)SpFireEventCallback(Engine, SP_EVENT_SUBTYPE_MP_HEAP_CORRUPTION, SP_SEVERITY_HIGH, desc);
+
+    return STATUS_SUCCESS;
+}
+
+/* 内存保护引擎：栈溢出回调 → 上报告警 */
+static
+NTSTATUS
+SpMemoryProtectionOnStackOverflow(
+    _In_ PMP_STACK_INFO Stack,
+    _In_opt_ PVOID Context
+    )
+{
+    PACCESS_CONTROL_ENGINE Engine = (PACCESS_CONTROL_ENGINE)Context;
+    WCHAR desc[288];
+
+    if (Engine == NULL || Stack == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    swprintf_s(desc, 288,
+        L"栈溢出/金丝雀失效: 线程=%lu, 使用=%Iu/%Iu, 金丝雀=%ls",
+        Stack->ThreadId,
+        Stack->StackUsage,
+        Stack->StackSize,
+        Stack->CanaryIntact ? L"完好" : L"失效");
+
+    (VOID)SpFireEventCallback(Engine, SP_EVENT_SUBTYPE_MP_STACK_OVERFLOW, SP_SEVERITY_HIGH, desc);
+
+    return STATUS_SUCCESS;
+}
+
+static
+VOID
+SpUpdateStateComponents(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    Engine->State.EnabledComponents = Engine->Enabled;
+    Engine->State.ProtectionLevel = Engine->Level;
+}
+
+/* ------------------------------------------------------------------ */
+/* 生命周期：Start / Stop / Pause / Resume / Cleanup                  */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+AcStartAccessControlEngine(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (Engine->Running) {
+        return SP_STATUS_ALREADY_RUNNING;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+
+    /* 启动看门狗 */
+    if (Engine->Enabled.Watchdog) {
+        Engine->WatchdogStopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+        if (Engine->WatchdogStopEvent == NULL) {
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        Engine->WatchdogRunning = TRUE;
+        Engine->WatchdogThread = CreateThread(NULL, 0, SpWatchdogThreadProc, Engine, 0, NULL);
+        if (Engine->WatchdogThread == NULL) {
+            Engine->WatchdogRunning = FALSE;
+            CloseHandle(Engine->WatchdogStopEvent);
+            Engine->WatchdogStopEvent = NULL;
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        Engine->WatchdogState = SpWatchdogRunning;
+    }
+
+    /* 启动反调试监测 */
+    if (Engine->Enabled.AntiDebug && Engine->AntiDebug != NULL) {
+        (VOID)AcStartAntiDebugProtection(Engine->AntiDebug, AD_DEFAULT_MONITOR_INTERVAL_MS);
+    }
+
+    Engine->Running = TRUE;
+    Engine->Paused = FALSE;
+    GetSystemTimeAsFileTime((LPFILETIME)&Engine->State.StartTime);
+    GetSystemTimeAsFileTime((LPFILETIME)&Engine->State.LastHeartbeat);
+    Engine->State.Running = TRUE;
+    Engine->State.Paused = FALSE;
+
+    LeaveCriticalSection(&Engine->Lock);
+
+    /* 启动进程保护监控线程（对齐 SS StartMonitoringThread） */
+    if (Engine->ProcessProtection != NULL) {
+        (VOID)AcStartProcessAccessProtection(Engine->ProcessProtection);
+    }
+
+    /* 启动内存保护完整性监视线程（对齐 SS startIntegrityMonitoring） */
+    if (Engine->MemoryProtection != NULL) {
+        (VOID)AcStartMemoryIntegralityProtection(Engine->MemoryProtection);
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfStop(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    HANDLE thread = NULL;
+    HANDLE evt = NULL;
+
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (!Engine->Running) {
+        return STATUS_SUCCESS;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+
+    /* 停止反调试监测 */
+    if (Engine->AntiDebug != NULL) {
+        (VOID)AdStopMonitoring(Engine->AntiDebug);
+    }
+
+    /* 停止看门狗 */
+    if (Engine->WatchdogRunning) {
+        Engine->WatchdogRunning = FALSE;
+        if (Engine->WatchdogStopEvent != NULL) {
+            SetEvent(Engine->WatchdogStopEvent);
+        }
+        thread = Engine->WatchdogThread;
+        evt = Engine->WatchdogStopEvent;
+        Engine->WatchdogThread = NULL;
+        Engine->WatchdogStopEvent = NULL;
+        Engine->WatchdogState = SpWatchdogStopped;
+    }
+
+    Engine->Running = FALSE;
+    Engine->Paused = FALSE;
+    Engine->State.Running = FALSE;
+    Engine->State.Paused = FALSE;
+
+    LeaveCriticalSection(&Engine->Lock);
+
+    if (thread != NULL) {
+        WaitForSingleObject(thread, 3000);
+        CloseHandle(thread);
+    }
+    if (evt != NULL) {
+        CloseHandle(evt);
+    }
+
+    /* 停止进程保护监控线程（对齐 SS StopMonitoringThread） */
+    if (Engine->ProcessProtection != NULL) {
+        (VOID)PpStop(Engine->ProcessProtection);
+    }
+
+    /* 停止内存保护完整性监视线程（对齐 SS stopIntegrityMonitoring） */
+    if (Engine->MemoryProtection != NULL) {
+        (VOID)MpStop(Engine->MemoryProtection);
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfPause(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (!Engine->Running) {
+        return SP_STATUS_INVALID_STATE;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    if (Engine->AntiDebug != NULL) {
+        (VOID)AdStopMonitoring(Engine->AntiDebug);
+    }
+    Engine->Paused = TRUE;
+    Engine->State.Paused = TRUE;
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfResume(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (!Engine->Running) {
+        return SP_STATUS_INVALID_STATE;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    if (Engine->Enabled.AntiDebug && Engine->AntiDebug != NULL) {
+        (VOID)AcStartAntiDebugProtection(Engine->AntiDebug, AD_DEFAULT_MONITOR_INTERVAL_MS);
+    }
+    Engine->Paused = FALSE;
+    Engine->State.Paused = FALSE;
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+VOID
+SdfCleanup(
+    _In_opt_ _Post_invalid_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return;
+    }
+    (VOID)SdfStop(Engine);
+
+    if (Engine->AntiDebug != NULL) {
+        AdCleanup(Engine->AntiDebug);
+        Engine->AntiDebug = NULL;
+    }
+
+    if (Engine->ProcessProtection != NULL) {
+        PpCleanup(Engine->ProcessProtection);
+        Engine->ProcessProtection = NULL;
+    }
+
+    if (Engine->MemoryProtection != NULL) {
+        (VOID)MpShutdown(Engine->MemoryProtection);
+        MpCleanup(Engine->MemoryProtection);
+        Engine->MemoryProtection = NULL;
+    }
+
+    DeleteCriticalSection(&Engine->Lock);
+    HeapFree(GetProcessHeap(), 0, Engine);
+}
+
+/* ------------------------------------------------------------------ */
+/* 保护级别                                                           */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfSetProtectionLevel(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ SELF_PROTECTION_LEVEL Level
+    )
+{
+    if (Engine == NULL || Level >= SpProtectionLevelCount) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    Engine->Level = Level;
+    SpApplyDefaultComponents(Engine);
+    SpUpdateStateComponents(Engine);
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+SELF_PROTECTION_LEVEL
+SdfGetProtectionLevel(
+    _In_opt_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return SpProtectionPassive;
+    }
+    return Engine->Level;
+}
+
+/* ------------------------------------------------------------------ */
+/* 组件开关                                                           */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfEnableComponent(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ SP_COMPONENT Component
+    )
+{
+    if (Engine == NULL || Component >= SpComponentCount) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    SpSetComponentBit(&Engine->Enabled, Component, TRUE);
+    SpUpdateStateComponents(Engine);
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfDisableComponent(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ SP_COMPONENT Component
+    )
+{
+    if (Engine == NULL || Component >= SpComponentCount) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    SpSetComponentBit(&Engine->Enabled, Component, FALSE);
+    SpUpdateStateComponents(Engine);
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+BOOLEAN
+SdfIsComponentEnabled(
+    _In_opt_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ SP_COMPONENT Component
+    )
+{
+    if (Engine == NULL || Component >= SpComponentCount) {
+        return FALSE;
+    }
+    return SpIsComponentBitSet(Engine->Enabled, Component);
+}
+
+/* ------------------------------------------------------------------ */
+/* 威胁响应策略                                                       */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfSetThreatResponse(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ ULONG ComponentMask,
+    _In_ SP_THREAT_RESPONSE Response
+    )
+{
+    ULONG i;
+
+    if (Engine == NULL || Response >= SpThreatResponseCount) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (ComponentMask == 0 || (ComponentMask & 0xFFF) == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    /* 查找或新建映射 */
+    for (i = 0; i < SpComponentCount; i++) {
+        if (Engine->ResponseMap[i].ComponentMask == ComponentMask) {
+            Engine->ResponseMap[i].Response = Response;
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_SUCCESS;
+        }
+    }
+    /* 新建映射 */
+    for (i = 0; i < SpComponentCount; i++) {
+        if (Engine->ResponseMap[i].ComponentMask == 0) {
+            Engine->ResponseMap[i].ComponentMask = ComponentMask;
+            Engine->ResponseMap[i].Response = Response;
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_SUCCESS;
+        }
+    }
+    LeaveCriticalSection(&Engine->Lock);
+    return STATUS_INSUFFICIENT_RESOURCES;
+}
+
+/* ------------------------------------------------------------------ */
+/* 事件回调                                                           */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfRegisterEventCallback(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ SP_EVENT_CALLBACK Callback,
+    _In_opt_ PVOID Context
+    )
+{
+    ULONG i;
+
+    if (Engine == NULL || Callback == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    for (i = 0; i < SDF_MAX_CALLBACKS; i++) {
+        if (!Engine->Callbacks[i].InUse) {
+            Engine->Callbacks[i].Callback = Callback;
+            Engine->Callbacks[i].Context = Context;
+            Engine->Callbacks[i].InUse = TRUE;
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_SUCCESS;
+        }
+    }
+    LeaveCriticalSection(&Engine->Lock);
+    return STATUS_INSUFFICIENT_RESOURCES;
+}
+
+NTSTATUS
+SdfGetAntiDebugEngine(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _Out_ PAC_ANTIDEBUG_PROTECTION* AntiDebugEngine
+    )
+{
+    if (Engine == NULL || AntiDebugEngine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *AntiDebugEngine = Engine->AntiDebug;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfGetProcessProtectionEngine(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _Out_ PPP_ENGINE* ProcessProtectionEngine
+    )
+{
+    if (Engine == NULL || ProcessProtectionEngine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *ProcessProtectionEngine = Engine->ProcessProtection;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfGetMemoryProtectionEngine(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _Out_ PAC_MEMORY_INTEGRITY_ENGINE* MemoryProtectionEngine
+    )
+{
+    if (Engine == NULL || MemoryProtectionEngine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *MemoryProtectionEngine = Engine->MemoryProtection;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfFilterProcessAccess(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ PPP_ACCESS_REQUEST Request,
+    _Out_ PPP_ACCESS_DECISION_RESULT Result
+    )
+{
+    if (Engine == NULL || Engine->ProcessProtection == NULL ||
+        Request == NULL || Result == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    return PpFilterAccessRequest(Engine->ProcessProtection, Request, Result);
+}
+
+/* ------------------------------------------------------------------ */
+/* SecurityEvent 消费 / 告警                                          */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfIngestSecurityEvent(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ ULONG EventSubType,
+    _In_ ULONG Severity,
+    _In_opt_ PCWSTR Description
+    )
+{
+    WCHAR desc[288];
+    NTSTATUS status;
+
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 仅消费自保护子类型 */
+    if (!SpIsSelfProtectionSubType(EventSubType)) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (Description != NULL) {
+        wcscpy_s(desc, 288, Description);
+    } else {
+        swprintf_s(desc, 288, L"%ls (0x%X)", SpSubTypeToName(EventSubType), EventSubType);
+    }
+
+    /* 统计：篡改尝试 */
+    EnterCriticalSection(&Engine->Lock);
+    Engine->Stats.TotalTamperAttempts++;
+    LeaveCriticalSection(&Engine->Lock);
+
+    /* 触发回调上报 UI */
+    status = SpFireEventCallback(Engine, EventSubType, Severity, desc);
+    return status;
+}
+
+NTSTATUS
+SdfNotifyAlert(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ ULONG EventSubType,
+    _In_ ULONG Severity,
+    _In_opt_ PCWSTR Description
+    )
+{
+    WCHAR desc[288];
+    NTSTATUS status;
+
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (Description != NULL) {
+        wcscpy_s(desc, 288, Description);
+    } else {
+        swprintf_s(desc, 288, L"%ls (0x%X)", SpSubTypeToName(EventSubType), EventSubType);
+    }
+
+    status = SpFireEventCallback(Engine, EventSubType, Severity, desc);
+    return status;
+}
+
+NTSTATUS
+SdfApplyAntiDebugToCurrentThread(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL || Engine->AntiDebug == NULL) {
+        return SP_STATUS_INVALID_STATE;
+    }
+    return AdApplyThreadProtection(Engine->AntiDebug, TRUE, TRUE, FALSE);
+}
+
+/* ------------------------------------------------------------------ */
+/* 看门狗 / 心跳                                                      */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfHeartbeat(
+    _In_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    GetSystemTimeAsFileTime((LPFILETIME)&Engine->LastHeartbeat);
+    Engine->HeartbeatMissCount = 0;
+    return STATUS_SUCCESS;
+}
+
+SP_WATCHDOG_STATE
+SdfGetWatchdogState(
+    _In_opt_ PACCESS_CONTROL_ENGINE Engine
+    )
+{
+    if (Engine == NULL) {
+        return SpWatchdogStopped;
+    }
+    return Engine->WatchdogState;
+}
+
+/* ------------------------------------------------------------------ */
+/* 状态 / 统计 / 自检                                                 */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfGetState(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _Out_ PSP_STATE_BLOCK State
+    )
+{
+    if (Engine == NULL || State == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    Engine->State.ProtectionLevel = Engine->Level;
+    Engine->State.EnabledComponents = Engine->Enabled;
+    Engine->State.Running = Engine->Running;
+    Engine->State.Paused = Engine->Paused;
+    Engine->State.ActiveProtected = Engine->ActiveProtected;
+    Engine->State.ProtectedRegionCount = Engine->ProtectedRegionCount;
+    Engine->State.LastHeartbeat = Engine->LastHeartbeat;
+    Engine->State.HeartbeatMissCount = Engine->HeartbeatMissCount;
+    *State = Engine->State;
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfGetStatistics(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _Out_ PSP_STATISTICS Stats
+    )
+{
+    if (Engine == NULL || Stats == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Stats = Engine->Stats;
+    return STATUS_SUCCESS;
+}
+
+BOOLEAN
+SdfSelfCheck(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _Out_opt_ PULONG FailedChecks
+    )
+{
+    ULONG i;
+    ULONG failed = 0;
+
+    if (Engine == NULL) {
+        if (FailedChecks != NULL) {
+            *FailedChecks = 1;
+        }
+        return FALSE;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    Engine->Stats.TotalSelfChecks++;
+
+    /* 校验受保护内存区域 CRC32 基线 */
+    for (i = 0; i < SDF_MAX_PROTECTED_REGIONS; i++) {
+        if (Engine->ProtectedRegions[i].InUse &&
+            Engine->ProtectedRegions[i].Region.Crc32Baseline != 0) {
+            ULONG actual = AdComputeCrc32(
+                Engine->ProtectedRegions[i].Region.BaseAddress,
+                Engine->ProtectedRegions[i].Region.Size);
+            if (actual != Engine->ProtectedRegions[i].Region.Crc32Baseline) {
+                failed++;
+            }
+        }
+    }
+    LeaveCriticalSection(&Engine->Lock);
+
+    /* 内存保护引擎自检（安全分配/区域保护/零化） */
+    if (Engine->MemoryProtection != NULL) {
+        if (!MpSelfTest(Engine->MemoryProtection)) {
+            failed++;
+        }
+    }
+
+    if (FailedChecks != NULL) {
+        *FailedChecks = failed;
+    }
+    return (failed == 0) ? TRUE : FALSE;
+}
+
+/* ------------------------------------------------------------------ */
+/* 受保护进程管理                                                     */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+AcRegisterProtectedProcess(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ HANDLE ProcessId,
+    _In_ ULONG ProtectionFlags
+    )
+{
+    ULONG i;
+    PSELF_PROTECTED_PROCESS_ENTRY entry = NULL;
+    NTSTATUS status;
+
+    if (Engine == NULL || ProcessId == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 关键 OS 进程硬排除（对齐 SS kCriticalOsImages）。
+     * 先经进程保护引擎校验，拒绝则整个拒绝，确保 Sdf 表与 PP 表一致。 */
+    if (Engine->ProcessProtection != NULL) {
+        status = AcRegisterProtectedProcessInternal(Engine->ProcessProtection,
+                                  (ULONG)(ULONG_PTR)ProcessId, ProtectionFlags);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+
+    /* 查重 */
+    for (i = 0; i < SDF_MAX_PROTECTED_PROCESSES; i++) {
+        if (Engine->ProtectedProcesses[i].InUse &&
+            Engine->ProtectedProcesses[i].Proc.ProcessId == ProcessId) {
+            entry = &Engine->ProtectedProcesses[i];
+            break;
+        }
+    }
+    if (entry == NULL) {
+        /* 找空槽 */
+        for (i = 0; i < SDF_MAX_PROTECTED_PROCESSES; i++) {
+            if (!Engine->ProtectedProcesses[i].InUse) {
+                entry = &Engine->ProtectedProcesses[i];
+                break;
+            }
+        }
+        if (entry == NULL) {
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        ZeroMemory(entry, sizeof(*entry));
+        entry->InUse = TRUE;
+        entry->Proc.ProcessId = ProcessId;
+        Engine->ActiveProtected++;
+    }
+
+    entry->Proc.ProtectionFlags = ProtectionFlags;
+    entry->Proc.ImageName[0] = 0;
+
+    LeaveCriticalSection(&Engine->Lock);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfUnprotectProcess(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ HANDLE ProcessId
+    )
+{
+    ULONG i;
+
+    if (Engine == NULL || ProcessId == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    for (i = 0; i < SDF_MAX_PROTECTED_PROCESSES; i++) {
+        if (Engine->ProtectedProcesses[i].InUse &&
+            Engine->ProtectedProcesses[i].Proc.ProcessId == ProcessId) {
+            Engine->ProtectedProcesses[i].InUse = FALSE;
+            Engine->ActiveProtected--;
+            LeaveCriticalSection(&Engine->Lock);
+
+            /* 同步注销进程保护引擎表 */
+            if (Engine->ProcessProtection != NULL) {
+                (VOID)PpUnprotectProcess(Engine->ProcessProtection,
+                                         (ULONG)(ULONG_PTR)ProcessId);
+            }
+            return STATUS_SUCCESS;
+        }
+    }
+    LeaveCriticalSection(&Engine->Lock);
+    return STATUS_NOT_FOUND;
+}
+
+/* ------------------------------------------------------------------ */
+/* 受保护内存区域管理                                                 */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfProtectMemoryRegion(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ PVOID BaseAddress,
+    _In_ SIZE_T Size,
+    _In_ ULONG Protection
+    )
+{
+    ULONG i;
+    PSP_REGION_ENTRY entry = NULL;
+    ULONG crc = 0;
+
+    if (Engine == NULL || BaseAddress == NULL || Size == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 读取区域内容建立 CRC32 基线（SEH 安全读取） */
+    {
+        UCHAR* buf = (UCHAR*)HeapAlloc(GetProcessHeap(), 0, Size);
+        if (buf == NULL) {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        if (!AdSafeReadMemory(BaseAddress, buf, Size)) {
+            HeapFree(GetProcessHeap(), 0, buf);
+            return STATUS_UNSUCCESSFUL;
+        }
+        crc = AdComputeCrc32(buf, Size);
+        HeapFree(GetProcessHeap(), 0, buf);
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+
+    /* 查重 */
+    for (i = 0; i < SDF_MAX_PROTECTED_REGIONS; i++) {
+        if (Engine->ProtectedRegions[i].InUse &&
+            Engine->ProtectedRegions[i].Region.BaseAddress == BaseAddress) {
+            entry = &Engine->ProtectedRegions[i];
+            break;
+        }
+    }
+    if (entry == NULL) {
+        for (i = 0; i < SDF_MAX_PROTECTED_REGIONS; i++) {
+            if (!Engine->ProtectedRegions[i].InUse) {
+                entry = &Engine->ProtectedRegions[i];
+                break;
+            }
+        }
+        if (entry == NULL) {
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        ZeroMemory(entry, sizeof(*entry));
+        entry->InUse = TRUE;
+        Engine->ProtectedRegionCount++;
+    }
+
+    entry->Region.BaseAddress = BaseAddress;
+    entry->Region.Size = Size;
+    entry->Region.Protection = Protection;
+    entry->Region.Crc32Baseline = crc;
+
+    LeaveCriticalSection(&Engine->Lock);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+SdfUnprotectMemoryRegion(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ PVOID BaseAddress
+    )
+{
+    ULONG i;
+
+    if (Engine == NULL || BaseAddress == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    for (i = 0; i < SDF_MAX_PROTECTED_REGIONS; i++) {
+        if (Engine->ProtectedRegions[i].InUse &&
+            Engine->ProtectedRegions[i].Region.BaseAddress == BaseAddress) {
+            Engine->ProtectedRegions[i].InUse = FALSE;
+            Engine->ProtectedRegionCount--;
+            LeaveCriticalSection(&Engine->Lock);
+            return STATUS_SUCCESS;
+        }
+    }
+    LeaveCriticalSection(&Engine->Lock);
+    return STATUS_NOT_FOUND;
+}
+
+/* ------------------------------------------------------------------ */
+/* 授权令牌（HMAC-SHA256 骨架）                                       */
+/* ------------------------------------------------------------------ */
+
+NTSTATUS
+SdfSetAuthKey(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_reads_bytes_(KeyLength) const UCHAR* Key,
+    _In_ ULONG KeyLength
+    )
+{
+    if (Engine == NULL || Key == NULL || KeyLength == 0 || KeyLength > SDF_MAX_AUTH_TOKEN_LENGTH) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Engine->Lock);
+    RtlCopyMemory(Engine->AuthKey, Key, KeyLength);
+    Engine->AuthKeyLength = KeyLength;
+    LeaveCriticalSection(&Engine->Lock);
+
+    return STATUS_SUCCESS;
+}
+
+BOOLEAN
+SdfVerifyAuthToken(
+    _In_ PACCESS_CONTROL_ENGINE Engine,
+    _In_ PSP_AUTH_TOKEN Token
+    )
+{
+    UCHAR expected[SDF_AUTH_HASH_LENGTH];
+
+    if (Engine == NULL || Token == NULL || Engine->AuthKeyLength == 0) {
+        return FALSE;
+    }
+    if (Token->DataLength != SDF_AUTH_HASH_LENGTH) {
+        return FALSE;
+    }
+
+    /* 用当前密钥对固定挑战数据计算 HMAC-SHA256，比对令牌 */
+    SpHmacSha256(
+        Engine->AuthKey,
+        Engine->AuthKeyLength,
+        (const UCHAR*)"WkDefender.SelfProtection.Challenginee",
+        34,
+        expected);
+
+    if (RtlEqualMemory(expected, Token->Data, SDF_AUTH_HASH_LENGTH)) {
+        return TRUE;
+    }
+    return FALSE;
+}

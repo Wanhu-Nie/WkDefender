@@ -38,9 +38,17 @@
 #include "Notification/NotificationService.h"
 #include "Notification/YaraScanPort.h"
 #include "Driver/Install.h"
+#include "ETW/EtwConsumer.h"               /* ETW 独立消费信道 (SS 框架迁移 2026-09-07, 档案 #84) */
 #include "WkDefenderHeader.h"
+#include "AccessControl/AccessControlEngine.h"      /* 自保护公共头 + 编排门面 (2026-09-05 并入) */
 
 WKDEFENDER_AGENT WkDefenderAgent;
+
+/* 自保护编排（SS SelfDefense 纯 C 迁移 2026-09-01；2026-09-08 全局单例化）：
+ * 唯一 ACCESS_CONTROL_ENGINE 对象归 AccessControlEngine 模块所有，不再
+ * 显式创建/参数传递；InitializeSubsystems 经 SpInitializeSelfProtectionEngine
+ * 惰性登记为全局，跨 TU 消费方统一 AcGetAccessControlEngine() 取用。
+ * 生命周期即 agent 进程生命周期（不再显式停止/清理）。 */
 
 /* YARA FLT 端口客户端线程（步骤 4，接收内核文件扫描请求） */
 static HANDLE g_YaraScanThread = NULL;
@@ -58,6 +66,72 @@ static BOOLEAN g_IoaMountPointMonitorEnabled = FALSE;
 
 /* 目录级勒索聚合状态（按 MonitorId 索引，取模防溢出，DirectoryMonitor 迁移 2026-08） */
 static WKD_DIR_RANSOM_STATE g_DirRansomStates[WKD_DIR_MAX_MONITORS];
+
+/**************************************************/
+/*  自保护事件回调与 ALPC 路由处理                   */
+/*  (SS SelfDefense 纯 C 迁移 2026-09-01, 档案 #82)  */
+/*                                                 */
+/*  驱动端自防御模块(SelfProtectionEngine)上报       */
+/*  SecurityEvent → 驱动 ALPC 层映射 WkdAlpcMessage_ */
+/*  SecurityEvent(0x300D) → 本路由(SpWkdMsgRoute)   */
+/*  → SdfIngestSecurityEvent → SP_EVENT_CALLBACK     */
+/*  → SpSelfProtectionEventCallback → UI 0x6004 通道  */
+/**************************************************/
+
+/* 自保护事件回调：Agent 主动/驱动事件 → UI 安全告警。
+ * 载荷 = WKDEFENDER_NOTIFICATION_DATA (NotificationService.h)。
+ * 沿用既有告警通道 (WkdAlpcMsg_SecurityNotification=0x6004)。 */
+static NTSTATUS
+SpSelfProtectionEventCallback(
+    _In_ ULONG EventSubType,
+    _In_ ULONG Severity,
+    _In_ PCWSTR Description
+    )
+{
+    WKDEFENDER_NOTIFICATION_DATA notification;
+    RtlZeroMemory(&notification, sizeof(notification));
+
+    notification.type = WKDEFENDER_NOTIFICATION_TYPE_WARNING;
+    wcsncpy_s(notification.title, 256, SpSubTypeToName(EventSubType), _TRUNCATE);
+    if (Description != NULL) {
+        wcsncpy_s(notification.message, 1024, Description, _TRUNCATE);
+    } else {
+        wcsncpy_s(notification.message, 1024, L"自保护子系统检测到安全事件。", _TRUNCATE);
+    }
+    (VOID)EventSubType; (VOID)Severity;
+
+    if (WkDefenderAgent.NotificationManager != NULL) {
+        (VOID)NotificationManager_SendNotificationToUI(
+            WkDefenderAgent.NotificationManager, &notification);
+    }
+    return STATUS_SUCCESS;
+}
+
+/* 驱动端 SecurityEvent(0x300D) 路由处理。
+ * 载荷 PWKD_MESSAGE → (PWKD_MESSAGE_BODY_SECURITY_EVENT)Message->Body。
+ * 仅当全局自保护句柄已就绪时转发 ingestion。 */
+static NTSTATUS
+SpWkdMsgRoute(
+    _In_ PWKD_ALPC_SERVER       Server,
+    _In_ PWKD_MESSAGE           Message,
+    _In_opt_ PVOID              Context
+    )
+{
+    PWKD_MESSAGE_BODY_SECURITY_EVENT body;
+    UNREFERENCED_PARAMETER(Server);
+    UNREFERENCED_PARAMETER(Context);
+
+    if (Message == NULL || AcGetAccessControlEngine() == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    body = (PWKD_MESSAGE_BODY_SECURITY_EVENT)Message->Body;
+    if (body == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    return SdfIngestSecurityEvent(
+        body->EventId, body->Severity,
+        (body->Description[0] != L'\0') ? body->Description : NULL);
+}
 
 /**************************************************/
 /*               扫描回调 → ALPC 通知               */
@@ -472,6 +546,19 @@ static NTSTATUS InitializeSubsystems(VOID)
     status = OrcEngineInitialize(&WkdOrchestratorEngine, &cfg);
     if (!NT_SUCCESS(status)) { SystemManager_Cleanup(); LogManager_Cleanup(&g_LogManager); ProcessManager_Cleanup(); goto cleanup_7; }
 
+    /* 11.5 ETW 独立消费信道 (SS ETW 消费框架迁移 2026-09-07, 档案 #84)
+     *      ALPC 之外的独立实时信道，直解 WKD_MESSAGE（与 ALPC 同源同构）。
+     *      本期消费到消费者为止（内建打印），不接 OrcWkdMessageEnqueueCallback；
+     *      解决"ALPC 未连接则丧失通信能力"问题。失败不阻断主系统。 */
+    printf("[Main] Starting ETW Consumer...\n");
+    status = EtwConsumer_Initialize();
+    if (NT_SUCCESS(status)) {
+        status = EtwConsumer_Start();
+    }
+    if (!NT_SUCCESS(status)) {
+        printf("[Main] WARNING: ETW Consumer start failed: 0x%X (继续启动)\n", status);
+    }
+
     /* 12. CGE 路由注册
      * Driver→Agent 段 [0x3001, 0x300C]：进程/线程/镜像/文件/命名管道事件
      * 统一入队 OrcWkdMessageEnqueueCallback，内部按 WKD_MESSAGE.Header.Type
@@ -551,6 +638,123 @@ static NTSTATUS InitializeSubsystems(VOID)
     //    printf("[Main] WARNING: ExemptsPushAll failed: 0x%X\n", status);
     //}
 
+    /* 18. 自保护编排 (SS SelfDefense 纯 C 迁移 2026-09-01, 档案 #82)
+     *      创建编排上下文（不启动），注册驱动 SecurityEvent(0x300D) 路由。
+     *      消费链: 驱动上报 → 0x300D → SpWkdMsgRoute → SdfIngestSecurityEvent
+     *               → SP_EVENT_CALLBACK → SpSelfProtectionEventCallback
+     *               → NotificationManager_SendNotificationToUI (0x6004)。
+     *      注: 驱动事件触发的主动上报需入口才可达；Agent 侧主动反调试告警
+     *      (SdfApplyAntiDebugToCurrentThread/SdfNotifyAlert) 亦走同一回调。
+     *      失败不阻断其它子系统启动（自保护仅尽力而为）。 */
+    printf("[Main] Initializing SelfProtection...\n");
+    status = SpInitializeSelfProtectionEngine(SpProtectionStandard);
+    if (!NT_SUCCESS(status)) {
+        printf("[Main] WARNING: SelfProtection init failed: 0x%X (自保护跳过)\n", status);
+    } else {
+        /* 18.0 全局引擎已由 SpInitialize 在模块内登记为唯一单例
+         * （2026-09-08）；Orchestrator 分发线程（进程创建/退出挂点）经
+         * AcGetAccessControlEngine 取引擎实例。 */
+
+        /* 18.0 按等级取默认能力位集合（policy 位域，2026-09-06 策略 Y）：
+         *      等级=SpProtectionStandard（main 启动自保护传入），Standard 起全位。 */
+        ULONG selfFlags = SdfGetDefaultProtectionFlags(SpProtectionStandard);
+
+        /* 18.1 启动即自保护：注册本进程受保护（对齐 SS TamperProtection::ProtectSelf）。
+         *      同步 PP 引擎表；SdfSelfCheck 将校验其生效。
+         *      失败不阻断（自保护仅尽力而为）。
+         *      policy：EDR 自身类型 → AD_MASK_ALL 显式全激活（2026-09-07 废除
+         *      0=全激活哨兵，位图即最终使能）。 */
+        (VOID)AcRegisterProtectedProcess(
+            (HANDLE)(ULONG_PTR)GetCurrentProcessId(),
+            selfFlags,
+            AdPolicyProfileEdr,
+            AD_MASK_ALL);
+
+        /* 18.1b HIDE_THREADS 位：对当前进程现存线程逐个 HideFromDebugger
+         *      （经 Sdf→Ad 引擎）。主线程完整反调试（清断点+CRC32）走 18.3；
+         *      未来新线程由 PP 监控线程自动承载。自进程不在 wkd 树/无线程视图则跳过。 */
+        if (selfFlags & SP_PROTECT_FLAG_HIDE_THREADS) {
+            PWKD_PROCESS selfProc = NULL;
+            if (NT_SUCCESS(PsLookupWkdProcessByProcessId(NULL,
+                    (HANDLE)(ULONG_PTR)GetCurrentProcessId(), &selfProc)) &&
+                selfProc->ThreadContext) {
+                PWKD_THREAD_CONTEXT tctx = selfProc->ThreadContext;
+                PLIST_ENTRY te;
+                AcquireSRWLockShared(&tctx->Lock);
+                te = tctx->ThreadList.Flink;
+                while (te != &tctx->ThreadList) {
+                    PWKD_THREAD thr = CONTAINING_RECORD(te, WKD_THREAD, ListEntry);
+                    (VOID)SdfApplyAntiDebugToThread(
+                        (ULONG)(ULONG_PTR)thr->ThreadId);
+                    te = te->Flink;
+                }
+                ReleaseSRWLockShared(&tctx->Lock);
+                PsDereferenceWkdProcess(selfProc);
+            }
+        }
+
+        /* 18.2 CODE_INTEGRITY 位：保护自身主模块全部代码节
+         *      （MP 模块保护链表，ID self_<基址>_<节名>）。
+         *      策略 Y（2026-09-06）：以 WKD_MODULE_INSTANCE（进程内映射视图）为对象，
+         *      优先 WKD_MODULE::PeInfo.Sections、回退自解析镜像。
+         *      自进程须在 wkd 树且模块上下文已挂载；查不到则告警不阻断。 */
+        if (selfFlags & SP_PROTECT_FLAG_CODE_INTEGRITY) {
+            PAC_MEMORY_INTEGRITY_ENGINE mpEngine = NULL;
+            PWKD_PROCESS selfProc = NULL;
+            PWKD_MODULE_CONTEXT selfCtx = NULL;
+            PLIST_ENTRY e = NULL;
+            PWKD_MODULE_INSTANCE selfExe = NULL;
+
+            if (!NT_SUCCESS(SdfGetMemoryProtectionEngine(&mpEngine)) ||
+                !mpEngine) {
+                printf("[Main] WARNING: AcEnableCodeIntegrityProtection failed (MP 引擎不可用)\n");
+            } else if (!NT_SUCCESS(PsLookupWkdProcessByProcessId(NULL,
+                    (HANDLE)(ULONG_PTR)GetCurrentProcessId(), &selfProc))) {
+                printf("[Main] WARNING: AcEnableCodeIntegrityProtection failed (自进程不在 wkd 树)\n");
+            } else {
+                selfCtx = selfProc->ModuleContext;   /* 惰性申请，NULL=无模块上下文 */
+                if (selfCtx) {
+                    AcquireSRWLockShared(&selfCtx->Lock);
+                    e = selfCtx->ModuleList.Flink;
+                    while (e != &selfCtx->ModuleList) {
+                        PWKD_MODULE_INSTANCE inst =
+                            CONTAINING_RECORD(e, WKD_MODULE_INSTANCE, ListEntry);
+                        /* 主模块 = 基址等于进程映像基址的实例 */
+                        if (inst->ImageBase == GetModuleHandleW(NULL)) {
+                            selfExe = inst;
+                            break;
+                        }
+                        e = e->Flink;
+                    }
+                    if (selfExe) {
+                        /* 共享锁内登记（只读实例字段 + 独立 EC 串行），返回后即弃用实例指针 */
+                        if (!AcEnableCodeIntegrityProtection(mpEngine, selfExe)) {
+                            printf("[Main] WARNING: AcEnableCodeIntegrityProtection failed (代码节保护未生效)\n");
+                        }
+                    } else {
+                        printf("[Main] WARNING: AcEnableCodeIntegrityProtection failed (未找到主模块实例)\n");
+                    }
+                    ReleaseSRWLockShared(&selfCtx->Lock);
+                } else {
+                    printf("[Main] WARNING: AcEnableCodeIntegrityProtection failed (主模块上下文未挂载)\n");
+                }
+                PsDereferenceWkdProcess(selfProc);
+            }
+        }
+
+        /* 18.3 ANTI_DEBUG 位：主线程防调试（动作归位 AntiDebug：清断点 + HideFromDebugger + CRC32）：
+         *      由 Sdf 层接线执行，失败不阻断。 */
+        if (selfFlags & SP_PROTECT_FLAG_ANTI_DEBUG) {
+            (VOID)SdfApplyAntiDebugToCurrentThread();
+        }
+
+        (VOID)SdfRegisterEventCallback(
+            SpSelfProtectionEventCallback, NULL);
+        (VOID)AlpcRegisterRoute(&WkdDefaultAlpcServer,
+            WkdAlpcMessage_SecurityEvent, WkdAlpcMessage_SecurityEvent,
+            SpWkdMsgRoute, NULL);
+    }
+
     printf("[Main] All subsystems initialized\n\n");
     return STATUS_SUCCESS;
 
@@ -611,6 +815,25 @@ static NTSTATUS StartAllModules(VOID)
     //     }
     // }
 
+    /* 5. 自保护编排 (SS SelfDefense 纯 C 迁移 2026-09-01)
+     *      启动看门狗 + 反调试引擎监测线程。失败不阻断 (自保护尽力而为)。 */
+    if (AcGetAccessControlEngine() != NULL) {
+        printf("[Main] Starting SelfProtection...\n");
+        s = AcStartAccessControlEngine();
+        if (!NT_SUCCESS(s)) {
+            printf("[Main] WARNING: SelfProtection start failed: 0x%X\n", s);
+        } else {
+            /* 启动自检（对齐 SS SelfDefense SelfTest：进程受保护/代码节完整性/链路）。
+             * 失败不阻断，仅记录。 */
+            ULONG failedChecks = 0;
+            if (!SdfSelfCheck(&failedChecks)) {
+                printf("[Main] WARNING: SelfProtection self-check failed: %u 项\n", failedChecks);
+            } else {
+                printf("[Main] SelfProtection self-check passed\n");
+            }
+        }
+    }
+
     printf("[Main] All modules started\n\n");
     return STATUS_SUCCESS;
 }
@@ -622,6 +845,13 @@ static NTSTATUS StartAllModules(VOID)
 static VOID CleanupAllModules(VOID)
 {
     printf("[Main] Shutting down...\n");
+
+    /* 0. ETW 独立消费信道：最先停（解阻塞消费线程，回调不再触碰后续释放资源） */
+    EtwConsumer_Shutdown();
+
+    /* 自保护编排（2026-09-08 单例化）：唯一全局引擎生命周期即进程生命周期，
+     * 随进程退出由 OS 回收（看门狗/反调试/PP/MP 监控线程随之终结），不再
+     * 显式停止清理。 */
 
     /* 先停 YARA 端口客户端线程（依赖 IocYara/Storage，须先于其清理） */
     if (g_YaraScanStop) SetEvent(g_YaraScanStop);

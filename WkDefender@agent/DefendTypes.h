@@ -369,8 +369,8 @@ typedef enum _GRAPH_LAYER_DECISION {
 
 typedef struct _GRAPH_EDGE_DESCRIPTOR {
     GUID                EdgeId;             /* 16 bytes — 边全局唯一ID */
-    GUID                SrcNodeId;          /* 16 bytes */
-    GUID                TgtNodeId;          /* 16 bytes */
+    GUID                SourceNodeId;          /* 16 bytes */
+    GUID                TargetNodeId;          /* 16 bytes */
     IOA_GRAPH_EDGE_TYPE       EdgeType;           /* 4 bytes */
     DEF_EVENT_CLASS     EventClass;         /* 4 bytes */
     ULONG               BehaviorFlags;      /* 4 bytes */
@@ -410,7 +410,7 @@ typedef enum _FSM_ATTACK_CLASS {
 #define FSM_PATTERN_COUNT           6       /* 预定义 6 种攻击模式 (含 ThreadHijacking) */
 #define FSM_STATE_MAX               12      /* 每种模式最多 12 个状态 (为邻接表预留) */
 #define FSM_PATTERN_NAME_MAX        32
-#define CONCRETE_EDGE_MAX_NODES     128     /* 每聚合边最大具体边节点数 */
+#define MAX_CONCRETES_PER_AGGREGATE_EDGE     128     /* 每聚合边最大具体边节点数 */
 
 /* 单步状态转移定义 (精简 — 仅检查边类型 + 威胁增量 + 超时) */
 typedef struct _FSM_STATE_TRANSITION {
@@ -455,7 +455,7 @@ typedef struct _FSM_PATTERN_STATE {
 /*           聚合边具体边记录 (FSM 多路归并数据源)      */
 /*                                                  */
 /*  生命周期:                                        */
-/*    出生: 事件到达 → EdgeAgg_InsertConcrete 尾插    */
+/*    出生: 事件到达 → IoapInsertConcreteEdge 尾插    */
 /*    休眠: Tier1 60s 窗口过期 → Active=FALSE    */
 /*    死亡: 因果图边淘汰 → EdgeAgg_OnGraphEdgeEvicted */
 /*                                                  */
@@ -466,7 +466,6 @@ typedef struct _FSM_PATTERN_STATE {
 typedef struct _IOA_CONCRETE_EDGE {
     GUID                EdgeId;         /* 与事件共享 GUID */
     LARGE_INTEGER       Timestamp;      /* 事件时间戳 */
-    IOA_GRAPH_EDGE_TYPE EdgeType;
     LIST_ENTRY          Link;           /* 链入聚合边的 EdgesHead */
     BOOLEAN             Active;         /* Tier1 窗口内是否存活 */
 } IOA_CONCRETE_EDGE, *PIOA_CONCRETE_EDGE;
@@ -800,3 +799,7 @@ typedef struct _WKD_HEAP_SPRAY_RESULT {
     LARGE_INTEGER       LastAllocation;         /* 对齐 SS LastAllocation */
     ULONG               DurationMs;             /* 对齐 SS DurationMs */
 } WKD_HEAP_SPRAY_RESULT, *PWKD_HEAP_SPRAY_RESULT;
+
+
+#define ALIGN_UP_BY(x, align)   (((SIZE_T)(x) + (SIZE_T)(align) - 1) & ~((SIZE_T)(align) - 1))
+#define PAGE_SIZE   4096

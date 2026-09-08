@@ -65,9 +65,12 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_MemoryAllocate        = 0x1101,
     WkdMessage_MemoryFree            = 0x1102,
     WkdMessage_MemoryProtect         = 0x1103,
+    WkdMessage_MemoryAlert           = 0x1104,  // 内存告警（Shellcode/注入/Hollowing）
 
     WkdMessage_RegistrySetValue      = 0x1201,
     WkdMessage_RegistryDeleteValue   = 0x1202,
+    WkdMessage_RegistrySuspicious    = 0x1203,  // 注册表可疑操作（ETW 全覆盖映射）
+    WkdMessage_RegistryBlocked       = 0x1204,  // 注册表阻断（ETW 全覆盖映射）
 
     WkdMessage_FileCreate            = 0x1301,
     WkdMessage_FileWrite             = 0x1302,
@@ -77,9 +80,21 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_FileShadowCopyDelete  = 0x1306,  // 卷影副本删除（T1490，勒索检测）
     WkdMessage_NamedPipeCreate       = 0x1307,  // 命名管道创建（NamedPipeMonitor 迁移 2026-08）
     WkdMessage_SectionMap            = 0x1308,  // 可执行区段映射（PreAcquireSection 迁移 2026-08）
+    WkdMessage_FileScanResult        = 0x1309,  // 文件扫描结果（ETW 全覆盖映射）
+    WkdMessage_FileBlocked           = 0x130A,  // 文件阻断（ETW 全覆盖映射）
+    WkdMessage_FileQuarantined       = 0x130B,  // 文件隔离（ETW 全覆盖映射）
 
     WkdMessage_ProcessObjectAccess   = 0x1401,
     WkdMessage_ThreadObjectAccess    = 0x1402,
+    WkdMessage_HandleDuplicate       = 0x1403,  // 句柄复制事件（HandleTracker 迁移 2026-08，死代码）
+
+    /* 网络原始事件（ETW 全覆盖映射） */
+    WkdMessage_NetworkConnect        = 0x1601,
+    WkdMessage_NetworkListen         = 0x1602,
+    WkdMessage_DnsQuery              = 0x1603,
+    WkdMessage_C2Detected            = 0x1604,
+    WkdMessage_ExfiltrationDetected  = 0x1605,
+    WkdMessage_NetworkBlocked        = 0x1606,
 
     /* Layer 1B: 行为分析结果层 */
     WkdMessage_CrossProcessMemoryAccess = 0x2001,
@@ -87,6 +102,13 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_ProcessHollowingPattern  = 0x2003,
     WkdMessage_ApcInjectionPattern      = 0x2004,
     WkdMessage_AmsiBypassDetected       = 0x2005,   // AMSI绕过检测（T1562.001）
+
+    /* 行为分析结果层（ETW 全覆盖映射） */
+    WkdMessage_BehaviorAlert            = 0x2401,
+    WkdMessage_AttackChainStarted       = 0x2402,
+    WkdMessage_AttackChainUpdated       = 0x2403,
+    WkdMessage_AttackChainCompleted     = 0x2404,
+    WkdMessage_MitreDetection           = 0x2405,
 
     WkdMessage_ThreatScoreUpdated    = 0x2201,
     WkdMessage_ThreatLevelChanged    = 0x2202,
@@ -100,11 +122,27 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_RemoteThreadCreated   = 0x3003,  // [已弃用] 使用 WkdMessage_ThreadCreated
     WkdMessage_RemoteThreadExited    = 0x3004,  // [已弃用] 使用 WkdMessage_ThreadExited
     WkdMessage_ProcessSnapshot       = 0x3008,
+    WkdMessage_HandleScan            = 0x3009,  // 句柄扫描结果
+
+    /* 系统级事件（ETW 全覆盖映射，Suspicious/Blocked 变体） */
+    WkdMessage_ProcessCreatedSuspicious = 0x300A,
+    WkdMessage_ProcessCreatedBlocked    = 0x300B,
+    WkdMessage_ThreadCreatedSuspicious  = 0x300C,
+    WkdMessage_ImageLoadedSuspicious    = 0x300D,
+    WkdMessage_ImageLoadedBlocked       = 0x300E,
 
     /* Layer 3: 通用消息 */
     WkdMessage_SecurityEvent         = 0x4001,
     WkdMessage_SystemStatus          = 0x4002,
     WkdMessage_Error                 = 0x4003,
+
+    /* Layer 3 诊断消息（ETW 全覆盖映射，不进编排链） */
+    WkdMessage_DriverStarted         = 0x4101,
+    WkdMessage_DriverStopping        = 0x4102,
+    WkdMessage_Heartbeat             = 0x4103,
+    WkdMessage_PerformanceStats      = 0x4104,
+    WkdMessage_ComponentHealth       = 0x4105,
+    WkdMessage_DriverError           = 0x4106,
 } WKD_MESSAGE_TYPE;
 
 /* ---- 进程退出事件体（驱动→Agent，线格式，2026-08-25 镜像驱动布局）----
@@ -172,6 +210,24 @@ typedef struct _WKD_MSG_BODY_OBJECT_ACCESS {
     ACCESS_MASK SensitiveMask;
 } WKD_MSG_BODY_OBJECT_ACCESS, *PWKD_MSG_BODY_OBJECT_ACCESS;
 
+/* ---- 通用安全事件消息体（驱动→Agent，线格式，2026-09-01 自保护桥接接线）----
+ *  与 driver NotificationManager.h WKD_MESSAGE_BODY_SECURITY_EVENT 逐字段一致。
+ *  驱动自防护模块（AntiDebug/AntiUnload/IntegrityMonitor/RegistryProtection/
+ *  CallbackProtection）经 WkdReportSelfProtectionEvent 构造本载荷，封装为
+ *  WkdMessage_SecurityEvent(0x4001) → 驱动 ALPC 转换层映射到 0x300D 送达。
+ *  Agent 侧解包：PWKD_MESSAGE WkdMsg 后，(PWKD_MESSAGE_BODY_SECURITY_EVENT)WkdMsg->Body。
+ *  EventId = 驱动端定义的事件子类型（0x5001 回调篡改 / 0x5010-0x5014 AD 等）。 */
+typedef struct _WKD_MESSAGE_BODY_SECURITY_EVENT {
+    ULONG   EventId;                        // 事件子类型（EventSubType，见驱动端分配）
+    ULONG   Severity;                       // 严重程度（1-10）
+    ULONG   Category;                       // 事件类别（驱动端自保护类别）
+    HANDLE  RelatedProcessId;               // 相关进程 ID
+    WCHAR   EventName[128];                 // 事件名称
+    WCHAR   Description[512];               // 详细描述
+    UCHAR   Evidence[1024];                 // 证据数据（可选）
+    ULONG   EvidenceSize;                   // 证据大小
+} WKD_MESSAGE_BODY_SECURITY_EVENT, *PWKD_MESSAGE_BODY_SECURITY_EVENT;
+
 /*
  * 线程事件消息体（驱动→Agent，与驱动侧一致）
  * 通过 Flags bit0=IsRemote, bit1=Create 区分本地/远程和创建/退出
@@ -192,6 +248,7 @@ typedef struct _WKD_MESSAGE_BODY_THREAD_CREATE {
     ULONG  CreateFlags;                 // NtCreateThreadEx 的 CreateFlags（未匹配=0）
 
     /* 内存分析（对齐 PS TnpGetMemoryProtection） */
+    PVOID  ImageBase;                    // 所属模块的基址
     ULONG  MemoryProtection;             // 入口点内存保护属性 (PAGE_*)
     ULONG  MemoryProtectionFlags;        // 保留（后续扩展）
 
@@ -209,6 +266,10 @@ typedef struct _WKD_MESSAGE_BODY_THREAD_CREATE {
     /* 时间与标志 */
     LARGE_INTEGER CreateTime;           // 线程创建时间
     ULONG Flags;                        // bit0=IsRemote, bit1=Create
+
+    /* 起始地址归属结论（IocObserveThread 计算，供 agent IOC 消费） */
+    BOOLEAN IsUnusualEntry;             // 起始地址未落在已知模块内
+    BOOLEAN IsStartAddrBacked;          // 起始地址为 MEM_IMAGE
 } WKD_MESSAGE_BODY_THREAD_CREATE, *PWKD_MESSAGE_BODY_THREAD_CREATE;
 
 /**************************************************/
@@ -403,4 +464,128 @@ typedef struct _WKD_MESSAGE_BODY_SECTION_CREATE {
     ULONG           SuspicionScore;     /* SS 权重和（0-1000） */
     LARGE_INTEGER   Timestamp;
 } WKD_MESSAGE_BODY_SECTION_CREATE, *PWKD_MESSAGE_BODY_SECTION_CREATE;
+
+/**************************************************/
+/*    句柄复制事件消息体（驱动→Agent，与驱动侧一致） */
+/*    死代码：事件源=Ob 回调，尚未激活。            */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_HANDLE_DUPLICATE {
+    HANDLE      SourceProcessId;            // 复制源进程 PID
+    HANDLE      TargetProcessId;            // 复制目标进程 PID
+    UCHAR       ObjectType;                 // 0=Process 1=Thread
+    UCHAR       Padding[3];
+    ACCESS_MASK DesiredAccess;              // 原始请求访问掩码
+} WKD_MESSAGE_BODY_HANDLE_DUPLICATE, *PWKD_MESSAGE_BODY_HANDLE_DUPLICATE;
+
+/**************************************************/
+/*    句柄扫描结果事件体（驱动→Agent，与驱动侧一致） */
+/*    Body = [固定头][句柄条目 × Count]             */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_HANDLE_ENTRY {
+    HANDLE      HandleValue;            // 句柄值
+    UCHAR       Type;                   // HANDLE_SCAN_TYPE_*
+    UCHAR       Padding[3];
+    ULONG       GrantedAccess;          // 访问掩码
+    HANDLE      OwnerProcessId;         // 持有者 PID
+    HANDLE      TargetProcessId;        // 目标 PID（仅 Process/Thread）
+    ULONG       SuspicionFlags;         // HANDLE_SCAN_FLAG_* 组合
+    ULONG       SuspicionScore;         // 0-100
+} WKD_MESSAGE_BODY_HANDLE_ENTRY, *PWKD_MESSAGE_BODY_HANDLE_ENTRY;
+
+typedef struct _WKD_MESSAGE_BODY_HANDLE_SCAN {
+    HANDLE      TargetProcessId;        // 被扫描的进程 PID
+    ULONG       TotalHandleCount;       // 该进程总句柄数
+    ULONG       CrossProcessCount;      // 跨进程句柄数
+    ULONG       InjectionCapableCount;  // 注入能力句柄数
+    ULONG       TokenStealCount;        // 令牌窃取句柄数
+    ULONG       CredentialAccessCount;  // 凭证访问句柄数
+    ULONG       HighPrivilegeCount;     // 高权限句柄数
+    ULONG       AggregatedFlags;        // 聚合怀疑标志
+    ULONG       AggregatedScore;        // 聚合评分 0-100
+    ULONG       Count;                  // 后接条目数
+} WKD_MESSAGE_BODY_HANDLE_SCAN, *PWKD_MESSAGE_BODY_HANDLE_SCAN;
+
+/**************************************************/
+/*    网络事件消息体（驱动→Agent，与驱动侧一致）     */
+/*    ETW 全覆盖映射，定长无变长数据。              */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_NETWORK_EVENT {
+    HANDLE          ProcessId;          /* 源进程 ID */
+    HANDLE          ThreadId;           /* 源线程 ID */
+    ULONG           SessionId;          /* 会话 ID */
+    ULONG           Protocol;           /* IPPROTO_* */
+    ULONG           Direction;          /* 0=出站 1=入站 */
+    USHORT          LocalPort;
+    USHORT          RemotePort;
+    UINT32          LocalIpV4;
+    UINT32          RemoteIpV4;
+    UINT8           LocalIpV6[16];
+    UINT8           RemoteIpV6[16];
+    UINT64          BytesSent;
+    UINT64          BytesReceived;
+    UINT32          ThreatScore;
+    UINT32          ThreatType;
+    WCHAR           RemoteHostname[128];
+    WCHAR           ProcessPath[512];
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_NETWORK_EVENT, *PWKD_MESSAGE_BODY_NETWORK_EVENT;
+
+/**************************************************/
+/*    行为分析事件消息体（驱动→Agent，与驱动侧一致） */
+/*    ETW 全覆盖映射，定长无变长数据。              */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_BEHAVIOR_EVENT {
+    HANDLE          ProcessId;
+    HANDLE          ThreadId;
+    ULONG           SessionId;
+    ULONG           BehaviorType;
+    ULONG           Category;
+    LONG64          ChainId;
+    ULONG           MitreTechnique;
+    ULONG           MitreTactic;
+    ULONG           ThreatScore;
+    ULONG           Confidence;
+    WCHAR           ProcessPath[512];
+    WCHAR           Description[256];
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_BEHAVIOR_EVENT, *PWKD_MESSAGE_BODY_BEHAVIOR_EVENT;
+
+/**************************************************/
+/*    诊断事件消息体（驱动→Agent，与驱动侧一致）     */
+/*    ETW 全覆盖映射，仅审计不进编排链。            */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_DIAGNOSTIC_EVENT {
+    ULONG           ComponentId;
+    ULONG           Severity;
+    ULONG           ErrorCode;
+    HANDLE          RelatedProcessId;
+    WCHAR           ComponentName[128];
+    WCHAR           Message[512];
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_DIAGNOSTIC_EVENT, *PWKD_MESSAGE_BODY_DIAGNOSTIC_EVENT;
+
+/**************************************************/
+/*    内存/注入告警事件体（驱动→Agent，与驱动侧一致） */
+/*    ETW 全覆盖映射，定长无变长数据。              */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_MEMORY_ALERT {
+    HANDLE          SourceProcessId;
+    HANDLE          TargetProcessId;
+    HANDLE          ThreadId;
+    ULONG           AlertType;
+    UINT64          BaseAddress;
+    UINT64          RegionSize;
+    ULONG           Protection;
+    ULONG           OldProtection;
+    ULONG           ThreatScore;
+    ULONG           Flags;
+    WCHAR           ProcessPath[512];
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_MEMORY_ALERT, *PWKD_MESSAGE_BODY_MEMORY_ALERT;
 

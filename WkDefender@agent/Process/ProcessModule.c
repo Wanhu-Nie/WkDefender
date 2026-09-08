@@ -656,6 +656,9 @@ Return Value:
 
     instance->ImageBase = ImageBase;
     instance->Module = Module;
+    /* 链空 = 进程首个模块 = 主模块（进程创建期补挂的 exe 磁盘视图先入链）。
+     * 磁盘视图→映射视图原位升级路径不改此位（L640-648）。 */
+    instance->MainModule = (ctx->ModuleList.Flink == &ctx->ModuleList);
     InterlockedIncrement(&Module->RefCount);   /* 视图引用 */
     GetSystemTimeAsFileTime((PFILETIME)&instance->LoadTime);
 
@@ -668,6 +671,121 @@ Cleanup:
 Cleanup_1:
     ReleaseSRWLockExclusive(&ctx->Lock);
     return status;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+PsLookupModuleInstanceByName(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _In_ PCWSTR ModuleName,
+    _Out_ PWKD_MODULE_INSTANCE* Instance
+    )
+/*++
+Routine Description:
+    按模块名在进程模块实例链中定位映射实例。
+    遍历 WKD_MODULE_CONTEXT::ModuleList 的 WKD_MODULE_INSTANCE，
+    从实例全局模块的 ImagePath（完整路径）提取尾部文件名与
+    ModuleName 做不区分大小写比对；磁盘视图（ImageBase=NULL，
+    主映像补挂）视为未命中，继续查找映射实例。
+
+Arguments:
+    WkdProcess — 进程节点（模块上下文惰性创建，NULL=无命中）。
+    ModuleName — 模块文件名（如 L"ntdll.dll"）。
+    Instance  — 输出命中实例（可选；命中实例 ImageBase 有效）。
+
+Return Value:
+    STATUS_SUCCESS  命中并输出实例。
+    STATUS_NOT_FOUND 未命中或实例均为磁盘视图。
+    STATUS_INVALID_PARAMETER 参数非法。
+--*/
+{
+    PLIST_ENTRY le;
+    BOOLEAN found = FALSE;
+    PWKD_MODULE_CONTEXT ctx;
+    PWKD_MODULE_INSTANCE instance = NULL;
+
+    if (!WkdProcess || !WkdProcess->ModuleContext ||
+        !CoCheckStringValidity(ModuleName) || !Instance) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Instance = NULL;
+
+    ctx = WkdProcess->ModuleContext;
+
+    AcquireSRWLockShared(&ctx->Lock);
+    le = ctx->ModuleList.Flink;
+    while (le != &ctx->ModuleList) {
+        PCWSTR baseName;
+
+        instance = CONTAINING_RECORD(le, WKD_MODULE_INSTANCE, ListEntry);
+        if (instance->ImageBase && instance->Module &&
+             CoCheckUnicodeStringValidity(instance->Module->ImagePath)) {
+            PCWSTR slash = wcsrchr(instance->Module->ImagePath->Buffer, L'\\');
+            baseName = slash ? (slash + 1) : instance->Module->ImagePath->Buffer;
+            if (_wcsicmp(baseName, ModuleName) == 0) {
+                found = TRUE;
+                break;
+            }
+        }
+        le = le->Flink;
+    }
+    ReleaseSRWLockShared(&ctx->Lock);
+
+    if (found) { *Instance = instance; return STATUS_SUCCESS; }
+    else return STATUS_NOT_FOUND;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+PsGetMainModuleInstance(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _Out_ PWKD_MODULE_INSTANCE* Instance
+    )
+/*++
+Routine Description:
+    获取进程主模块（exe 映像）的模块实例。
+    MainModule 标志由 PsModuleInstanceAttachProcess 挂载首个实例
+    （进程创建期补挂的 exe 磁盘视图，ModuleList 链空）置位；磁盘视图
+    →映射视图原位升级时保持。与 PsLookupModuleInstanceByName 语义
+    一致：磁盘视图（ImageBase=NULL）视为未命中，命中实例 ImageBase
+    为有效映射基址。
+
+Arguments:
+    WkdProcess — 进程节点（模块上下文惰性创建，NULL=无命中）。
+    Instance   — 输出主模块实例（命中实例 ImageBase 有效）。
+
+Return Value:
+    STATUS_SUCCESS  命中并输出实例。
+    STATUS_NOT_FOUND 无主模块实例（进程创建早期 / 模块上下文缺省）。
+    STATUS_INVALID_PARAMETER 参数非法。
+--*/
+{
+    PLIST_ENTRY le;
+    BOOLEAN found = FALSE;
+    PWKD_MODULE_CONTEXT ctx;
+    PWKD_MODULE_INSTANCE instance = NULL;
+
+    if (!WkdProcess || !WkdProcess->ModuleContext || !Instance) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Instance = NULL;
+
+    ctx = WkdProcess->ModuleContext;
+
+    AcquireSRWLockShared(&ctx->Lock);
+    le = ctx->ModuleList.Flink;
+    while (le != &ctx->ModuleList) {
+        instance = CONTAINING_RECORD(le, WKD_MODULE_INSTANCE, ListEntry);
+        if (instance->MainModule && instance->ImageBase && instance->Module) {
+            found = TRUE;
+            break;
+        }
+        le = le->Flink;
+    }
+    ReleaseSRWLockShared(&ctx->Lock);
+
+    if (found) { *Instance = instance; return STATUS_SUCCESS; }
+    else return STATUS_NOT_FOUND;
 }
 
 _Use_decl_annotations_

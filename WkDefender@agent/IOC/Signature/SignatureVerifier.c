@@ -6,6 +6,7 @@
 
 #include "SignatureVerifier.h"
 #include "SignatureHunting.h"    /* 签名 APT 狩猎 (门控 g_IoaSignatureHuntingEnabled) */
+#include "../IocCertUtils.h"     /* IocCert_GetRevocationStatus (吊销原因细分, 2026-09-02) */
 
 #include <wintrust.h>
 #include <softpub.h>
@@ -53,6 +54,42 @@ BOOLEAN g_IocCertCacheEnabled = FALSE;
  * 同时新增 TRUST_E_SUBJECT_NOT_TRUSTED 分支 (默认 SAFER_FLAG 抑制, 严格模式可达),
  * 补齐 DefCertStatus_UntrustedRoot 状态 (对齐 SS UntrustedRoot, 原枚举无生产者)。 */
 BOOLEAN g_IocStrictSignatureEnabled = FALSE;
+
+/* 吊销原因细分 (SS CertificateValidator GetRevocationStatus 增量迁移 2026-09-02):
+ * 从 WTHelper 状态取叶证书 → IocCert_GetRevocationStatus (CRL reason 6 细分) →
+ * Result->RevokeReason。失败静默: 无细分保持通用 "Certificate revoked" 归因。
+ * 调用点: IocVerifyTrust 的 CERT_E_REVOKED 分支 (吊销检查已启语境)。 */
+static NTSTATUS
+IocScan_FillRevokeReason(
+    _In_  HANDLE           WvtStateData,
+    _Inout_ PIOC_SCAN_RESULT Result
+    )
+{
+    PCRYPT_PROVIDER_DATA providerData;
+    PCRYPT_PROVIDER_SGNR signer;
+    PCRYPT_PROVIDER_CERT leafCert;
+    BOOLEAN isRevoked = FALSE;
+    WCHAR reasonBuf[96];
+
+    if (!WvtStateData || !Result) return STATUS_SUCCESS;
+    if (Result->RevokeReason[0] != L'\0') return STATUS_SUCCESS;
+
+    providerData = WTHelperProvDataFromStateData(WvtStateData);
+    if (!providerData) return STATUS_SUCCESS;
+    signer = WTHelperGetProvSignerFromChain(providerData, 0, FALSE, 0);
+    if (!signer) return STATUS_SUCCESS;
+    leafCert = WTHelperGetProvCertFromChain(signer, 0);
+    if (!leafCert || !leafCert->pCert) return STATUS_SUCCESS;
+
+    /* 叶证书由 WTHelper 状态拥有, 不 CertFreeCertificateContext (对齐
+     * SignatureDetails.c L70-79 同一模式) */
+    if (IocCert_GetRevocationStatus(leafCert->pCert, &isRevoked,
+                                    reasonBuf, RTL_NUMBER_OF(reasonBuf)) && isRevoked) {
+        wcsncpy_s(Result->RevokeReason, RTL_NUMBER_OF(Result->RevokeReason),
+                  reasonBuf, _TRUNCATE);
+    }
+    return STATUS_SUCCESS;
+}
 
 /**************************************************/
 /*              WinVerifyTrust 主验证              */
@@ -226,6 +263,12 @@ Return Value:
         Result->CertValid = TRUE;
         Result->CertStatus = DefCertStatus_Revoked;
         Result->CertScore = 50;
+
+        /* 吊销原因细分 (SS CertificateValidator GetRevocationStatus 增量迁移
+         * 2026-09-02): 提取 CRL reason 细分文案入 RevokeReason,
+         * SignatureReputation 归因消费 ("Certificate revoked (Reason: ...)")。
+         * 无细分/失败静默保持通用归因。 */
+        (VOID)IocScan_FillRevokeReason(wtd.hWVTStateData, Result);
     } else if (lStatus == CERT_E_EXPIRED) {
         /* 证书过期 */
         Result->CertValid = TRUE;

@@ -3,6 +3,7 @@
 #include "../Syscall/SyscallMonitor.h"
 #include "../Syscall/SyscallContextCache.h"
 #include "../Common/Utils.h"
+#include "../Common/ExportParser.h"
 #include "../AnalysisEngine/IoaEngine.h"
 #include "../Notification/AlpcService.h"
 #include "../Process/ProcessPairContext.h"
@@ -40,24 +41,8 @@ static WKD_THREAD_CALLBACK_STATE g_TdState = { 0 };
 #endif
 
 
-typedef NTSTATUS(NTAPI* PFN_ZwOpenThread)(
-    _Out_ PHANDLE ThreadHandle,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_ PCOBJECT_ATTRIBUTES ObjectAttributes,
-    _In_opt_ PCLIENT_ID ClientId
-    );
-static PFN_ZwOpenThread pfn_ZwOpenThread = NULL;
-
-typedef NTSTATUS(NTAPI* PFN_ZwQueryInformationThread)(
-    _In_ HANDLE ThreadHandle,
-    _In_ THREADINFOCLASS ThreadInformationClass,
-    _Out_writes_bytes_(ThreadInformationLength) PVOID ThreadInformation,
-    _In_ ULONG ThreadInformationLength,
-    _Out_opt_ PULONG ReturnLength
-    );
-static PFN_ZwQueryInformationThread pfn_ZwQueryInformationThread = NULL;
-
-//
+// ZwOpenThread / ZwQueryInformationThread 的 typedef 原型与函数指针均
+// 统一由 Common/ExportParser.h 提供（pfnZwOpenThread / pfnZwQueryInformationThread）。
 // 内存查询 & 进程属性 API（对齐 PS ThreadNotify）
 //
 NTSYSAPI
@@ -72,25 +57,11 @@ ZwQueryVirtualMemory(
     _Out_opt_ PSIZE_T ReturnLength
     );
 
-__declspec(dllimport) ULONG    NTAPI PsGetProcessSessionId(_In_ PEPROCESS Process);
-
 //
 // 注：线程退出信息 API PsGetThreadExitTime / KeQueryThreadTime 为未文档化导出，
 // 已于 26100 内核移除（ntoskrnl.lib 无符号），相关采集逻辑在回调内降级为
-// KeQuerySystemTime 近似（见 CbpThreadNotifyCallback 退出分支注释）。
+// KeQuerySystemTime 近似（见 CbThreadNotifyCallback 退出分支注释）。
 //
-
-//
-// 线程创建/终止回调
-//
-_IRQL_requires_(PASSIVE_LEVEL)
-static
-VOID
-CbpThreadNotifyCallback(
-    _In_ HANDLE ProcessId,
-    _In_ HANDLE ThreadId,
-    _In_ BOOLEAN Create
-    );
 
 //_IRQL_requires_(PASSIVE_LEVEL)
 //static
@@ -149,24 +120,17 @@ Returns:
 --*/
 {
     NTSTATUS status;
-    UNICODE_STRING uniStr;
 
     RtlZeroMemory(&g_TdState, sizeof(WKD_THREAD_CALLBACK_STATE));
     ExInitializeRundownProtection(&g_TdState.RundownRef);
 
-    /* 初始化相关函数 */
-    RtlInitUnicodeString(&uniStr, L"ZwOpenThread");
-    pfn_ZwOpenThread =
-        (PFN_ZwOpenThread)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"ZwQueryInformationThread");
-    pfn_ZwQueryInformationThread =
-        (PFN_ZwQueryInformationThread)MmGetSystemRoutineAddress(&uniStr);
+    // ZwOpenThread / ZwQueryInformationThread 函数指针已统一由
+    // Common/ExportParser 在 DriverEntry 早期解析（pfnZwOpenThread/...）。
 
     //
     // 注册线程创建/终止回调
     //
-    status = PsSetCreateThreadNotifyRoutine(CbpThreadNotifyCallback);
+    status = PsSetCreateThreadNotifyRoutine(CbThreadNotifyCallback);
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
             "[WkDefender] CbThreadNotifyInitialize: PsSetCreateThreadNotifyRoutine failed: 0x%08X\n",
@@ -207,7 +171,7 @@ Routine Description:
     // 注销线程回调
     //
     if (g_TdState.CallbackRegistered) {
-        NTSTATUS status = PsRemoveCreateThreadNotifyRoutine(CbpThreadNotifyCallback);
+        NTSTATUS status = PsRemoveCreateThreadNotifyRoutine(CbThreadNotifyCallback);
         if (!NT_SUCCESS(status)) {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
                 "[WkDefender] CbThreadNotifyCleanup: PsRemoveCreateThreadNotifyRoutine failed: 0x%08X\n",
@@ -500,10 +464,10 @@ Returns:
         CLIENT_ID cid = { thread->ProcessId, ThreadId };
         OBJECT_ATTRIBUTES objAttr = { 0 };
 
-        status = pfn_ZwOpenThread(&hThread, THREAD_QUERY_LIMITED_INFORMATION, &objAttr, &cid);
+        status = pfnZwOpenThread(&hThread, THREAD_QUERY_LIMITED_INFORMATION, &objAttr, &cid);
         if (!NT_SUCCESS(status)) goto Cleanup;
         
-        status = pfn_ZwQueryInformationThread(hThread,
+        status = pfnZwQueryInformationThread(hThread,
             ThreadQuerySetWin32StartAddress, &startAddress, sizeof(PVOID), NULL);
         if (!NT_SUCCESS(status)) goto Cleanup;
 
@@ -766,7 +730,7 @@ Arguments:
 /**************************************************/
 _Use_decl_annotations_
 VOID
-CbpThreadNotifyCallback(
+CbThreadNotifyCallback(
     _In_ HANDLE ProcessId,
     _In_ HANDLE ThreadId,
     _In_ BOOLEAN Create

@@ -4,6 +4,13 @@
 #include "HashSet.h"
 
 //
+// 全局变量：缓存 DriverObject 用于模块遍历
+// 定义（extern 声明 + Utils.c 中的唯一定义）——避免多个 TU include 造成
+// 多重定义链接错误。
+//
+extern PDRIVER_OBJECT WkdDriverObject;
+
+//
 // 字符串操作函数
 //
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -132,9 +139,10 @@ CoCopyUnicodeString(
 // 内核模块相关函数
 //
 _IRQL_requires_(PASSIVE_LEVEL)
-VOID
-UtSetDriverObject(
-    _In_ PDRIVER_OBJECT DriverObject
+_Must_inspect_result_
+NTSTATUS
+CoRecordWkdDriverObject(
+    _In_ const PDRIVER_OBJECT DriverObject
     );
 
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -284,7 +292,32 @@ CoGetBasenameFromPath(
 
 FORCEINLINE
 BOOLEAN
+CoCheckStringValidity(_In_ PCWSTR String) {
+    if (!String || String[0] == L'\0') return FALSE;
+    else return TRUE;
+};
+
+FORCEINLINE
+BOOLEAN
 CoCheckUnicodeStringValidity(_In_ PCUNICODE_STRING String) {
     if (!String || !String->Buffer || String->Length == 0) return FALSE;
     else return TRUE;
-}
+    };
+
+/* ============================================================================
+ * 内核代码安全读取
+ * ============================================================================ */
+
+ //
+ // 安全读取内核代码到本地缓冲区
+ // 运行环境: PASSIVE_LEVEL 或 APC_LEVEL
+ // 拒绝用户态地址（< MmUserProbeAddress），使用 __try/__except 保护。
+ //
+_IRQL_requires_max_(APC_LEVEL)
+_Must_inspect_result_
+NTSTATUS
+CoReadKernelRegionSafe(
+    _Out_writes_bytes_(Size) PVOID Buffer,
+    _In_ const PVOID Address,
+    _In_ SIZE_T Size
+    );

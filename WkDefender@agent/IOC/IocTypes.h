@@ -524,6 +524,11 @@ typedef struct _IOC_SCAN_RESULT {
     BOOLEAN             IsRevocationChecked;/* 吊销已检查 (cache-only, 门控) */
     ULONG64             SignTime;           /* 计数器签名时间 Unix 秒 (0=无, 死代码填充) */
     CHAR                CatalogName[260];   /* catalog 命中路径 (ValidCatalog 时, 门控) */
+    /* 吊销原因细分 (SS CertificateValidator GetRevocationStatus 增量迁移 2026-09-02):
+     * CertStatus=Revoked 时由 SignatureVerifier Revoked 分支经
+     * IocCert_GetRevocationStatus 填充 ("Certificate revoked (Reason: ...)"),
+     * 消费面: 信誉归因细分 (SignatureReputation 已接线)。0 前缀=未细分。 */
+    WCHAR               RevokeReason[96];
 
     /* LOLBin */
     BOOLEAN             IsLolbin;

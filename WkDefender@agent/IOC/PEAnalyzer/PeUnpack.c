@@ -42,27 +42,17 @@ Return Value:
     TRUE=成功。
 --*/
 {
-    BCRYPT_ALG_HANDLE hAlg = NULL;
-    BCRYPT_HASH_HANDLE hHash = NULL;
-    NTSTATUS status;
-    BOOLEAN ok = FALSE;
+    DEF_SHA256_HASH digest;
 
     if (Data == NULL || Digest == NULL) return FALSE;
     if (Size > 0xFFFFFFFFUL) return FALSE;
 
-    status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, NULL, 0);
-    if (NT_SUCCESS(status)) {
-        status = BCryptCreateHash(hAlg, &hHash, NULL, 0, NULL, 0, 0);
-        if (NT_SUCCESS(status)) {
-            status = BCryptHashData(hHash, (PUCHAR)Data, (ULONG)Size, 0);
-            if (NT_SUCCESS(status)) {
-                ok = NT_SUCCESS(BCryptFinishHash(hHash, Digest, 32, 0));
-            }
-            BCryptDestroyHash(hHash);
-        }
-        BCryptCloseAlgorithmProvider(hAlg, 0);
+    /* 统一走 BCrypUtils（BCrypt SHA-256 buffer 哈希, 2026-09-08 收敛） */
+    if (!IocScanner_ComputeBufferSha256(Data, (ULONG)Size, &digest)) {
+        return FALSE;
     }
-    return ok;
+    memcpy(Digest, digest.Data, DEF_SHA256_SIZE);
+    return TRUE;
 }
 
 static
@@ -1060,7 +1050,7 @@ WpeUnpackFsgInternal(
  * 功能: 定位 IAT 起始 RVA — 优先 IAT 数据目录(12) → IMPORT 目录(1) →
  *       .rdata/.idata/.data 节首 (SS 同序)。
  * 不接入原因: 完整 IAT 重建仅对"内存 dump/运行期 IAT"场景有效; wkd 无该
- *       场景, 活代码侧 IocpParseImports (PeLazy.c) 已覆盖文件导入表读取。 */
+ *       场景, 活代码侧 PepParseImports (PeLazy.c) 已覆盖文件导入表读取。 */
 static
 NTSTATUS
 WpeFindIatStart(
@@ -1230,7 +1220,7 @@ WpeResolveApiByOrdinal(
 /* -- WpeScanIatRange (SS PackerUnpacker::ScanIATRange, 死代码) -------------
  * 功能: 从 IAT 起始 RVA 起 8 字节对齐扫描已解析 API 地址 (非零槽),
  *       WpeResolveApiByAddress/ByOrdinal 反查还原, 完整填充 PE_IMPORT_LIST
- *       (NameBlob 扁平存储, 对齐 PeLazy IocpParseImports 的输出约定)。
+ *       (NameBlob 扁平存储, 对齐 PeLazy PepParseImports 的输出约定)。
  * 不接入原因: 同 IAT 重建 — 仅运行期/内存 dump 场景有效; wkd 无该流程。
  *       输出用 WpeImportsFree (PeLazy.h) 释放。 */
 static
@@ -1369,7 +1359,7 @@ done:
  *    死代码) --------------------------------------------------------------
  * 功能: IAT 重建编排入口 — FindIATStart → ScanIATRange → 输出 PE_IMPORT_LIST。
  * 不接入原因: 同 IAT 三件套 — 仅运行期/内存 dump 场景; wkd 无该流程。
- *       活代码侧 IocpParseImports (PeLazy.c) 已覆盖文件导入表读取。 */
+ *       活代码侧 PepParseImports (PeLazy.c) 已覆盖文件导入表读取。 */
 static
 NTSTATUS
 WpeReconstructImportsInternal(

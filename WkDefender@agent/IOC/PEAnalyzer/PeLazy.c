@@ -4,6 +4,7 @@
 
 #include "PeInternal.h"
 #include "../../Common/FileUtils.h"
+#include "../../Process/ProcessModule.h"   /* PsLookupModuleInstanceByName/PsGetMainModuleInstance（双 reader 回调目标 DLL 基址/主模块域, 2026-09-07） */
 
 #include <stdio.h>    /* sprintf_s (Rich 编译器名映射) */
 #include <stdlib.h>   /* _rotl (Rich 校验和, 对齐 SS) */
@@ -136,6 +137,239 @@ WpeBlobAddW(
 /**************************************************/
 
 /*
+ * WpepRvaToFileOffset — RVA → 文件偏移（节表换算，不依赖 IsMemoryMode）。
+ * 校验 reader（文件模式）读取磁盘 IAT/INT 槽时使用：内存模式 IocpRvaToOffset
+ * 恒等返回 RVA，而文件 reader 需要的 offset 语义 = 文件偏移，故独立换算。
+ */
+static
+BOOLEAN
+WpepRvaToFileOffset(
+    _In_ const PE_PARSER_CONTEXT* Ctx,
+    _In_ ULONG Rva,
+    _Out_ PULONG Offset
+    )
+{
+    ULONG i;
+    ULONG64 rva = Rva;
+
+    if (!Ctx || !Offset) return FALSE;
+    for (i = 0; i < Ctx->RawSectionCount; i++) {
+        const IMAGE_SECTION_HEADER* sec = &Ctx->RawSections[i];
+        ULONG64 vaEnd = (ULONG64)sec->VirtualAddress +
+                        (((ULONG64)sec->Misc.VirtualSize > sec->SizeOfRawData) ?
+                          (ULONG64)sec->Misc.VirtualSize : (ULONG64)sec->SizeOfRawData);
+        if (rva >= sec->VirtualAddress && rva < vaEnd) {
+            ULONG delta = (ULONG)(rva - sec->VirtualAddress);
+            if (delta >= sec->SizeOfRawData) return FALSE;   /* 超出文件 raw 区（BSS 等） */
+            *Offset = sec->PointerToRawData + delta;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/*
+ * WpepExportNameMatches — 按名字匹配目标 DLL 导出项。
+ * expDir.NameBlob 以 WCHAR 存储（WpeBlobAddA 逐字节扩宽），
+ * 与从磁盘 INT 读出的 ANSI 函数名逐字节比较。
+ */
+static
+BOOLEAN
+WpepExportNameMatches(
+    _In_ const PE_EXPORT_DIR* Exports,
+    _In_ ULONG Index,
+    _In_ PCSTR FnAnsi,
+    _In_ ULONG FnLen
+    )
+{
+    const PE_EXPORT* e;
+    ULONG i;
+
+    if (!Exports || Index >= Exports->ExportCount || !FnAnsi) return FALSE;
+    e = &Exports->Exports[Index];
+    if (!e->ByName || e->NameLength != FnLen) return FALSE;
+    if (e->NameOffset >= Exports->NameBlobChars) return FALSE;
+    for (i = 0; i < FnLen; i++) {
+        if ((WCHAR)(BYTE)FnAnsi[i] != Exports->NameBlob[e->NameOffset + i]) return FALSE;
+    }
+    return TRUE;
+}
+
+/*
+ * PepVerifyImportDllByDualReader — 常规导入表双 reader 校验回调（2026-09-07）。
+ * PepParseImports 截断点（ImportVerify[0] 非 NULL）逐 DLL 调用，回调内
+ * for 循环处理该 DLL 全部 INT/IAT 槽：
+ *   - 函数名/序号 ← 校验 reader（文件模式）读磁盘 INT 槽（权威原始值，
+ *     防内存 INT 被同时伪造）；
+ *   - 期望地址 ← 目标 DLL 导出表 name/ordinal→RVA + 目标 DLL 远程基址
+ *     （每 DLL 一次临时内存 ctx 解析导出目录，目标 DLL 基址经
+ *     Ctx->VerifyProcess 进程模块表 PsLookupModuleInstanceByName 查找）；
+ *   - 实际地址 ← 主 reader（内存模式）读内存 IAT 槽。
+ * 不等即命中：填 VerifyHit（PPE_IMPORT_VERIFY_HIT）并置 *Terminated=TRUE。
+ * 输入内聚于解析上下文（PE_IMPORT_VERIFY_CONTEXT 已废除）：wkd_process 取
+ * Ctx->VerifyProcess，进程句柄取 Ctx->VerifyProcessHandle，均由门面注入。
+ */
+_Use_decl_annotations_
+NTSTATUS
+PepVerifyImportDllByDualReader(
+    _In_ const PPE_PARSER_CONTEXT Ctx,
+    _In_ const void* DllInfo,
+    _In_ PCWSTR DllName,
+    _Inout_ void* VerifyHit,
+    _Out_ BOOLEAN* Terminated
+    )
+{
+    const PE_IMPORT_DLL* imp = (const PE_IMPORT_DLL*)DllInfo;
+    PPE_IMPORT_VERIFY_HIT hit = (PPE_IMPORT_VERIFY_HIT)VerifyHit;
+    const PWKD_PROCESS proc = (const PWKD_PROCESS)Ctx->VerifyProcess;
+    SIZE_T ptrSize;
+    ULONG_PTR intRva, iatRva;
+    ULONG_PTR dllBase = 0;
+    ULONG dllSize = 0;
+    PWKD_MODULE_INSTANCE inst = NULL;
+    PE_PARSER_CONTEXT tmpCtx;
+    PE_EXPORT_DIR expDir;
+    PE_PARSE_OPTIONS opt;
+    BOOLEAN hasExports = FALSE;
+    ULONG i;
+
+    if (!Ctx || !imp || !hit || !proc || !Terminated) return STATUS_INVALID_PARAMETER;
+    *Terminated = FALSE;
+
+    /* 校验 reader 缺位（门面未安装文件 reader）→ 整表跳过, 不构成命中 */
+    if (Ctx->VerifyReader.Mode != PeReader_File) return STATUS_SUCCESS;
+
+    intRva = imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk;
+    iatRva = imp->FirstThunk;
+    if (intRva == 0 || iatRva == 0) return STATUS_SUCCESS;
+    ptrSize = Ctx->Info.Amd64 ? sizeof(IMAGE_THUNK_DATA64) : sizeof(IMAGE_THUNK_DATA32);
+
+    /* 目标 DLL 基址（期望地址基准源）：进程模块表按名定位, 未加载/磁盘视图
+     * （无基址）→ 整 DLL 跳过（不构成命中）。 */
+    if (!NT_SUCCESS(PsLookupModuleInstanceByName(proc, DllName, &inst)) ||
+        inst->ImageBase == NULL || !inst->Module ||
+        inst->Module->SizeOfImage == 0) {
+        return STATUS_SUCCESS;
+    }
+    dllBase = (ULONG_PTR)inst->ImageBase;
+    dllSize = (ULONG)inst->Module->SizeOfImage;
+
+    /* 目标 DLL 导出目录解析（每 DLL 一次）：临时内存模式 ctx */
+    RtlZeroMemory(&tmpCtx, sizeof(tmpCtx));
+    opt = IocDefaultPeParseOptions();
+    opt.ComputeSectionEntropy = FALSE;
+    opt.CollectAnomalies = FALSE;
+    opt.DetectOverlay = FALSE;
+    opt.VerifyChecksum = FALSE;
+    if (NT_SUCCESS(PeParseMemoryEx(&tmpCtx, Ctx->VerifyProcessHandle, dllBase,
+                                   dllSize, &opt))) {
+        RtlZeroMemory(&expDir, sizeof(expDir));
+        if (NT_SUCCESS(WpeParseExports(&tmpCtx, &expDir))) {
+            hasExports = TRUE;
+        }
+    }
+
+    for (i = 0; i < IMAGE_MAX_IMPORTS_PER_DLL; i++) {
+        ULONGLONG fileIntVal = 0;      /* 文件 INT 槽（权威原始值） */
+        ULONGLONG memIatVal = 0;       /* 内存 IAT 槽（实际地址） */
+        ULONG_PTR intSlotRva = intRva + (ULONG_PTR)i * ptrSize;
+        ULONG_PTR iatSlotRva = iatRva + (ULONG_PTR)i * ptrSize;
+        ULONG intOff;
+        CHAR fnAnsi[PE_MAX_FUNCTION_NAME + 1];
+        ULONG fnLen = 0;
+        USHORT ordinal = 0;
+        BOOLEAN byOrdinal = FALSE;
+        ULONG_PTR expected = 0;
+        BOOLEAN matched = FALSE;
+        ULONG k;
+
+        /* 文件 INT 槽（文件偏移换算后经校验 reader 读取） */
+        if (!WpepRvaToFileOffset(Ctx, (ULONG)intSlotRva, &intOff)) break;
+        if (!IocpReaderReadBytes((PPE_READER)&Ctx->VerifyReader, intOff,
+                                 &fileIntVal, ptrSize)) break;
+        if (fileIntVal == 0) break;    /* 终止符 */
+
+        /* 判定 ordinal / name（对齐 WpepParseImportThunks 语义） */
+        if (Ctx->Info.Amd64) {
+            if (fileIntVal & IMAGE_ORDINAL_FLAG64) {
+                byOrdinal = TRUE;
+                ordinal = (USHORT)(fileIntVal & 0xFFFF);
+            } else {
+                ULONG nameFileOff;
+                USHORT hint = 0;
+                if (!WpepRvaToFileOffset(Ctx, (ULONG)fileIntVal, &nameFileOff)) continue;
+                if (!IocpReaderReadBytes((PPE_READER)&Ctx->VerifyReader,
+                                         nameFileOff, &hint, sizeof(hint))) continue;
+                if (!IocpReaderReadString((PPE_READER)&Ctx->VerifyReader,
+                                          nameFileOff + 2, PE_MAX_FUNCTION_NAME,
+                                          fnAnsi, sizeof(fnAnsi), &fnLen)) continue;
+            }
+        } else {
+            if (fileIntVal & IMAGE_ORDINAL_FLAG32) {
+                byOrdinal = TRUE;
+                ordinal = (USHORT)(fileIntVal & 0xFFFF);
+            } else {
+                ULONG nameFileOff;
+                USHORT hint = 0;
+                if (!WpepRvaToFileOffset(Ctx, (ULONG)fileIntVal, &nameFileOff)) continue;
+                if (!IocpReaderReadBytes((PPE_READER)&Ctx->VerifyReader,
+                                         nameFileOff, &hint, sizeof(hint))) continue;
+                if (!IocpReaderReadString((PPE_READER)&Ctx->VerifyReader,
+                                          nameFileOff + 2, PE_MAX_FUNCTION_NAME,
+                                          fnAnsi, sizeof(fnAnsi), &fnLen)) continue;
+            }
+        }
+
+        /* 期望地址 = 目标 DLL 导出表 name/ordinal→RVA + 远程基址 */
+        if (hasExports) {
+            for (k = 0; k < expDir.ExportCount; k++) {
+                const PE_EXPORT* e = &expDir.Exports[k];
+                if (byOrdinal) {
+                    if (e->Ordinal == ordinal && e->Rva != 0) {
+                        expected = dllBase + (ULONG_PTR)e->Rva;
+                        matched = TRUE;
+                        break;
+                    }
+                } else if (WpepExportNameMatches(&expDir, k, fnAnsi, fnLen)) {
+                    expected = dllBase + (ULONG_PTR)e->Rva;
+                    matched = TRUE;
+                    break;
+                }
+            }
+        }
+        if (!matched) continue;   /* 目标导出未命中 → 跳过该槽（不构成命中） */
+
+        /* 实际地址 = 主 reader（内存模式, RVA 恒等）读内存 IAT 槽 */
+        if (!IocpReaderReadBytes((PPE_READER)&Ctx->Reader, iatSlotRva,
+                                 &memIatVal, ptrSize)) break;
+
+        if (memIatVal != (ULONGLONG)expected) {
+            /* 命中 */
+            hit->Found = TRUE;
+            hit->ExpectedAddress = expected;
+            hit->ActualAddress = (ULONG_PTR)memIatVal;
+            hit->Ordinal = byOrdinal ? ordinal : 0;
+            if (DllName) {
+                wcsncpy_s(hit->DllName, PE_MAX_DLL_NAME, DllName, _TRUNCATE);
+            }
+            if (!byOrdinal && fnLen > 0) {
+                ULONG copyLen = min(fnLen, (ULONG)(PE_MAX_FUNCTION_NAME - 1));
+                memcpy(hit->FuncName, fnAnsi, copyLen);
+                hit->FuncName[copyLen] = 0;
+            }
+            *Terminated = TRUE;
+            break;
+        }
+    }
+
+    if (hasExports) {
+        WpeExportsFree(&expDir);
+        WpeResetParseContext(&tmpCtx);
+    }
+    return STATUS_SUCCESS;
+}
+
+/*
  * WpepParseImportThunks — INT/IAT thunk 解析 (32/64)。
  */
 static
@@ -240,8 +474,8 @@ WpepParseImportThunks(
 
 _Use_decl_annotations_
 NTSTATUS
-IocpParseImports(
-    _In_ const PE_PARSER_CONTEXT* Context,
+PepParseImports(
+    _In_ const PPE_PARSER_CONTEXT Context,
     _Out_ PPE_IMPORT_LIST Imports
     )
 /*++
@@ -258,7 +492,6 @@ Return Value:
 {
     PIMAGE_DATA_DIRECTORY_EX importDir;
     ULONG importOffset;
-    ULONG descriptorCount = 0;
     ULONG dllCap = 0;
     ULONG blobCap = 0;
 
@@ -271,15 +504,17 @@ Return Value:
         return STATUS_INVALID_IMAGE_FORMAT;
     }
 
-    while (descriptorCount < IMAGE_MAX_IMPORT_DESCRIPTORS) {
+    for (ULONG i = 0; i < IMAGE_MAX_IMPORT_DESCRIPTORS; i++) {
         NTSTATUS status;
         IMAGE_IMPORT_DESCRIPTOR desc;
         PE_IMPORT_DLL* imp;
         
         ULONG nameLen = 0;
 
-        status = IocpReaderReadBytes(&Context->Reader, 
-                                importOffset, &desc, sizeof(IMAGE_IMPORT_DESCRIPTOR)) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+        status = IocpReaderReadBytes(
+                    &Context->Reader,
+                    importOffset, &desc, 
+                    sizeof(IMAGE_IMPORT_DESCRIPTOR)) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
         if (!NT_SUCCESS(status)) return status;
 
         if (desc.OriginalFirstThunk == 0 && desc.FirstThunk == 0) break;   /* 终止符 */
@@ -338,8 +573,32 @@ Return Value:
             }
         }
 
+        /* 导入校验回调（双 reader, 2026-09-07）：ImportVerify[0] 非 NULL 时进入校验模式。
+         * 解析器在该 DLL 层截断（不展开 Functions[]，由回调内部逐函数处理），
+         * 回调置 Terminated=TRUE（命中）则提前终止整个导入表。 */
+        if (Context->ImportVerify[0].Callback != NULL) {
+            NTSTATUS verifyStatus;
+            BOOLEAN terminated = FALSE;
+            PCWSTR dllWideName = NULL;
+            WCHAR dllWideBuf[PE_MAX_DLL_NAME + 1];
+
+            if (imp->NameLength > 0 && imp->NameOffset < Imports->NameBlobChars) {
+                ULONG copyLen = min((ULONG)imp->NameLength, (ULONG)PE_MAX_DLL_NAME);
+                for (ULONG c = 0; c < copyLen; c++) {
+                    dllWideBuf[c] = (WCHAR)(BYTE)Imports->NameBlob[imp->NameOffset + c];
+                }
+                dllWideBuf[copyLen] = 0;
+                dllWideName = dllWideBuf;
+            }
+
+            verifyStatus = Context->ImportVerify[0].Callback(
+                                Context, imp, dllWideName,
+                                Context->ImportVerify[0].Context, &terminated);
+            if (terminated) return STATUS_SUCCESS;   /* 命中：提前终止 */
+            if (!NT_SUCCESS(verifyStatus)) return verifyStatus;
+        }
+
         importOffset += sizeof(IMAGE_IMPORT_DESCRIPTOR);
-        descriptorCount++;
     }
     return STATUS_SUCCESS;
 }
@@ -1137,6 +1396,190 @@ Return Value:
 /**************************************************/
 
 /*
+ * PepVerifyDelayImportDllByDualReader — 延迟导入表双 reader 校验回调（2026-09-07）。
+ * WpeParseDelayImports 截断点（ImportVerify[1] 非 NULL）逐 DLL 调用。语义对齐
+ * 常规导入校验，另含延迟槽三态判定（防误报关键区）：
+ *   - 槽值 0 → 未绑定（零值）, 跳过；
+ *   - 槽值落在主模块映像内 → 未绑定 thunk/helper 落点, 跳过；
+ *   - 已绑定 → 期望地址（目标 DLL 导出表 + 远程基址）比对, 不等即命中。
+ * 函数名/序号 ← 校验 reader（文件模式）读磁盘 INT 槽（权威原始值）；
+ * 实际槽值 ← 主 reader（内存模式）读内存 IAT 槽（IatRva + index*ptrSize）。
+ * 输入内聚于解析上下文：目标 DLL 基址经 Ctx->VerifyProcess 模块表查找，
+ * 主模块映像域经 PsGetMainModuleInstance 派生；句柄取 Ctx->VerifyProcessHandle。
+ */
+_Use_decl_annotations_
+NTSTATUS
+PepVerifyDelayImportDllByDualReader(
+    _In_ const PPE_PARSER_CONTEXT Ctx,
+    _In_ const void* DllInfo,
+    _In_ PCWSTR DllName,
+    _Inout_ void* VerifyHit,
+    _Out_ BOOLEAN* Terminated
+    )
+{
+    const PE_DELAY_IMPORT_DLL* imp = (const PE_DELAY_IMPORT_DLL*)DllInfo;
+    PPE_IMPORT_VERIFY_HIT hit = (PPE_IMPORT_VERIFY_HIT)VerifyHit;
+    const PWKD_PROCESS proc = (const PWKD_PROCESS)Ctx->VerifyProcess;
+    SIZE_T ptrSize;
+    ULONG_PTR intRva, iatRva;
+    ULONG_PTR dllBase = 0;
+    ULONG dllSize = 0;
+    ULONG_PTR remoteBase = 0;
+    ULONG remoteSize = 0;
+    ULONG_PTR imageEnd;
+    PWKD_MODULE_INSTANCE inst = NULL;
+    PWKD_MODULE_INSTANCE mainInst = NULL;
+    PE_PARSER_CONTEXT tmpCtx;
+    PE_EXPORT_DIR expDir;
+    PE_PARSE_OPTIONS opt;
+    BOOLEAN hasExports = FALSE;
+    ULONG i;
+
+    if (!Ctx || !imp || !hit || !proc || !Terminated) return STATUS_INVALID_PARAMETER;
+    *Terminated = FALSE;
+
+    if (Ctx->VerifyReader.Mode != PeReader_File) return STATUS_SUCCESS;
+
+    intRva = imp->IntRva;
+    iatRva = imp->IatRva;
+    if (intRva == 0 || iatRva == 0 || imp->FunctionCount == 0) return STATUS_SUCCESS;
+    ptrSize = Ctx->Info.Amd64 ? sizeof(IMAGE_THUNK_DATA64) : sizeof(IMAGE_THUNK_DATA32);
+
+    /* 目标 DLL 基址（期望地址基准源）：模块表按名定位, 未加载/无基址→跳过 */
+    if (!DllName || !DllName[0]) return STATUS_SUCCESS;
+    if (!NT_SUCCESS(PsLookupModuleInstanceByName(proc, DllName, &inst)) ||
+        inst->ImageBase == NULL || !inst->Module ||
+        inst->Module->SizeOfImage == 0) {
+        return STATUS_SUCCESS;
+    }
+    dllBase = (ULONG_PTR)inst->ImageBase;
+    dllSize = (ULONG)inst->Module->SizeOfImage;
+
+    /* 主模块映像域（延迟 thunk/helper 落点判定） */
+    if (NT_SUCCESS(PsGetMainModuleInstance(proc, &mainInst)) &&
+        mainInst->ImageBase != NULL && mainInst->Module) {
+        remoteBase = (ULONG_PTR)mainInst->ImageBase;
+        remoteSize = (ULONG)mainInst->Module->SizeOfImage;
+    }
+    imageEnd = remoteBase + remoteSize;
+
+    RtlZeroMemory(&tmpCtx, sizeof(tmpCtx));
+    opt = IocDefaultPeParseOptions();
+    opt.ComputeSectionEntropy = FALSE;
+    opt.CollectAnomalies = FALSE;
+    opt.DetectOverlay = FALSE;
+    opt.VerifyChecksum = FALSE;
+    if (NT_SUCCESS(PeParseMemoryEx(&tmpCtx, Ctx->VerifyProcessHandle, dllBase,
+                                   dllSize, &opt))) {
+        RtlZeroMemory(&expDir, sizeof(expDir));
+        if (NT_SUCCESS(WpeParseExports(&tmpCtx, &expDir))) {
+            hasExports = TRUE;
+        }
+    }
+
+    for (i = 0; i < imp->FunctionCount; i++) {
+        ULONGLONG fileIntVal = 0;      /* 文件 INT 槽（权威原始值） */
+        ULONGLONG memIatVal = 0;       /* 内存 IAT 槽（实际地址） */
+        ULONG_PTR intSlotRva = intRva + (ULONG_PTR)i * ptrSize;
+        ULONG_PTR iatSlotRva = iatRva + (ULONG_PTR)i * ptrSize;
+        ULONG intOff;
+        CHAR fnAnsi[PE_MAX_FUNCTION_NAME + 1];
+        ULONG fnLen = 0;
+        USHORT ordinal = 0;
+        BOOLEAN byOrdinal = FALSE;
+        ULONG_PTR expected = 0;
+        BOOLEAN matched = FALSE;
+        ULONG k;
+
+        /* 实际槽值先读（三态判定的首要依据） */
+        if (!IocpReaderReadBytes((PPE_READER)&Ctx->Reader, iatSlotRva,
+                                 &memIatVal, ptrSize)) break;
+        if (memIatVal == 0) continue;                                     /* 未绑定（零值） */
+        if (remoteBase != 0 && memIatVal >= remoteBase && memIatVal < imageEnd) {
+            continue;                                                     /* 未绑定 thunk/helper（指向主模块内） */
+        }
+
+        /* 文件 INT 槽（权威函数名/序号） */
+        if (!WpepRvaToFileOffset(Ctx, (ULONG)intSlotRva, &intOff)) break;
+        if (!IocpReaderReadBytes((PPE_READER)&Ctx->VerifyReader, intOff,
+                                 &fileIntVal, ptrSize)) break;
+        if (fileIntVal == 0) continue;
+
+        if (Ctx->Info.Amd64) {
+            if (fileIntVal & IMAGE_ORDINAL_FLAG64) {
+                byOrdinal = TRUE;
+                ordinal = (USHORT)(fileIntVal & 0xFFFF);
+            } else {
+                ULONG nameFileOff;
+                USHORT hint = 0;
+                if (!WpepRvaToFileOffset(Ctx, (ULONG)fileIntVal, &nameFileOff)) continue;
+                if (!IocpReaderReadBytes((PPE_READER)&Ctx->VerifyReader,
+                                         nameFileOff, &hint, sizeof(hint))) continue;
+                if (!IocpReaderReadString((PPE_READER)&Ctx->VerifyReader,
+                                          nameFileOff + 2, PE_MAX_FUNCTION_NAME,
+                                          fnAnsi, sizeof(fnAnsi), &fnLen)) continue;
+            }
+        } else {
+            if (fileIntVal & IMAGE_ORDINAL_FLAG32) {
+                byOrdinal = TRUE;
+                ordinal = (USHORT)(fileIntVal & 0xFFFF);
+            } else {
+                ULONG nameFileOff;
+                USHORT hint = 0;
+                if (!WpepRvaToFileOffset(Ctx, (ULONG)fileIntVal, &nameFileOff)) continue;
+                if (!IocpReaderReadBytes((PPE_READER)&Ctx->VerifyReader,
+                                         nameFileOff, &hint, sizeof(hint))) continue;
+                if (!IocpReaderReadString((PPE_READER)&Ctx->VerifyReader,
+                                          nameFileOff + 2, PE_MAX_FUNCTION_NAME,
+                                          fnAnsi, sizeof(fnAnsi), &fnLen)) continue;
+            }
+        }
+
+        /* 期望地址 = 目标 DLL 导出表 + 远程基址（已绑定槽位比对） */
+        if (hasExports) {
+            for (k = 0; k < expDir.ExportCount; k++) {
+                const PE_EXPORT* e = &expDir.Exports[k];
+                if (byOrdinal) {
+                    if (e->Ordinal == ordinal && e->Rva != 0) {
+                        expected = dllBase + (ULONG_PTR)e->Rva;
+                        matched = TRUE;
+                        break;
+                    }
+                } else if (WpepExportNameMatches(&expDir, k, fnAnsi, fnLen)) {
+                    expected = dllBase + (ULONG_PTR)e->Rva;
+                    matched = TRUE;
+                    break;
+                }
+            }
+        }
+        if (!matched) continue;
+
+        if (memIatVal != (ULONGLONG)expected) {
+            hit->Found = TRUE;
+            hit->ExpectedAddress = expected;
+            hit->ActualAddress = (ULONG_PTR)memIatVal;
+            hit->Ordinal = byOrdinal ? ordinal : 0;
+            if (DllName) {
+                wcsncpy_s(hit->DllName, PE_MAX_DLL_NAME, DllName, _TRUNCATE);
+            }
+            if (!byOrdinal && fnLen > 0) {
+                ULONG copyLen = min(fnLen, (ULONG)(PE_MAX_FUNCTION_NAME - 1));
+                memcpy(hit->FuncName, fnAnsi, copyLen);
+                hit->FuncName[copyLen] = 0;
+            }
+            *Terminated = TRUE;
+            break;
+        }
+    }
+
+    if (hasExports) {
+        WpeExportsFree(&expDir);
+        WpeResetParseContext(&tmpCtx);
+    }
+    return STATUS_SUCCESS;
+}
+
+/*
  * WpepParseDelayImportThunks — 延迟导入 INT thunk 解析 (32/64)。
  */
 static
@@ -1313,6 +1756,31 @@ Return Value:
                         return STATUS_NO_MEMORY;
                     }
                 }
+            }
+
+            /* 延迟导入校验回调（双 reader, 2026-09-07）：ImportVerify[1] 非 NULL 时校验模式。
+             * 解析器在 DLL 层截断，回调内部按三态语义逐函数处理，
+             * 回调置 Terminated=TRUE（命中）则提前终止整个延迟导入表。 */
+            if (Ctx->ImportVerify[1].Callback != NULL) {
+                NTSTATUS verifyStatus;
+                BOOLEAN terminated = FALSE;
+                PCWSTR dllWideName = NULL;
+                WCHAR dllWideBuf[PE_MAX_DLL_NAME + 1];
+
+                if (imp->NameLength > 0 && imp->NameOffset < Out->NameBlobChars) {
+                    ULONG copyLen = min((ULONG)imp->NameLength, (ULONG)PE_MAX_DLL_NAME);
+                    for (ULONG c = 0; c < copyLen; c++) {
+                        dllWideBuf[c] = (WCHAR)(BYTE)Out->NameBlob[imp->NameOffset + c];
+                    }
+                    dllWideBuf[copyLen] = 0;
+                    dllWideName = dllWideBuf;
+                }
+
+                verifyStatus = Ctx->ImportVerify[1].Callback(
+                                    Ctx, imp, dllWideName,
+                                    Ctx->ImportVerify[1].Context, &terminated);
+                if (terminated) return STATUS_SUCCESS;   /* 命中：提前终止 */
+                if (!NT_SUCCESS(verifyStatus)) return verifyStatus;
             }
         }
 

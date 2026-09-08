@@ -587,7 +587,7 @@ CoCaptureHashMapSnapshot(
     SIZE_T requiredSize = 0;
     ULONG outCapacity = 0;  // 枚举到的实际项数
 
-    if (!HashMap || !HashMap->Entries || !BufferSize) {
+    if (!HashMap || !BufferSize) {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -607,15 +607,10 @@ CoCaptureHashMapSnapshot(
             SIZE_T seSize = entry->KeySize + sizeof(SIZE_T);
             
             if (queryMode) {
-                requiredSize += entry->KeySize;
+                requiredSize += seSize;
                 outCapacity++;
             }
-            else if (requiredSize + seSize < *BufferSizee) {
-                /*
-                 * 必须用 min 截断：KeyData 数组固定为 WKD_HASH_MAP_MAX_KEY_SIZE。
-                 * 历史版本误用 max，当 KeySize 小于 MAX 时越界读 entry->Key
-                 * 之后的内存；当 KeySize 超过 MAX 时越界写缓冲区（堆破坏）。
-                 */
+            else if (requiredSize + seSize <= *BufferSize) {
                 PWKD_HASH_MAP_SNAPSHOT se =
                     (PWKD_HASH_MAP_SNAPSHOT)((PUCHAR)Buffer + requiredSize);
                 se->KeySize = entry->KeySize;

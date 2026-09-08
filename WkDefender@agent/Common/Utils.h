@@ -124,3 +124,19 @@ VOID
 CoWaitForRundownProtectionRelease(
     _Inout_ PWKD_RUNDOWN_REF RundownRef
     );
+
+/**************************************************/
+/*           跨进程最小句柄辅助                     */
+/*  (2026-09-07 自 AccessControl/AntiDebug 迁入:   */
+/*   PEAnalyzer(IOC) 与 AccessControl 共用,        */
+/*   避免 IOC → AccessControl 循环依赖)            */
+/**************************************************/
+
+/* 以最小读取权限打开进程句柄 (QUERY_LIMITED_INFORMATION|VM_READ)。
+ * 供跨进程模块/IAT 比对 (PeVerifyFunctionAddressTable) 与反调试检测块共用。
+ * ProcessId 为调用方持有的进程标识 (WKD_PROCESS.ProcessId 强转 ULONG)。 */
+BOOLEAN
+CoOpenProcessForQueryRead(
+    _In_ ULONG ProcessId,
+    _Out_ PHANDLE ProcessHandle
+    );

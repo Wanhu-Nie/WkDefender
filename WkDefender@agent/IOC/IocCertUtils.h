@@ -46,8 +46,11 @@ typedef enum _WKD_REVOCATION_MODE {
     WkdRevocation_Disabled          /* 跳过吊销检查 */
 } WKD_REVOCATION_MODE, *PWKD_REVOCATION_MODE;
 
-/* 综合证书信息 (对齐 SS CertificateInfo L134-169) */
-typedef struct _WKD_CERT_INFO {
+/* 综合证书属性 (对齐 SS CertificateInfo L134-169)。
+ * 命名: WKD_CERT_DETAILS 而非 WKD_CERT_INFO, 避免与 IocTypes.h 的
+ * _WKD_CERT_INFO (WKD_MODULE 内嵌权威副本) 结构重名冲突
+ * (2026-09-02 修正, 两文件首度同编译单元 co-include)。 */
+typedef struct _WKD_CERT_DETAILS {
     WCHAR   Subject[256];           /* 主题 CN (SIMPLE_DISPLAY_TYPE) */
     WCHAR   Issuer[256];            /* 颁发者 CN */
     WCHAR   SerialNumber[128];      /* 序列号 (hex 大端 MSB-first) */
@@ -61,7 +64,7 @@ typedef struct _WKD_CERT_INFO {
     BOOLEAN IsSelfSigned;           /* Subject == Issuer (blob 直比) */
     LONG    PathLenConstraint;      /* BasicConstraints pathLen (-1=无) */
     WCHAR   SignatureAlgorithm[64]; /* 签名算法友好名 "RSA-SHA256" */
-} WKD_CERT_INFO, *PWKD_CERT_INFO;
+} WKD_CERT_DETAILS, *PWKD_CERT_DETAILS;
 
 /* SAN 条目类型 (对齐 SS GetSubjectAltNames 多类输出;
  * 2026-08-09 补 email/DIRECTORY_NAME, 对齐 SS L1378-1383) */
@@ -168,7 +171,7 @@ Routine Description:
 
 Arguments:
     Cert - 证书上下文。
-    Info - 输出信息结构。
+    Info - 输出信息结构 (WKD_CERT_DETAILS)。
 
 Return Value:
     TRUE=成功, FALSE=失败 (Cert 或 pCertInfo 无效)。
@@ -176,7 +179,7 @@ Return Value:
 BOOLEAN
 IocCert_GetInfo(
     _In_  PCCERT_CONTEXT Cert,
-    _Out_ PWKD_CERT_INFO Info
+    _Out_ PWKD_CERT_DETAILS Info
     );
 
 /*++
@@ -315,4 +318,31 @@ IocCert_VerifyChain(
     _In_      DWORD             ChainFlags,
     _In_opt_  const FILETIME*   VerificationTime,
     _In_opt_  PCSTR             RequiredEkuOid
+    );
+
+/*++
+Routine Description:
+    独立吊销状态查询 (CRL reason 6 细分)。
+    对齐 SS Certificate::GetRevocationStatus L2450-2572。
+    2026-09-02 由 static 升级导出: SignatureVerifier Revoked 分支接线消费
+    (吊销原因细分, SS CertificateValidator 增量迁移)。
+
+    语义: TRUE=查询执行且获得明确状态 (IsRevoked 区分吊销与否, Reason 填充
+    细分文案); FALSE=检查失败/离线 (Reason 填充失败说明)。
+
+Arguments:
+    Cert     - 证书上下文。
+    IsRevoked - 输出吊销标志。
+    Reason   - 输出细分文案缓冲。
+    ReasonCch - Reason 缓冲大小 (字符)。
+
+Return Value:
+    TRUE=状态明确, FALSE=检查失败。
+--*/
+BOOLEAN
+IocCert_GetRevocationStatus(
+    _In_  PCCERT_CONTEXT Cert,
+    _Out_ PBOOLEAN       IsRevoked,
+    _Out_writes_(ReasonCch) PWCHAR Reason,
+    _In_  ULONG          ReasonCch
     );

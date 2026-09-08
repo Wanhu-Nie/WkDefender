@@ -557,12 +557,9 @@ AeInitialize(
     )
 {
     NTSTATUS status;
-    UNICODE_STRING usFunctionName;
 
-    RtlInitUnicodeString(&usFunctionName, L"PsGetProcessSignatureLevel");
-    pfnPsGetProcessSignatureLevel =
-        (PFN_PsGetProcessSignatureLevel)MmGetSystemRoutineAddress(&usFunctionName);
-
+    // pfnPsGetProcessSignatureLevel 已统一由 Common/ExportParser 在 DriverEntry
+    // 早期解析；此处保持"必需"语义，未解析则阻断分析引擎初始化。
     if (!pfnPsGetProcessSignatureLevel) {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
             "[WkDefender] Failed to get PsGetProcessSignatureLevel address\n");

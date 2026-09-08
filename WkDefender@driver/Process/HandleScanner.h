@@ -240,7 +240,7 @@ HsIsSensitiveProcess(
 /*  对齐 SS HandleTracker.{c,h}，迁移 2026-08。      */
 /*  功能面覆盖但未接入流水线——复制追踪事件源是       */
 /*  Ob 回调 OB_OPERATION_HANDLE_DUPLICATE（ObjectNotify */
-/*  CbObjectNotifyInitialize 被 WkdEntry 注释），     */
+/*  CbInitializeObjectNotify 被 WkdEntry 注释），     */
 /*  缓存层服务于"创建时全量快照"（与 wkd 分层模型    */
 /*  Agent 按需扫描冲突）。接入前均保持死代码。        */
 /**************************************************/
@@ -435,7 +435,7 @@ HsShutdown(
 /*++
 Routine Description:
     记录一条句柄复制事件。死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE，
-    wkd Ob 回调（CbObjectNotifyInitialize）未激活；跨进程关联应由 Agent 因果图承接。
+    wkd Ob 回调（CbInitializeObjectNotify）未激活；跨进程关联应由 Agent 因果图承接。
 
 IRQL: PASSIVE_LEVEL / APC_LEVEL
 --*/

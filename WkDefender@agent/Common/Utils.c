@@ -379,3 +379,38 @@ Return Value:
         WaitForSingleObject(RundownRef->Event, INFINITE);
     }
 }
+
+/**************************************************/
+/*       跨进程最小句柄辅助                          */
+/**************************************************/
+
+_Use_decl_annotations_
+BOOLEAN
+CoOpenProcessForQueryRead(
+    _In_ ULONG ProcessId,
+    _Out_ PHANDLE ProcessHandle
+    )
+/*++
+Routine Description:
+    以最小读取权限打开目标进程句柄（QUERY_LIMITED_INFORMATION | VM_READ）。
+    源实现迁自 AccessControl/AntiDebug.c AcpOpenProcess（2026-09-07），签名由
+    HANDLE 收敛为 ULONG 消除 HANDLE→DWORD 截断告警（C4047/C4311 溯源）。
+
+Arguments:
+    ProcessId     — 目标进程标识（调用方自 WKD_PROCESS.ProcessId 强转）。
+    ProcessHandle — 输出句柄；失败时为 NULL。
+
+Return Value:
+    TRUE=打开成功；FALSE=失败（句柄置 NULL）。
+--*/
+{
+    HANDLE hProcess;
+
+    if (!ProcessHandle || ProcessId == 0) return FALSE;
+    *ProcessHandle = NULL;
+
+    hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                           FALSE, ProcessId);
+    if (hProcess == INVALID_HANDLE_VALUE) return FALSE;
+    else { *ProcessHandle = hProcess; return TRUE; }
+}

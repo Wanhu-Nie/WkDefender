@@ -43,24 +43,204 @@ static const CHAR* g_IocMsThumbprints[] = {
 };
 
 /* 已知坏签名者表 (SS GetCertificateReputation 坏签名者分支 L873-886)
- * 功能: 内置坏签名者 thumbprint 黑名单, 命中 signerReputation=-50 且等级降级。
- * 2026-08 已激活: IocScan_ClassifySigner 优先查黑名单。表填充来源 = 管理员
- *   静态填充 / 情报 feed (当前预留空表); untrusted 语义同时由 cert_reputation
- *   表 (StUpsertCertReputation IsTrusted=FALSE) 活代码覆盖。 */
-static CHAR g_IocBadSigners[32][64];   /* 预留空表: SHA1 thumbprint hex 小写 */
+ * 功能: 签名者 thumbprint 黑名单, 命中 signerReputation=-50 且等级降级。
+ * 2026-08 已激活: IocScan_ClassifySigner 优先查黑名单。
+ * 2026-09-02 升级 (SS CertificateValidator BlockCertificate 增量迁移):
+ *   静态预留空表 → 运行时 CRUD 黑名单 (512 槽 + SRW 锁),
+ *   表填充来源 = 管理员静态填充 / 情报 feed (IocScan_BlockSigner 运行时注入);
+ *   untrusted 语义另由 cert_reputation 表 (StUpsertCertReputation
+ *   IsTrusted=FALSE) 活代码覆盖, 双通道冗余。 */
+static WKD_BLOCKED_SIGNER_ENTRY g_IocBlockedSigners[WKD_BLOCKED_SIGNER_MAX];
+static SRWLOCK                  g_IocBlockedLock = SRWLOCK_INIT;   /* 静态初始化, 无 Init/Cleanup 需求 */
+static ULONG                    g_IocBlockedCount = 0;
 
 static BOOLEAN
 IocScan_IsKnownBadSigner(
     _In_ PCSTR Thumbprint
     )
 {
+    return IocScan_IsSignerBlocked(Thumbprint);
+}
+
+/**************************************************/
+/*           运行时证书黑名单 (SS BlockCertificate) */
+/**************************************************/
+
+/* 指纹输入规范化: 非空 + 40 hex + 转小写 (对齐现有 hex 存储风格)。 */
+static BOOLEAN
+IocScan_NormalizeThumbprint(
+    _In_  PCSTR In,
+    _Out_ PCHAR Out,
+    _In_  ULONG OutCch
+    )
+{
     ULONG i;
-    if (!Thumbprint || Thumbprint[0] == '\0') return FALSE;
-    for (i = 0; i < RTL_NUMBER_OF(g_IocBadSigners); i++) {
-        if (g_IocBadSigners[i][0] == '\0') break;
-        if (_stricmp(Thumbprint, g_IocBadSigners[i]) == 0) return TRUE;
+    if (!In || !Out || OutCch < 41) return FALSE;
+    if (strnlen(In, 41) != 40) return FALSE;
+    for (i = 0; i < 40; i++) {
+        CHAR c = In[i];
+        if (c >= 'A' && c <= 'F') c = (CHAR)(c - 'A' + 'a');
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return FALSE;
+        Out[i] = c;
     }
+    Out[40] = '\0';
+    return TRUE;
+}
+
+BOOLEAN
+IocScan_BlockSigner(
+    _In_ PCSTR      Thumbprint,
+    _In_opt_ PCWSTR Reason
+    )
+/*++
+Routine Description:
+    阻断签名者证书 (SHA1 thumbprint hex)。对齐 SS CertificateValidator
+    的 BlockCertificate L2048-2069: 上限防无界 (kMaxBlockedCerts), 已存在
+    条目重复 block 更新原因, 满时拒绝新条目。
+
+Arguments:
+    Thumbprint - 叶证书 SHA1 thumbprint hex (40 字符, 大小写不敏感)。
+    Reason     - 阻断原因 (可为 NULL, 存空串)。
+
+Return Value:
+    TRUE = 已阻断(含更新原因), FALSE = 参数非法或黑名单满。
+--*/
+{
+    ULONG i;
+    ULONG freeSlot = ULONG_MAX;
+    WKD_BLOCKED_SIGNER_ENTRY tmp;
+
+    RtlZeroMemory(&tmp, sizeof(tmp));
+    if (!IocScan_NormalizeThumbprint(Thumbprint, tmp.Thumbprint,
+                                     RTL_NUMBER_OF(tmp.Thumbprint))) {
+        return FALSE;
+    }
+    if (Reason && Reason[0]) {
+        wcsncpy_s(tmp.Reason, RTL_NUMBER_OF(tmp.Reason), Reason, _TRUNCATE);
+    }
+
+    AcquireSRWLockExclusive(&g_IocBlockedLock);
+    for (i = 0; i < g_IocBlockedCount; i++) {
+        if (_stricmp(g_IocBlockedSigners[i].Thumbprint, tmp.Thumbprint) == 0) {
+            g_IocBlockedSigners[i] = tmp;   /* 已存在 → 更新原因 */
+            ReleaseSRWLockExclusive(&g_IocBlockedLock);
+            return TRUE;
+        }
+    }
+    if (g_IocBlockedCount >= WKD_BLOCKED_SIGNER_MAX) {
+        ReleaseSRWLockExclusive(&g_IocBlockedLock);   /* 上限 (对齐 SS cap 语义) */
+        return FALSE;
+    }
+    freeSlot = g_IocBlockedCount;
+    g_IocBlockedSigners[freeSlot] = tmp;
+    g_IocBlockedCount++;
+    ReleaseSRWLockExclusive(&g_IocBlockedLock);
+    return TRUE;
+}
+
+BOOLEAN
+IocScan_UnblockSigner(
+    _In_ PCSTR Thumbprint
+    )
+/*++
+Routine Description:
+    解除签名者阻断。对齐 SS UnblockCertificate L2071-2074 (erase)。
+
+Return Value:
+    TRUE = 原来处于阻断态并已移除, FALSE = 未命中/参数非法。
+--*/
+{
+    CHAR  norm[64];
+    ULONG i;
+
+    if (!IocScan_NormalizeThumbprint(Thumbprint, norm, RTL_NUMBER_OF(norm))) {
+        return FALSE;
+    }
+
+    AcquireSRWLockExclusive(&g_IocBlockedLock);
+    for (i = 0; i < g_IocBlockedCount; i++) {
+        if (_stricmp(g_IocBlockedSigners[i].Thumbprint, norm) == 0) {
+            g_IocBlockedCount--;
+            g_IocBlockedSigners[i] = g_IocBlockedSigners[g_IocBlockedCount];
+            ReleaseSRWLockExclusive(&g_IocBlockedLock);
+            return TRUE;
+        }
+    }
+    ReleaseSRWLockExclusive(&g_IocBlockedLock);
     return FALSE;
+}
+
+BOOLEAN
+IocScan_IsSignerBlocked(
+    _In_ PCSTR Thumbprint
+    )
+/*++
+Routine Description:
+    查询签名者是否处于阻断态。对齐 SS IsBlocked (L2076-2078)。
+
+Return Value:
+    TRUE = 阻断命中。
+--*/
+{
+    CHAR  norm[64];
+    ULONG i;
+    BOOLEAN blocked = FALSE;
+
+    if (!IocScan_NormalizeThumbprint(Thumbprint, norm, RTL_NUMBER_OF(norm))) {
+        return FALSE;
+    }
+
+    AcquireSRWLockShared(&g_IocBlockedLock);
+    for (i = 0; i < g_IocBlockedCount; i++) {
+        if (_stricmp(g_IocBlockedSigners[i].Thumbprint, norm) == 0) {
+            blocked = TRUE;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&g_IocBlockedLock);
+    return blocked;
+}
+
+ULONG
+IocScan_GetBlockedSignerCount(
+    VOID
+    )
+{
+    ULONG count;
+    AcquireSRWLockShared(&g_IocBlockedLock);
+    count = g_IocBlockedCount;
+    ReleaseSRWLockShared(&g_IocBlockedLock);
+    return count;
+}
+
+NTSTATUS
+IocScan_GetBlockedSigners(
+    _Out_writes_to_(MaxEntries, *Count) PWKD_BLOCKED_SIGNER_ENTRY Entries,
+    _In_  ULONG MaxEntries,
+    _Out_ PULONG Count
+    )
+/*++
+Routine Description:
+    黑名单快照 (对齐 SS GetBlockedCertificates L2080-2093)。
+
+Return Value:
+    STATUS_SUCCESS; Count 恒返回表中条目数 (超过 MaxEntries 时截断)。
+--*/
+{
+    ULONG i;
+    ULONG n;
+
+    if (!Entries || !Count || MaxEntries == 0) return STATUS_INVALID_PARAMETER;
+    *Count = 0;
+
+    AcquireSRWLockShared(&g_IocBlockedLock);
+    n = (g_IocBlockedCount < MaxEntries) ? g_IocBlockedCount : MaxEntries;
+    for (i = 0; i < n; i++) {
+        Entries[i] = g_IocBlockedSigners[i];
+    }
+    *Count = n;
+    ReleaseSRWLockShared(&g_IocBlockedLock);
+    return STATUS_SUCCESS;
 }
 
 /**************************************************/
@@ -245,7 +425,14 @@ IocScan_CalcWeightedScore(
         break;
     case DefCertStatus_Revoked:
         score += WKD_REP_WEIGHT_CERT_REVOKED;
-        IocScan_AppendReason(Rep, L"Certificate revoked");
+        /* 吊销原因细分 (SS CertificateValidator GetRevocationStatus 增量迁移
+         * 2026-09-02): RevokeReason 由 SignatureVerifier Revoked 分支填充,
+         * 有细分则归因用细分文案 ("Certificate revoked (Reason: ...)")。 */
+        if (Result->RevokeReason[0] != L'\0') {
+            IocScan_AppendReason(Rep, Result->RevokeReason);
+        } else {
+            IocScan_AppendReason(Rep, L"Certificate revoked");
+        }
         *Sources |= (1u << DefDetSrc_IOC);
         break;
     case DefCertStatus_Expired:
@@ -355,4 +542,153 @@ Return Value:
     rep->Sources = sources;
 
     return STATUS_SUCCESS;
+}
+
+/**************************************************/
+/*        信任层级评估 (SS CertificateValidator)    */
+/**************************************************/
+
+WKD_TRUST_LEVEL
+IocScan_EvaluateTrustLevel(
+    _In_ PIOC_SCAN_RESULT Result
+    )
+/*++
+Routine Description:
+    统一证书信任层级评估 (对齐 SS CertificateValidator::GetTrustLevel
+    L1938-1940 / GetTrustLevelInternal L2934)。
+    按 WKD 信任判定能力诚实映射: WKD 链信任为 WinVerifyTrust
+    二元结果, 无自定义根/企业根 store 区分, CustomRoot/EnterpriseRoot/
+    SystemRoot 归并为 WkdTrust_Validated; EV 由 CERT_EV_PROP_ID
+    提升为独立顶级 (对齐 SS TrustLevel::EVValidated 最高级)。
+
+Arguments:
+    Result - 扫描结果 (须含 CertStatus/CertTrusted/IsTrustedStrict/
+             IsSelfSigned/IsEvCert 证书字段)。
+
+Return Value:
+    WKD_TRUST_LEVEL。
+--*/
+{
+    if (!Result) return WkdTrust_Unknown;
+
+    /* 证书级失败态 → Untrusted (对齐 SS: Revoked/Expired/UntrustedRoot/
+     * ChainBuildingFailed 均低于 Unknown 信任域) */
+    switch (Result->CertStatus) {
+    case DefCertStatus_Revoked:
+    case DefCertStatus_Expired:
+    case DefCertStatus_Invalid:
+    case DefCertStatus_UntrustedRoot:
+        return WkdTrust_Untrusted;
+    default:
+        break;
+    }
+
+    /* 未签名/无法判定 → Unknown (对齐 SS TrustLevel::Unknown) */
+    if (Result->CertStatus == DefCertStatus_Unsigned ||
+        Result->CertStatus == DefCertStatus_Unknown) {
+        return WkdTrust_Unknown;
+    }
+
+    /* Valid/ValidCatalog: 有效签名始得信任评估 */
+    if (!Result->CertValid || !Result->CertTrusted) return WkdTrust_Unknown;
+
+    /* EV 顶级 (对齐 SS TrustLevel::EVValidated, 隐含链受信) */
+    if (Result->IsEvCert) return WkdTrust_EvValidated;
+
+    /* 有效自签名 (对齐 SS TrustLevel::SelfSigned; 自签无链, 仅叶自证) */
+    if (Result->IsSelfSigned) return WkdTrust_SelfSigned;
+
+    /* 链验证通过 → Validated (系统/企业根归并) */
+    if (Result->IsTrustedStrict) return WkdTrust_Validated;
+
+    return WkdTrust_Unknown;
+}
+
+/**************************************************/
+/*     证书级验证细分映射 (SS ValidationResult)     */
+/**************************************************/
+
+static WKD_CERT_DETAIL
+IocScan_CertDetailFromStatus(
+    _In_ DEF_CERT_STATUS Status
+    )
+{
+    switch (Status) {
+    case DefCertStatus_Valid:
+    case DefCertStatus_ValidCatalog:
+        return WkdCertDetail_Valid;
+    case DefCertStatus_Revoked:
+        return WkdCertDetail_Revoked;
+    case DefCertStatus_Expired:
+        return WkdCertDetail_Expired;
+    case DefCertStatus_UntrustedRoot:
+        return WkdCertDetail_UntrustedRoot;
+    case DefCertStatus_Invalid:
+        return WkdCertDetail_ChainBuildingFailed;
+    case DefCertStatus_Unsigned:
+        return WkdCertDetail_Unsigned;
+    default:
+        return WkdCertDetail_Unknown;
+    }
+}
+
+WKD_CERT_DETAIL
+IocScan_MapCertDetail(
+    _In_ PIOC_SCAN_RESULT Result
+    )
+/*++
+Routine Description:
+    文件级 DEF_CERT_STATUS 8 态 → 证书级细分映射。
+    对齐 SS ValidationResult 16 态语义 (SS 为证书级, WKD 为文件级
+    Authenticode 判定), 用深度校验字段 (IsWeakSignature/IsCodeSigningEku)
+    做 8 态无法表达处的细分:
+      - Valid + IsWeakSignature → WeakAlgorithm (SS IsWeakAlgorithm 同判)
+      - Valid + !IsCodeSigningEku → 仍 Valid (WKD 无独立 KeyUsageInvalid
+        文件级态, 由 IsCodeSigningEku 字段承载, 不降级)
+    消费面: 告警文案 / 信誉归因细分 (IocScan_CertDetailName)。
+
+Arguments:
+    Result - 扫描结果 (须含证书字段)。
+
+Return Value:
+    WKD_CERT_DETAIL。
+--*/
+{
+    WKD_CERT_DETAIL detail;
+
+    if (!Result) return WkdCertDetail_Unknown;
+
+    detail = IocScan_CertDetailFromStatus(Result->CertStatus);
+
+    /* 有效签名 + 弱算法 → WeakAlgorithm (对齐 SS L1356
+     * IsWeakAlgorithm(signatureAlgorithm) 判定语义) */
+    if (detail == WkdCertDetail_Valid && Result->IsWeakSignature) {
+        return WkdCertDetail_WeakAlgorithm;
+    }
+    return detail;
+}
+
+PCWSTR
+IocScan_CertDetailName(
+    _In_ WKD_CERT_DETAIL Detail
+    )
+/*++
+Routine Description:
+    细分结果 → 名称 (对齐 SS GetValidationResultName)。
+
+Return Value:
+    名称串 (恒非 NULL)。
+--*/
+{
+    switch (Detail) {
+    case WkdCertDetail_Valid:               return L"Valid";
+    case WkdCertDetail_Invalid:             return L"Invalid";
+    case WkdCertDetail_Expired:             return L"Expired";
+    case WkdCertDetail_Revoked:             return L"Revoked";
+    case WkdCertDetail_UntrustedRoot:       return L"UntrustedRoot";
+    case WkdCertDetail_ChainBuildingFailed: return L"ChainBuildingFailed";
+    case WkdCertDetail_WeakAlgorithm:       return L"WeakAlgorithm";
+    case WkdCertDetail_Unsigned:            return L"Unsigned";
+    default:                                return L"Unknown";
+    }
 }

@@ -246,3 +246,10 @@ ImgNotifyCleanup(
 // PspParseModule；ImgNotifyProcessTerminated 死代码已删——统一由
 // PspDestroyProcess → PsDestroyWkdModuleContext 覆盖。
 //
+
+VOID
+CbImageNotifyCallback(
+    _In_opt_ PUNICODE_STRING FullImageName,
+    _In_ HANDLE ProcessId,
+    _In_ PIMAGE_INFO ImageInfo
+    );

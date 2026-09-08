@@ -36,7 +36,7 @@ typedef struct _WKD_OBJECT_CALLBACK_MANAGER {
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
-CbObjectNotifyInitialize(
+CbInitializeObjectNotify(
     VOID
     );
 

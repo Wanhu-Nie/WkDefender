@@ -4,7 +4,9 @@
 
 #include "PeAnalyzer.h"
 #include "../StringExtractor.h"  /* IocStrExtract (编码串提取, 2026-08-19) */
-#include "../../Common/FileUtils.h"
+#include "../../Common/FileUtils.h"   /* CoOpenFileForSequentialRead（校验 reader 文件打开, 2026-09-07） */
+#include "../../Common/Utils.h"       /* CoOpenProcessForQueryRead（跨进程最小句柄, 2026-09-07） */
+#include "../../Process/ProcessModule.h" /* PsGetMainModuleInstance（门面主模块域/磁盘路径, 2026-09-07） */
 #include "PeInternal.h"      /* 内部解析/惰性/解包 — 门面实现专用 */
 
 #include <wchar.h>    /* swprintf_s (版本信息 StringFileInfo 子块拼接) */
@@ -785,7 +787,7 @@ Return Value:
     opt.DetectOverlay = FALSE;
     opt.VerifyChecksum = FALSE;
 
-    if (!NT_SUCCESS(WpeParseMemoryEx(ctx, ProcessHandle, ModuleBase, 4096, &opt))) {
+    if (!NT_SUCCESS(PeParseMemoryEx(ctx, ProcessHandle, ModuleBase, 4096, &opt))) {
         free(ctx);
         return STATUS_INVALID_IMAGE_FORMAT;
     }
@@ -1316,16 +1318,6 @@ WpeResetParseContext(
     WpeParseContextReset(Ctx);
 }
 
-/* 导入表解析 (替代 IocpParseImports) */
-NTSTATUS
-WpeParseImportList(
-    _In_  const PE_PARSER_CONTEXT* Ctx,
-    _Out_ PPE_IMPORT_LIST         Out
-    )
-{
-    return IocpParseImports(Ctx, Out);
-}
-
 /* 导入表释放 (替代 WpeImportsFree) */
 VOID
 WpeFreeImportList(
@@ -1333,6 +1325,102 @@ WpeFreeImportList(
     )
 {
     WpeImportsFree(List);
+}
+
+/* 统一导入表校验门面（双 reader, 2026-09-07 重构）：对目标进程主模块的
+ * 常规导入表 + 延迟导入表一次性校验（延迟导入表复用同一装配, 不再独立门面）。
+ * 内部装配：
+ *   - CoOpenProcessForQueryRead 打开进程句柄（AccessControl 侧反调试检测块
+ *     同源共用, 迁 Common/Utils 消除 IOC→AccessControl 循环依赖）；
+ *   - PsGetMainModuleInstance 派生主模块基址/SizeOfImage 与磁盘路径；
+ *   - CoOpenFileForSequentialRead（拒绝目录/reparse, TOCTOU-safe）打开磁盘
+ *     副本为校验 reader（文件权威）;
+ *   - 主 reader = PeParseMemoryEx 进程内存模式；ImportVerify[0]/[1] 分别挂
+ *     常规/延迟双 reader 回调, Context 注入 Result->Iat / Result->Delay,
+ *     PepParseImports + WpeParseDelayImportList 两次解析覆盖两表。
+ * 命中语义见 Result：Iat.Found（常规）/ Delay.Found（延迟）。句柄/文件/
+ * 解析上下文全部内部管理，调用方仅需持有稳定的 WKD_PROCESS 引用。 */
+_Use_decl_annotations_
+NTSTATUS
+PeVerifyFunctionAddressTable(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _Out_ PPE_IMPORT_VERIFY_RESULT Result
+    )
+{
+    PPE_PARSER_CONTEXT ctx;
+    PE_PARSE_OPTIONS opt;
+    NTSTATUS status = STATUS_INVALID_PARAMETER;
+    HANDLE hProcess = NULL;
+    PWKD_MODULE_INSTANCE instance = NULL;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    SIZE_T fileSize = 0;
+    PE_IMPORT_LIST importList = { 0 };     /* 校验模式截断到 DLL 层（命中经回调回填） */
+    PE_DELAY_IMPORT_LIST delayList = { 0 };
+
+    if (!WkdProcess || !Result) return STATUS_INVALID_PARAMETER;
+    RtlZeroMemory(Result, sizeof(PE_IMPORT_VERIFY_RESULT));
+
+    /* 1. 进程句柄（最小读取权限, 2026-09-07 经 CoOpenProcessForQueryRead） */
+    if (!CoOpenProcessForQueryRead(HandleToULong(WkdProcess->ProcessId), &hProcess)) {
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    /* 2. 主模块域（基址/SizeOfImage/磁盘路径）：主模块未挂或未映射 → 不值得校验 */
+    if (!NT_SUCCESS(PsGetMainModuleInstance(WkdProcess, &instance))) {
+        status = STATUS_NOT_FOUND;
+        goto Cleanup;
+    }
+
+    /* 3. 磁盘副本（校验 reader 权威源）：直接复用 CoOpenFileForSequentialRead,
+     * 替代 CreateFileW/GetFileSizeEx（拒绝目录/reparse, TOCTOU-safe）。 */
+    hFile = CoOpenFileForSequentialRead(instance->Module->ImagePath->Buffer, &fileSize);
+    if (hFile == INVALID_HANDLE_VALUE || fileSize == 0) {
+        status = STATUS_NOT_FOUND;
+        goto Cleanup;
+    }
+
+    ctx = (PPE_PARSER_CONTEXT)malloc(sizeof(PE_PARSER_CONTEXT));
+    if (!ctx) { status = STATUS_NO_MEMORY; goto Cleanup; }
+    RtlZeroMemory(ctx, sizeof(PE_PARSER_CONTEXT));
+
+    opt = IocDefaultPeParseOptions();
+    opt.ComputeSectionEntropy = FALSE;
+    opt.CollectAnomalies = FALSE;
+    opt.DetectOverlay = FALSE;
+    opt.VerifyChecksum = FALSE;
+
+    if (!NT_SUCCESS(PeParseMemoryEx(ctx, hProcess, instance->ImageBase,
+                                    instance->Module->SizeOfImage, &opt))) {
+        free(ctx);
+        status = STATUS_INVALID_IMAGE_FORMAT;
+        goto Cleanup;
+    }
+
+    /* 4. 校验载体注入 + 双槽回调（2026-09-07 重构：输入内聚 Ctx, 输出门面托管） */
+    ctx->VerifyProcess = WkdProcess;
+    ctx->VerifyProcessHandle = hProcess;
+    ctx->ImportVerify[0].Callback = PepVerifyImportDllByDualReader;
+    ctx->ImportVerify[0].Context = &Result->Iat;
+    ctx->ImportVerify[1].Callback = PepVerifyDelayImportDllByDualReader;
+    ctx->ImportVerify[1].Context = &Result->Delay;
+    PepCreateFileReader(&ctx->VerifyReader, hFile, fileSize);
+
+    /* 5. 常规 + 延迟一次覆盖（命中经回调回填 Result, 列表仅作截断遍历载体） */
+    PepParseImports(ctx, &importList);
+    WpeParseDelayImportList(ctx, &delayList);
+    status = STATUS_SUCCESS;
+
+    /* 校验 reader（文件模式）独立于主 reader, 须显式销毁（WpeResetParseContext 不覆盖） */
+    if (ctx->VerifyReader.Mode == PeReader_File) {
+        IocReaderDestroy(&ctx->VerifyReader);
+    }
+    WpeResetParseContext(ctx);
+    free(ctx);
+
+Cleanup:
+    if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
+    if (hProcess != INVALID_HANDLE_VALUE) CloseHandle(hProcess);
+    return status;
 }
 
 /* 按 RVA 读字节 (替代 WpeRvaToOffset + IocpReaderRead, 封装 EP stub 读取)。
@@ -1840,7 +1928,7 @@ IocImpEntryCompare(
                   ((const IOC_IMP_ENTRY*)b)->Text);
 }
 
-/* IAT 导入分析: 用真实导入表 (WpeParseImportList), 分类可疑 API, 计算 ImpHash。
+/* IAT 导入分析: 用真实导入表 (PepParseImports), 分类可疑 API, 计算 ImpHash。
  * 对比 SS 全文件字节扫描 memcmp 查找函数名 (O(N*M*F) 慢 + 子串误报, 如
  * "SafeCreateRemoteThreadShim"), 本实现更准。返回导入维度分 (0-625, 对齐
  * SS MAX_IMPORT*WEIGHT)。 */
@@ -1872,7 +1960,7 @@ IocpPeImportAnalysis(
     Result->ImpHashStandard[0] = 0;
 
     RtlZeroMemory(&imports, sizeof(PE_IMPORT_LIST));
-    status = WpeParseImportList(Ctx, &imports);
+    status = PepParseImports(Ctx, &imports);
     if (!NT_SUCCESS(status)) return 0;
 
     entries = (IOC_IMP_ENTRY*)malloc(sizeof(IOC_IMP_ENTRY) * cap);

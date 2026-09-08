@@ -3,6 +3,7 @@
 #include "../Common/Constants.h"
 #include "../Common/HashMap.h"
 #include "../Common/HashSet.h"
+#include "../Common/ExportParser.h"   /* PS_PROTECTION（PPL） */
 #include "ProcessModuleTracker.h"
 
 //
@@ -35,19 +36,8 @@ typedef enum _PS_PROTECTED_SIGNER {
     PsProtectedSignerMax
 } PS_PROTECTED_SIGNER, * PPS_PROTECTED_SIGNER;
 
-typedef struct _PS_PROTECTION
-{
-    union
-    {
-        UCHAR Level;
-        struct
-        {
-            PS_PROTECTED_TYPE Type : 3;
-            UCHAR Audit : 1;    // Reserved
-            PS_PROTECTED_SIGNER Signer : 4;
-        };
-    };
-} PS_PROTECTION, * PPS_PROTECTION;
+// _PS_PROTECTION 结构体已移入 Common/ExportParser.h（未文档化导出解析子引擎，
+// 与 PFN_PsGetProcessProtection 共用，避免同 TU 重复定义）。
 
 //
 // 安全上下文结构体
@@ -145,7 +135,31 @@ typedef struct _WKD_SECURITY_CONTEXT {
     // 采集自 PsGetProcessProtection（EPROCESS->Protection）。消费点（Exempts 判定
     // / L1 参考）标注未来。
     PS_PROTECTION PplProtection;
+
+    // 安全画像（Pap 句柄防护，2026-09-05 架构重构：自全局集中缓存下沉为进程自述元数据）
+    // 打包载荷（单 32 位对齐原子读，OB 回调 DISPATCH 无锁判定）：
+    //   Bit 0-7    WKD_PAP_PROCESS_CATEGORY（0=Unknown）
+    //   Bit 8-15   WKD_PAP_PROTECTION_LEVEL（0=None）
+    //   Bit 16-31  保留（预留进程级访问策略覆盖位）
+    // 写入方：IocAnalysisProcess §2.5（进程创建回调，SecurityContext->Lock 独占域内）；
+    //         管理面 PapAddProtectedProcess / PapRemoveProtectedProcess（动态添加受保护程序）。
+    // 读取方：CbpAuditProcessAccess / PapIsProcessProtected / PapGetProcessProtection
+    //         （32 位打包原子读，任意 IRQL 无锁，DISPATCH 判定 O(1) 直达）。
+    volatile ULONG PapProfile;
 } WKD_SECURITY_CONTEXT, * PWKD_SECURITY_CONTEXT;
+
+//
+// 安全画像打包/解包位段（见 WKD_SECURITY_CONTEXT.PapProfile 注释）。
+// 本头不引用 WKD_PAP_* 枚举类型（保持无 Process/Pap 反向依赖），
+// 编解码由调用方以 ULONG 强转枚举值完成。
+//
+#define WKD_PAP_PROFILE_SHIFT_CATEGORY  0
+#define WKD_PAP_PROFILE_MASK_CATEGORY   0x000000FFUL
+#define WKD_PAP_PROFILE_SHIFT_LEVEL     8
+#define WKD_PAP_PROFILE_MASK_LEVEL      0x0000FF00UL
+#define WKD_PAP_PROFILE_TO_VALUE(Category, Level) \
+    ((((ULONG)(Category)) << WKD_PAP_PROFILE_SHIFT_CATEGORY) | \
+     (((ULONG)(Level)) << WKD_PAP_PROFILE_SHIFT_LEVEL))
 
 //
 // 事件抑制结构体（进程内嵌，用于 Tier 1 生产者侧无锁抑制）

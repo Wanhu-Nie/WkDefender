@@ -24,6 +24,7 @@
 #include "../Process/ProcessTree.h"             /* WkdProcessTree / PsLookupWkdProcessByStrictProcessId */
 #include "../IOC/ImageAnalyzer/ImageAnalyzer.h"   /* 统一镜像分析流水线 (2026-08-15) */
 #include "../IOC/Signature/SignatureHunting.h"   /* 镜像签名异常 (SS DSV OnKernelImageLoad 迁移) */
+#include "../AccessControl/AccessControlEngine.h" /* 受保护进程域化挂点 (2026-09-06) */
 
 //
 // 镜像全量分析桥接开关（2026-08-09 镜像职责收敛；2026-08-15 统一流水线化）
@@ -355,6 +356,16 @@ Return Value:
 
     case WkdEvent_ProcessCreate: {
 
+        /* ① 受保护进程域化预建（2026-09-06）：进程创建即建访问控制上下文，
+         * 后续注册保护免除惰性分配；失败不阻断事件处理（仅预建）。 */
+        {
+            NTSTATUS acStatus = SdfEnsureAccessControlContextObject(targetWkdProcess);
+            if (!NT_SUCCESS(acStatus)) {
+                printf("[Orchestrator] ProcessCreate: SdfEnsureAccessControlContextObject 0x%08lX (pid=%lu)\n",
+                       acStatus, targetWkdProcess->ProcessId);
+            }
+        }
+
         /* ② IOC: 对刚创建的进程节点做静态分析，结果写回 IocVerdict/IocConfidence
          * [2026-08-25 调试注释] 结构体构建验证期关闭 — IocObserveProcess →
          * IocAnalyseImage 含 SHA256 全文件读取 + WinVerifyTrust + PE 深度解析,
@@ -373,7 +384,13 @@ Return Value:
     case WkdEvent_ProcessExit: {
         /*const PEVENT_PAYLOAD_PROCESS_EXIT payload =
             (const PEVENT_PAYLOAD_PROCESS_EXIT)((PUCHAR)event + sizeof(WKD_EVENT_HEADER));*/
-       
+
+        /* 受保护进程强制注销（2026-09-06 域化；2026-09-08 单例化去参）：
+         * 进程退出清 AccessControlContext/IsProtectedProcess + 摘受保护进程链
+         * （引擎经模块内 AcGetAccessControlEngine 自取），Dereference
+         * 前对象仍有效；未受保护幂等返回。 */
+        (VOID)SdfForceUnprotectProcessObject(targetWkdProcess);
+
         IoaObserve(pair, event);
 
         /* 进程终止时不能直接移除 hashmap 项，进程对和聚合边的刷新、回收均依赖于进程对象!!! */

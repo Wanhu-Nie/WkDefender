@@ -37,7 +37,7 @@
 typedef enum _WKD_PROCESS_SOURCE {
     WkdProcessSource_Driver = 0,
     WkdProcessSource_Snapshot,
-} WKD_PROCESS_SOURCE, *PWKD_PROCESS_SOURCE;
+} WKD_PROCESS_SOURCE, * PWKD_PROCESS_SOURCE;
 
 /**************************************************/
 /*               镜像类型                           */
@@ -57,7 +57,7 @@ typedef enum _WKD_IMAGE_TYPE {
     WkdImageType_Drv,             /* 旧驱动 */
     WkdImageType_Efi,             /* EFI */
     WkdImageType_Max
-} WKD_IMAGE_TYPE, *PWKD_IMAGE_TYPE;
+} WKD_IMAGE_TYPE, * PWKD_IMAGE_TYPE;
 
 /**************************************************/
 /*            镜像文件级属性位域                    */
@@ -70,13 +70,13 @@ typedef enum _WKD_IMAGE_TYPE {
 
 typedef union _WKD_IMAGE_PROPERTIES {
     struct {
-        ULONG SystemModeImage       : 1;
-        ULONG ImageSignatureLevel   : 4;  /* SE_SIGNING_LEVEL_*，保留值 */
-        ULONG ImageSignatureType    : 3;  /* SE_IMAGE_SIGNATURE_TYPE，保留值 */
-        ULONG ImagePartialMap       : 1;  /* 预留 */
+        ULONG SystemModeImage : 1;
+        ULONG ImageSignatureLevel : 4;  /* SE_SIGNING_LEVEL_*，保留值 */
+        ULONG ImageSignatureType : 3;  /* SE_IMAGE_SIGNATURE_TYPE，保留值 */
+        ULONG ImagePartialMap : 1;  /* 预留 */
     };
     ULONG PropertiesAsUlong;
-} WKD_IMAGE_PROPERTIES, *PWKD_IMAGE_PROPERTIES;
+} WKD_IMAGE_PROPERTIES, * PWKD_IMAGE_PROPERTIES;
 
 /**************************************************/
 /*            PE 测量事实（模块域，自有位域）        */
@@ -110,7 +110,7 @@ typedef struct _WKD_MODULE_PE_FACTS {
     ULONG   SectionMask[3];         /* 区段特征位图（bit i = 第 i 区段 WX） */
     ULONG   TimeDateStamp;
     ULONG   CheckSum;
-} WKD_MODULE_PE_FACTS, *PWKD_MODULE_PE_FACTS;
+} WKD_MODULE_PE_FACTS, * PWKD_MODULE_PE_FACTS;
 
 /**************************************************/
 /*               前向声明                           */
@@ -120,7 +120,7 @@ typedef struct _WKD_MODULE_PE_FACTS {
 /*  本头仅指针引用，保持依赖纯净。                   */
 /**************************************************/
 
-typedef struct _WKD_MODULE WKD_MODULE, *PWKD_MODULE;
+typedef struct _WKD_MODULE WKD_MODULE, * PWKD_MODULE;
 
 /**************************************************/
 /*   堆喷窗口聚合状态 (HeapSpray 迁移 2026-08)       */
@@ -160,7 +160,7 @@ typedef struct _WKD_HEAP_SPRAY_STATE {
     volatile LONG   SprayScore;             /* 0-1000 */
     volatile LONG   SprayInProgress;        /* 评分 ≥ 阈值时置位 */
     volatile LONG   SprayAlerted;           /* 已告警 (防重复告警) */
-} WKD_HEAP_SPRAY_STATE, *PWKD_HEAP_SPRAY_STATE;
+} WKD_HEAP_SPRAY_STATE, * PWKD_HEAP_SPRAY_STATE;
 
 /**************************************************/
 /*   WKD_PROCESS_BEHAVIOR_STATE — 进程级行为状态    */
@@ -224,7 +224,7 @@ typedef struct _WKD_PROCESS_BEHAVIOR_STATE {
 
     /* ── 堆喷 (IoaHeapSprayDetect) ── */
     WKD_HEAP_SPRAY_STATE HeapSpray;         /* 分配窗口聚合 + 内容采样 */
-} WKD_PROCESS_BEHAVIOR_STATE, *PWKD_PROCESS_BEHAVIOR_STATE;
+} WKD_PROCESS_BEHAVIOR_STATE, * PWKD_PROCESS_BEHAVIOR_STATE;
 
 /**************************************************/
 /*               线程节点                           */
@@ -240,7 +240,7 @@ typedef struct _WKD_THREAD {
     LIST_ENTRY  ListEntry;            /* 挂 WKD_PROCESS::ThreadListHead */
 
     /* 核心标识 */
-    HANDLE      ProcessId;              
+    HANDLE      ProcessId;
     HANDLE      ThreadId;             /* 目标线程 ID (tTid) */
     HANDLE      CreatorProcessId;     /* 创建者进程 ID (sPid，来自 DEF_PAYLOAD) */
     HANDLE      CreatorThreadId;      /* 创建者线程 ID (sTid) */
@@ -275,7 +275,7 @@ typedef struct _WKD_THREAD {
     BOOLEAN     IoacUnbackedStart;     /* driver IsStartAddrBacked==FALSE (无模块背衬) */
     BOOLEAN     IoacUnusualEntry;      /* driver IsUnusualEntry==TRUE (异常入口, 未落已知模块) */
     BOOLEAN     IoacShellcodeSuspected; /* IocDetectShellcode 字节级命中 (异常入口线程确认) */
-} WKD_THREAD, *PWKD_THREAD;
+} WKD_THREAD, * PWKD_THREAD;
 
 /**************************************************/
 /*           进程模块上下文 + 映射视图               */
@@ -310,7 +310,7 @@ typedef struct _WKD_MODULE_CONTEXT {
     volatile LONG   TotalModules;
     ULONG           ProcessId;        /* 所属进程 PID */
     SRWLOCK         Lock;             /* 进程模块上下文读写锁（Exclusive=挂/摘/清场, Shared=遍历） */
-} WKD_MODULE_CONTEXT, *PWKD_MODULE_CONTEXT;
+} WKD_MODULE_CONTEXT, * PWKD_MODULE_CONTEXT;
 
 /* 线程上下文（并发安全重构 2026-08-23，仿 WKD_MODULE_CONTEXT）：
  * 内嵌 WKD_PROCESS（值类型，含独立 SRWLOCK）；WKD_THREAD 是
@@ -322,20 +322,24 @@ typedef struct _WKD_THREAD_CONTEXT {
     LIST_ENTRY      ThreadList;       /* WKD_THREAD::ListEntry */
     volatile LONG   ActiveThreads;
     volatile LONG   TerminatedThreads;
-    volatile LONG   TotalThreads;   
+    volatile LONG   TotalThreads;
     HANDLE          ProcessId;        /* 所属进程 PID */
     SRWLOCK         Lock;             /* 进程线程上下文读写锁（Exclusive=挂/摘/清场, Shared=遍历） */
-} WKD_THREAD_CONTEXT, *PWKD_THREAD_CONTEXT;
+} WKD_THREAD_CONTEXT, * PWKD_THREAD_CONTEXT;
 
 typedef struct _WKD_MODULE_INSTANCE {
     LIST_ENTRY   ListEntry;           /* 挂 ModuleContext::ModuleList */
     PVOID        ImageBase;           /* 映射基址（进程内唯一） */
     LARGE_INTEGER LoadTime;           /* 加载时间 */
     PWKD_MODULE  Module;              /* → 全局唯一对象 */
+    BOOLEAN      MainModule;          /* TRUE=进程主模块（exe 映像，2026-09-07）：
+                                       * 挂载期由 PsModuleInstanceAttachProcess 置位
+                                       * （ModuleList 链空 = 进程首个模块 = 主模块），
+                                       * 磁盘视图→映射视图原位升级时保持。 */
     ULONG        ViewFlags;           /* 每映射观测属性（WKD_MODULE_VIEW_*） */
     DEF_IOC_VERDICT ViewVerdict;      /* 视图级判定（反射加载等进程私有，对齐 0=Clean） */
     ULONG        ViewConfidence;      /* 视图级置信度 */
-} WKD_MODULE_INSTANCE, *PWKD_MODULE_INSTANCE;
+} WKD_MODULE_INSTANCE, * PWKD_MODULE_INSTANCE;
 
 /**************************************************/
 /*               进程节点 (聚合根)                  */
@@ -365,14 +369,14 @@ typedef struct _WKD_MODULE_INSTANCE {
 /*   进程监视标志 (MonitorFlags 位，原 PROCESS_STATUS_* 的
  *   MONITORED/ISOLATED/THREAT 语义，与 DEF_PROCESS_STATUS
  *   位值分离避免碰撞)                               */
-/**************************************************/
+ /**************************************************/
 
 #define WKD_PROCESS_MONITOR_MONITORED   0x01
 #define WKD_PROCESS_MONITOR_ISOLATED    0x02
 #define WKD_PROCESS_MONITOR_THREAT      0x04
 
 /* 前向声明：结构体内部 L369 引用自身指针（typedef 完整别名在文件尾部） */
-typedef struct _WKD_PROCESS *PWKD_PROCESS;
+typedef struct _WKD_PROCESS* PWKD_PROCESS;
 
 /**************************************************/
 /*   进程安全上下文 (对齐 driver WKD_PROCESS        */
@@ -398,7 +402,57 @@ typedef struct _WKD_PROCESS_SECURITY_CONTEXT {
     ULONG                   IocConfidence;      /* 置信度 0-1000 */
     PWKD_MODULE             ExeModule;          /* 主镜像文件级权威副本（NULL=未分析） */
     BOOLEAN                 Placeholder;        /* TRUE=懒建占位节点，待真实事件回填 */
-} WKD_PROCESS_SECURITY_CONTEXT, *PWKD_PROCESS_SECURITY_CONTEXT;
+} WKD_PROCESS_SECURITY_CONTEXT, * PWKD_PROCESS_SECURITY_CONTEXT;
+
+/**************************************************/
+/*   访问控制上下文（受保护进程域化, 2026-09-06）    */
+/*                                                  */
+/*  取代原 SELF_PROTECTED_PROCESS 与 Pp 镜像数组：   */
+/*  Agent 侧受保护进程的权威状态直接挂进程对象。      */
+/*                                                  */
+/*  构建时机：                                      */
+/*    - 主动：PsCreateWkdProcess 进程创建时预建；     */
+/*    - 惰性：AcRegisterProtectedProcessInternal 注册受保护时兜底       */
+/*      （PsGetOrCreateWkdAccessControlContext）。             */
+/*  生命周期：随 WKD_PROCESS 释放                    */
+/*    （PspDestroyWkdProcess → PsDestroyAccessControlContext）。*/
+/*                                                  */
+/*  ProcessId/ImageName 等标识取自进程载体本身，不重复存储；  */
+/*  ProtectionFlags 位域由 AccessControl 层解释     */
+/*  （SP_PROTECT_FLAG_*）；Level/Status 为 ULONG     */
+/*  序列化（PP_PROTECTION_LEVEL/STATUS），避免      */
+/*  Process → AccessControl 逆向类型依赖。           */
+/**************************************************/
+
+typedef struct _WKD_ACCESS_CONTROL_CONTEXT {
+    ULONG                   ProtectionFlags;    /* AccessControl 位域（SP_PROTECT_FLAG_*） */
+    ULONG                   ProtectionLevel;    /* PP_PROTECTION_LEVEL 序列化（Pp 决策分级） */
+    ULONG                   ProtectionStatus;   /* PP_PROTECTION_STATUS 序列化 */
+    BOOLEAN                 IsCritical;         /* 关键进程标记 */
+    LARGE_INTEGER           ProtectedSince;     /* 保护起始时间戳 */
+    LARGE_INTEGER           LastVerified;       /* 最近完整性校验时间 */
+    volatile LONG64         BlockedAttempts;    /* 被阻断访问计数 */
+    LARGE_INTEGER           LastBlockedAttempt; /* 最近被阻断时间 */
+
+    /* 反调试检测 policy（2026-09-06）：按 AC_ANTIDEBUG_TECHNIQUE 下标位的
+     * 使能位图（2026-09-07：AD_MASK_ALL=显式全激活、AD_MASK_NONE(0)=显式
+     * 全关闭，废除 0=全激活哨兵，位图即最终使能）。默认在注册时按进程类型
+     * （AD_POLICY_PROFILE）展开（AD_MASK_ALL 全位→AdGetDefaultMask），
+     * 注册方可传显式位图覆盖；AD_MASK_ALL 含未来新增检测项。 */
+    ULONG64                 AntidebugMask;
+
+    /* 进程缓解加固状态（2026-09-08 从 MemoryProtection 迁移）：
+     * PP_HARDENING_* 位域（ProcessProtection.h 定义）；登记受保护进程
+     * 时写入：自身进程=Set 结果，第三方进程=GetProcessMitigationPolicy
+     * 观察事实（用户拍板 2026-09-08）。 */
+    ULONG                   HardeningMask;
+
+    /* 受保护进程链（2026-09-06 编排层所有）：登记期挂
+     * ACCESS_CONTROL_ENGINE::ProtectedProcessListHead（Exclusive 登记/摘除，
+     * Shared 枚举）；Flink==NULL（calloc 初值）= 不在链。 */
+    LIST_ENTRY              ProtectedListLink;
+    PWKD_PROCESS            OwnerWkdProcess;       /* 回链进程对象（链遍历枚举用，登记时设置） */
+} WKD_ACCESS_CONTROL_CONTEXT, * PWKD_ACCESS_CONTROL_CONTEXT;
 
 struct _WKD_PROCESS {
     /* === 标识 === */
@@ -479,6 +533,11 @@ struct _WKD_PROCESS {
      *   释放于 PspDestroyWkdProcess 经 InterlockedExchangePointer) === */
     PWKD_MODULE_CONTEXT      ModuleContext;       /* 进程模块视图 */
 
+    /* === 访问控制上下文 (受保护进程权威状态, 2026-09-06 进程创建主动构建 /
+     *   注册受保护惰性构建; 释放于 PspDestroyWkdProcess 经
+     *   PsDestroyAccessControlContext) === */
+    PWKD_ACCESS_CONTROL_CONTEXT AccessControlContext;        /* 受保护状态（NULL=未构建） */
+
     /* === 链接 (树内) === */
     LIST_ENTRY              GlobalLink;          /* 全局链（历史代仍可遍历） */
 };
@@ -487,4 +546,4 @@ struct _WKD_PROCESS {
 /*               类型别名                           */
 /**************************************************/
 
-typedef struct _WKD_PROCESS WKD_PROCESS, *PWKD_PROCESS;
+typedef struct _WKD_PROCESS WKD_PROCESS, * PWKD_PROCESS;

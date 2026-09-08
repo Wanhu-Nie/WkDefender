@@ -1126,7 +1126,7 @@ Return Value:
     opt = (Options) ? *Options : IocDefaultPeParseOptions();
     ctx->Options = opt;
     ctx->IsMemoryMode = TRUE;
-    ctx->Reader = WpeReaderFromProcess(ProcessHandle, BaseAddress, Size);
+    ctx->Reader = PepCreateProcessReader(ProcessHandle, BaseAddress, Size);
 
     status = IocpParsePe(ctx);
     if (NT_SUCCESS(status)) {
@@ -1180,7 +1180,7 @@ Return Value:
 
     ctx->Options = (Options) ? *Options : IocDefaultPeParseOptions();
     ctx->IsMemoryMode = FALSE;
-    IocpInitializeReader(&ctx->Reader, FileHandle, Size);
+    PepCreateFileReader(&ctx->Reader, FileHandle, Size);
 
     status = IocpParsePe(ctx);
     if (NT_SUCCESS(status)) {
@@ -1254,7 +1254,7 @@ Return Value:
 
     ctx->Options = *Options;
     ctx->IsMemoryMode = FALSE;
-    IocpInitializeReader(&ctx->Reader, hFile, (SIZE_T)fileSize.QuadPart);
+    PepCreateFileReader(&ctx->Reader, hFile, (SIZE_T)fileSize.QuadPart);
 
     status = IocpParsePe(ctx);
     if (NT_SUCCESS(status)) {
@@ -1303,12 +1303,12 @@ Return Value:
 }
 
 NTSTATUS
-WpeParseMemoryEx(
-    _Inout_ PPE_PARSER_CONTEXT   Context,
-    _In_  HANDLE                 ProcessHandle,
-    _In_  ULONG_PTR              BaseAddress,
-    _In_  SIZE_T                 Size,
-    _In_  const PE_PARSE_OPTIONS* Options
+PeParseMemoryEx(
+    _Inout_ PPE_PARSER_CONTEXT Context,
+    _In_ HANDLE ProcessHandle,
+    _In_ PVOID MemoryAddress,
+    _In_ SIZE_T SizeOfMemroy,
+    _In_ const PPE_PARSE_OPTIONS Options
     )
 /*++
 Routine Description:
@@ -1318,12 +1318,15 @@ Return Value:
     NTSTATUS。
 --*/
 {
-    if (Context == NULL) return STATUS_INVALID_PARAMETER;
+    if (!Context || ProcessHandle == 0 ||
+        !MemoryAddress || SizeOfMemroy == 0 || !Options) {
+        return STATUS_INVALID_PARAMETER;
+    }
 
     WpeParseContextReset(Context);
     Context->Options = (Options) ? *Options : IocDefaultPeParseOptions();
     Context->IsMemoryMode = TRUE;
-    Context->Reader = WpeReaderFromProcess(ProcessHandle, BaseAddress, Size);
+    Context->Reader = PepCreateProcessReader(ProcessHandle, MemoryAddress, SizeOfMemroy);
     return IocpParsePe(Context);
 }
 

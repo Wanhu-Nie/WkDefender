@@ -10,6 +10,10 @@
 
 #pragma once
 
+/* PWKD_PROCESS 必须先于 PeTypes.h：PE_PARSER_CONTEXT 内嵌
+ * PWKD_PROCESS 字段（2026-09-07 VerifyProcess），否则先包含
+ * 本头的单元会因 PeTypes.h 展开时类型缺失而 #pragma once 中毒 */
+#include "../../Process/ProcessTypes.h"
 #include "PeTypes.h"
 #include "../../DefendTypes.h"
 #include "../IocTypes.h"
@@ -419,17 +423,29 @@ WpeResetParseContext(
     _Inout_ PPE_PARSER_CONTEXT Ctx
     );
 
-/* 导入表解析: 替代 IocpParseImports (IocScanner IAT 分析) */
-NTSTATUS
-WpeParseImportList(
-    _In_  const PE_PARSER_CONTEXT* Ctx,
-    _Out_ PPE_IMPORT_LIST         Out
-    );
-
 /* 导入表释放: 替代 WpeImportsFree (IocScanner) */
 VOID
 WpeFreeImportList(
     _Inout_ PPE_IMPORT_LIST List
+    );
+
+/* 统一导入表校验门面（双 reader, 2026-09-07 重构）：对目标进程主模块的常规
+ * 导入表 + 延迟导入表一次性校验。内部：
+ *   - CoOpenProcessForQueryRead 打开进程句柄（AccessControl 侧同源, 2026-09-07
+ *     迁 Common/Utils 消除 IOC→AccessControl 循环依赖）；
+ *   - PsGetMainModuleInstance 派生主模块基址/SizeOfImage 与磁盘路径；
+ *   - CoOpenFileForSequentialRead（Common/FileUtils, TOCTOU-safe 拒绝
+ *     reparse/目录）打开主模块磁盘副本为校验 reader（文件权威）；
+ *   - 主 reader = PeParseMemoryEx 进程内存模式；回调 ImportVerify[0]/[1]
+ *     分别挂 PepVerifyImportDllByDualReader / PepVerifyDelayImportDllByDualReader,
+ *     Context 注入 Result->Iat / Result->Delay 命中输出，一次解析覆盖两表。
+ * 命中语义：Result->Iat.Found / Result->Delay.Found，防误报关键区（延迟三态、
+ * 目标 DLL 未加载、导出未命中）由回调统一覆盖。 */
+_Must_inspect_result_
+NTSTATUS
+PeVerifyFunctionAddressTable(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _Out_ PPE_IMPORT_VERIFY_RESULT Result
     );
 
 /* 按 RVA 读字节（static 仅 PeAnalyzer.c 内部，声明见实现处） */

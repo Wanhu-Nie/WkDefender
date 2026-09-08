@@ -1941,7 +1941,7 @@ HsShutdown(
 /*++
     记录一条句柄复制事件（对齐 SS HtRecordDuplication L1256-1365）
     死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE（ObjectNotify.c
-    CbObjectNotifyInitialize 被 WkdEntry 注释，未激活）。跨进程复制关联应
+    CbInitializeObjectNotify 被 WkdEntry 注释，未激活）。跨进程复制关联应
     归 Agent 因果图（IOA_TIER3 跨进程边，对齐 SS PrAddRelationship）。
 --*/
 _Use_decl_annotations_

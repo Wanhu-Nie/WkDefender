@@ -268,13 +268,13 @@ IocInitializeBufferReader(
     _In_ SIZE_T BufferSize
     );
 
-PE_READER WpeReaderFromProcess(
+PE_READER PepCreateProcessReader(
     _In_ HANDLE      ProcessHandle,
     _In_ ULONG_PTR   BaseAddress,
     _In_ SIZE_T      Size
     );
 
-VOID IocpInitializeReader(
+VOID PepCreateFileReader(
     _Out_ PPE_READER Reader,
     _In_ HANDLE FileHandle,
     _In_ SIZE_T Size
@@ -456,7 +456,7 @@ NTSTATUS IocpAnalyzeBufferEx(
     _In_  const PE_PARSE_OPTIONS* Options
     );
 
-NTSTATUS WpeParseMemoryEx(
+NTSTATUS PeParseMemoryEx(
     _Inout_ PPE_PARSER_CONTEXT   Ctx,
     _In_  HANDLE                 ProcessHandle,
     _In_  ULONG_PTR              BaseAddress,
@@ -550,9 +550,42 @@ PCWSTR WpeSubsystemToString(
 /**************************************************/
 /*              惰性解析层 (内部)                  */
 /**************************************************/
-NTSTATUS IocpParseImports(
-    _In_ const PE_PARSER_CONTEXT* Context,
+_Must_inspect_result_
+NTSTATUS PepParseImports(
+    _In_ const PPE_PARSER_CONTEXT Context,
     _Out_ PPE_IMPORT_LIST Imports
+    );
+
+/* 常规导入表双 reader 校验回调（2026-09-07）：PepParseImports 截断点调用。
+ * DllInfo = PE_IMPORT_DLL*。回调内 for 循环处理该 DLL 全部 INT/IAT 槽：
+ *   - 数值/函数名/序号 ← 校验 reader（文件模式）读磁盘 INT 槽（权威原始值）；
+ *   - 期望地址 ← 目标 DLL 导出表（临时内存 ctx, 基址经 Ctx->VerifyProcess 进程
+ *     模块表 PsLookupModuleInstanceByName 查找）name→RVA 映射 + 远程基址；
+ *   - 实际地址 ← 主 reader（内存模式）读内存 IAT 槽；
+ * 不等即命中：填 VerifyHit（PPE_IMPORT_VERIFY_HIT, 门面注入）并置 *Terminated=TRUE。 */
+_Use_decl_annotations_
+NTSTATUS
+PepVerifyImportDllByDualReader(
+    _In_ const PPE_PARSER_CONTEXT Ctx,
+    _In_ const void* DllInfo,
+    _In_ PCWSTR DllName,
+    _Inout_ void* VerifyHit,
+    _Out_ BOOLEAN* Terminated
+    );
+
+/* 延迟导入表双 reader 校验回调（2026-09-07）：WpeParseDelayImports 截断点调用。
+ * DllInfo = PE_DELAY_IMPORT_DLL*。语义对齐常规，另含延迟槽三态判定：
+ *   - 槽值 0 / 主模块映像内（thunk/helper 落点）→ 未绑定, 跳过；
+ *   - 已绑定 → 期望地址比对。
+ * 主模块映像域经 Ctx->VerifyProcess（PsGetMainModuleInstance）解析。 */
+_Use_decl_annotations_
+NTSTATUS
+PepVerifyDelayImportDllByDualReader(
+    _In_ const PPE_PARSER_CONTEXT Ctx,
+    _In_ const void* DllInfo,
+    _In_ PCWSTR DllName,
+    _Inout_ void* VerifyHit,
+    _Out_ BOOLEAN* Terminated
     );
 
 VOID WpeImportsFree(

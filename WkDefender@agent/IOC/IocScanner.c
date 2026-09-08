@@ -3809,11 +3809,7 @@ IocScan_GetCertThumbprintSha256(
     _In_  ULONG          HexCch
     )
 {
-    BCRYPT_ALG_HANDLE hAlg = NULL;
-    BCRYPT_HASH_HANDLE hHash = NULL;
-    NTSTATUS status;
-    BYTE digest[32];
-    ULONG cbDigest = sizeof(digest);
+    DEF_SHA256_HASH digest;
     static const CHAR kHex[] = "0123456789ABCDEF";
     ULONG k;
 
@@ -3822,29 +3818,18 @@ IocScan_GetCertThumbprintSha256(
         return FALSE;
     }
 
-    status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, NULL, 0);
-    if (!BCRYPT_SUCCESS(status)) return FALSE;
-    status = BCryptCreateHash(hAlg, &hHash, NULL, 0, NULL, 0, 0);
-    if (!BCRYPT_SUCCESS(status)) {
-        BCryptCloseAlgorithmProvider(hAlg, 0);
+    /* 统一走 BCrypUtils（BCrypt SHA-256 buffer 哈希, 2026-09-08 收敛） */
+    if (!IocScanner_ComputeBufferSha256(Cert->pbCertEncoded,
+                                        (ULONG)Cert->cbCertEncoded,
+                                        &digest)) {
         return FALSE;
     }
-    status = BCryptHashData(hHash, Cert->pbCertEncoded, (ULONG)Cert->cbCertEncoded, 0);
-    if (!BCRYPT_SUCCESS(status)) {
-        BCryptDestroyHash(hHash);
-        BCryptCloseAlgorithmProvider(hAlg, 0);
-        return FALSE;
-    }
-    status = BCryptFinishHash(hHash, digest, cbDigest, 0);
-    BCryptDestroyHash(hHash);
-    BCryptCloseAlgorithmProvider(hAlg, 0);
-    if (!BCRYPT_SUCCESS(status)) return FALSE;
 
-    for (k = 0; k < cbDigest; k++) {
-        Hex[k * 2] = kHex[(digest[k] >> 4) & 0xF];
-        Hex[k * 2 + 1] = kHex[digest[k] & 0xF];
+    for (k = 0; k < DEF_SHA256_SIZE; k++) {
+        Hex[k * 2] = kHex[(digest.Data[k] >> 4) & 0xF];
+        Hex[k * 2 + 1] = kHex[digest.Data[k] & 0xF];
     }
-    Hex[cbDigest * 2] = '\0';
+    Hex[DEF_SHA256_SIZE * 2] = '\0';
     return TRUE;
 }
 

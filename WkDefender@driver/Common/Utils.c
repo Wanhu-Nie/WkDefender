@@ -1,5 +1,18 @@
 ﻿#include "Utils.h"
 
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, CoRecordWkdDriverObject)
+//#pragma alloc_text(PAGE, CopParseExportFunction)
+//#pragma alloc_text(PAGE, SpRegisterSelfProtectionCallback)
+//#pragma alloc_text(PAGE, SppStartSelfProtectionEngine)
+//#pragma alloc_text(PAGE, SpShutdownSelfProtectionEngine)
+#endif
+
+//
+// 全局变量唯一的定义位置。此处定义，Utils.h 中为 extern 声明。
+//
+PDRIVER_OBJECT WkdDriverObject = NULL;
+
 //
 // 全局变量：缓存 Windows 版本信息
 //
@@ -96,20 +109,23 @@ const WCHAR* g_WkdLolbinList[] = {
 };
 
 //
-// 全局变量：缓存 DriverObject 用于模块遍历
-//
-static PDRIVER_OBJECT WkdDriverObject = NULL;
-
-//
 // 设置全局 DriverObject（在驱动入口调用）
 //
-_IRQL_requires_(PASSIVE_LEVEL)
-VOID
-UtSetDriverObject(
-    _In_ PDRIVER_OBJECT DriverObject
+_Use_decl_annotations_
+NTSTATUS
+CoRecordWkdDriverObject(
+    _In_ const PDRIVER_OBJECT DriverObject
     )
 {
+    PAGED_CODE();
+
+    if (!DriverObject) return STATUS_INVALID_PARAMETER;
+
+    /* 引用驱动对象，防止过早删除 */
+    ObReferenceObject(DriverObject);
     WkdDriverObject = DriverObject;
+
+    return STATUS_SUCCESS;
 }
 
 //
@@ -1381,4 +1397,38 @@ Return Value:
     
     /* 发生了未知错误??? */
     return STATUS_UNSUCCESSFUL;
+}
+
+/* ============================================================================
+ * 内核代码安全读取
+ * ============================================================================ */
+
+_Use_decl_annotations_
+NTSTATUS
+CoReadKernelRegionSafe(
+    _Out_writes_bytes_(Size) PVOID Buffer,
+    _In_ const PVOID Address,
+    _In_ SIZE_T Size
+    )
+{
+    if (!Buffer || !Address || Size == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //
+    // 内核地址必须高于 MmUserProbeAddress
+    // 拒绝任何用户态空间地址
+    //
+    if ((ULONG_PTR)Address < (ULONG_PTR)MmUserProbeAddress) {
+        return STATUS_INVALID_ADDRESS;
+    }
+
+    __try {
+        RtlCopyMemory(Buffer, Address, Size);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+
+    return STATUS_SUCCESS;
 }

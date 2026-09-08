@@ -35,6 +35,7 @@ typedef struct _WKD_CERT_CACHE_ENTRY {
     BOOLEAN  IsRevocationChecked;
     ULONG64  SignTime;
     CHAR     CatalogName[260];
+    WCHAR    RevokeReason[96];    /* 吊销原因细分 (SS CV 增量迁移 2026-09-02, Revoked 时有效) */
     LONG     SignerReputation;
     ULONG    SignerCategory;
     BOOLEAN  IsEvCert;
@@ -122,6 +123,8 @@ Return Value:
         Result->SignTime = e->SignTime;
         strncpy_s(Result->CatalogName, sizeof(Result->CatalogName),
                   e->CatalogName, _TRUNCATE);
+        wcsncpy_s(Result->RevokeReason, RTL_NUMBER_OF(Result->RevokeReason),
+                  e->RevokeReason, _TRUNCATE);
         Result->SignerReputation = e->SignerReputation;
         Result->SignerCategory = e->SignerCategory;
         Result->IsEvCert = e->IsEvCert;
@@ -185,6 +188,8 @@ Return Value:
     e->IsRevocationChecked = Result->IsRevocationChecked;
     e->SignTime = Result->SignTime;
     strncpy_s(e->CatalogName, sizeof(e->CatalogName), Result->CatalogName, _TRUNCATE);
+    wcsncpy_s(e->RevokeReason, RTL_NUMBER_OF(e->RevokeReason),
+              Result->RevokeReason, _TRUNCATE);
     e->SignerReputation = Result->SignerReputation;
     e->SignerCategory = Result->SignerCategory;
     e->IsEvCert = Result->IsEvCert;

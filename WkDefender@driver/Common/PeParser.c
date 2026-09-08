@@ -499,8 +499,6 @@ CoParsePe(
 --*/
 {
     NTSTATUS status = STATUS_UNSUCCESSFUL;
-    ULONG offset;
-    ULONG optSize;
 
     if (!Context || !Context->Data || Context->DataSize == 0 ||
         Context->Mode >= WkdPeMode_Max) {
@@ -512,6 +510,8 @@ CoParsePe(
     RtlZeroMemory(&Context->Facts, sizeof(Context->Facts));
 
      __try { 
+         ULONG offset;
+
         /* === DOS 头 === */
         {
             PIMAGE_DOS_HEADER dos;
@@ -526,9 +526,9 @@ CoParsePe(
             }
 
             /* === e_lfanew 校验 === */
-            offset = (ULONG)dos->e_lfanew;
+            offset = dos->e_lfanew;
             if (offset < sizeof(IMAGE_DOS_HEADER) ||
-                offset + sizeof(ULONG) > Context->DataSize ) {
+                offset + FIELD_OFFSET(IMAGE_NT_HEADERS, FileHeader) > Context->DataSize ) {
                 return STATUS_INVALID_IMAGE_FORMAT;
             }
         }
@@ -547,7 +547,8 @@ CoParsePe(
             }
 
             /* === IMAGE_FILE_HEADER 校验 === */
-            if (offset + FIELD_OFFSET(IMAGE_NT_HEADERS, OptionalHeader) > Context->DataSize) {
+            if (offset + FIELD_OFFSET(IMAGE_NT_HEADERS, OptionalHeader) +
+                FIELD_OFFSET(IMAGE_OPTIONAL_HEADER, Magic) > Context->DataSize) {
                 return STATUS_INVALID_IMAGE_FORMAT;
             }
 

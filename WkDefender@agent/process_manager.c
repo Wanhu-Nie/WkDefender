@@ -266,7 +266,7 @@ typedef struct _PM_ENUM_LIST_CTX {
     ULONG         Count;
 } PM_ENUM_LIST_CTX, *PPM_ENUM_LIST_CTX;
 
-/* 枚举回调: 统计/填充存活进程节点 (CoHashMapEnumerate 共享锁内调用,
+/* 枚举回调: 统计/填充存活进程节点 (CoEnumerateHashMap 共享锁内调用,
  * 仅做拷贝, 不触碰节点生命周期) */
 static BOOLEAN PM_EnumAliveNodesCallback(HANDLE Key, ULONG KeySize, PVOID Value, PVOID Ctx)
 {
@@ -330,11 +330,11 @@ NTSTATUS ProcessManager_GetProcessList(
     PM_ENUM_LIST_CTX ctx;
 
     /* 遍历进程域树 (2026-08-24 HashMap 化: 替代 ProcessListHead 全局链)。
-     * CoHashMapEnumerate 逐桶共享锁, 回调内仅拷贝。 */
+     * CoEnumerateHashMap 逐桶共享锁, 回调内仅拷贝。 */
     ctx.List = NULL;
     ctx.Capacity = 0;
     ctx.Count = 0;
-    CoHashMapEnumerate(&WkdProcessTree.PidMap, PM_EnumAliveNodesCallback, &ctx);
+    CoEnumerateHashMap(&WkdProcessTree.PidMap, PM_EnumAliveNodesCallback, &ctx);
 
     if (ctx.Count > 0) {
         // 分配内存用于存储进程信息
@@ -347,7 +347,7 @@ NTSTATUS ProcessManager_GetProcessList(
         ctx.List = processList;
         ctx.Capacity = ctx.Count;
         ctx.Count = 0;
-        CoHashMapEnumerate(&WkdProcessTree.PidMap, PM_EnumAliveNodesCallback, &ctx);
+        CoEnumerateHashMap(&WkdProcessTree.PidMap, PM_EnumAliveNodesCallback, &ctx);
     }
 
     // 设置返回值 (以实际填充数为准, 兜底并发插入导致的容量差)

@@ -72,7 +72,7 @@ typedef struct _WKD_MODULE {
                                            * 消除深度分析（IocHeuristicPeAnalysis）二次完整解析。 */
     ULONG          SectionAlignment;
     ULONG          FileAlignment;
-    ULONG          SizeOfImage;
+    SIZE_T         SizeOfImage;
     ULONG          DllCharacteristics;  /* 补存（IocAnalyzePeFromFilePath 提取，PeHeaders 缓解检测） */
     WKD_IMAGE_PROPERTIES ImageProperties;
 
@@ -136,6 +136,26 @@ PsModuleInstanceAttachProcess(
     _Inout_ PWKD_MODULE Module,
     _In_opt_ PVOID ImageBase,
     _Out_opt_ PWKD_MODULE_INSTANCE* Instance
+    );
+
+/* 按模块名（尾部文件名, 如 L"ntdll.dll"）在进程模块实例链中
+ * 定位模块实例。磁盘视图（ImageBase=NULL）视为未命中；
+ * 命中实例保证 ImageBase 为有效映射基址。 */
+NTSTATUS
+PsLookupModuleInstanceByName(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _In_ PCWSTR ModuleName,
+    _Out_ PWKD_MODULE_INSTANCE* Instance
+    );
+
+/* 获取进程主模块（exe 映像）实例：MainModule 标志由挂载首个实例
+ * 置位（进程创建期补挂的 exe 磁盘视图，2026-09-07）。磁盘视图
+ * （ImageBase=NULL）视为未命中，命中实例 ImageBase 有效。 */
+_Must_inspect_result_
+NTSTATUS
+PsGetMainModuleInstance(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _Out_ PWKD_MODULE_INSTANCE* Instance
     );
 
 VOID

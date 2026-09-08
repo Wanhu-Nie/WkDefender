@@ -7,8 +7,10 @@
 
 #include "IocProcess.h"
 #include "AnalysisEngine.h"
+#include "../Common/ExportParser.h"
 #include "../Callbacks/ProcessNotify.h"
 #include "../Process/ProcessPairContext.h"
+#include "../Process/ProcessAccessProtection.h"   /* PapClassifyProcess: §2.5 安全画像采集 */
 #include "../Common/PeParser.h"
 #include "../Common/PeCallbacks.h"
 #include <ntimage.h>    /* IMAGE_DOS_HEADER / IMAGE_NT_HEADERS 等 PE 结构（DEP 静态特征采集用） */
@@ -24,25 +26,9 @@ extern WKD_PROCESS_MONITOR g_WkdProcessMonitor;
 extern PTS_ENGINE WkdTsEngine;
 
 //
-// 函数指针：PsGetProcessSessionId（某些 WDK 版本未导出，通过 MmGetSystemRoutineAddress 获取）
+// PsGetProcessSessionId / ZwQueryInformationProcess 的原型与函数指针统一由
+// Common/ExportParser.h 提供（pfnPsGetProcessSessionId / pfnZwQueryInformationProcess）。
 //
-extern ULONG(*pfnPsGetProcessSessionId)(PEPROCESS Process);
-
-//
-// NTSYSAPI 声明：ZwQueryInformationProcess（用于 IocpCapturePrivilegeInfo Phase 6
-// 运行时 DEP 查询，迁移自 SS PapAnalyzeSecurityMitigations；仿 HandleScanner.c
-// L20-42 声明模式）
-//
-NTSYSAPI
-NTSTATUS
-NTAPI
-ZwQueryInformationProcess(
-    _In_ HANDLE ProcessHandle,
-    _In_ PROCESSINFOCLASS ProcessInformationClass,
-    _Out_writes_bytes_(ProcessInformationLength) PVOID ProcessInformation,
-    _In_ ULONG ProcessInformationLength,
-    _Out_opt_ PULONG ReturnLength
-    );
 
 /**************************************************/
 /*            特权索引                             */
@@ -560,7 +546,7 @@ IocpCapturePrivilegeInfo(
             ULONG executeFlags = 0;
             ULONG returnLength = 0;
 
-            status = ZwQueryInformationProcess(
+            status = pfnZwQueryInformationProcess(
                 processHandle,
                 (PROCESSINFOCLASS)34,          /* ProcessExecuteFlags */
                 &executeFlags,
@@ -1934,6 +1920,24 @@ IocAnalysisProcess(
 
     /* §2 令牌信息 + 特权捕获（含跨会话/提权 IOC） */
     IocpCapturePrivilegeInfo(Pair, targetWkdProcess);
+
+    /* §2.5 安全画像采集（Pap 句柄防护，2026-09-05 架构重构：受保护判定状态
+     * 自全局引擎缓存下沉为进程自述元数据 WKD_SECURITY_CONTEXT.PapProfile）。
+     * 本域处于 SecurityContext->Lock 独占下，打包写无并发写者；分类用
+     * PapClassifyProcess（Pap 画像 + 映像名后缀，无锁纯计算；
+     * 2026-09-05：AU 受保护进程表已删除，EDR 组件判定收敛为 Pap 画像）。
+     * 未命中分类的进程画像保持 0 = Unknown/None，Pap 判定按无保护放行
+     * （或首次访问时现场补分类回写，兜底 EDR 组件后启动窗口）。 */
+    {
+        WKD_PAP_PROCESS_CATEGORY papCategory;
+        WKD_PAP_PROTECTION_LEVEL papLevel;
+
+        if (PapClassifyProcess(targetWkdProcess->Core.EProcess,
+            &papCategory, &papLevel)) {
+            targetWkdProcess->SecurityContext->PapProfile =
+                (ULONG)WKD_PAP_PROFILE_TO_VALUE(papCategory, papLevel);
+        }
+    }
 
     /* §3 命令行深度分析（2026-08 激活，迁移自 SS BehaviorEngine 事件流） */
     // IocpDetectCommandLine(Pair, targetWkdProcess);

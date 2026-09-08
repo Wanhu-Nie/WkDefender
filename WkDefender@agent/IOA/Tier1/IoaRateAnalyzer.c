@@ -1237,7 +1237,7 @@ RaInitialize(
 Routine Description:
     初始化速率分析器 + 统计基线引擎。
 
-    对齐 SS AdInitialize:
+    对齐 SS SpInitializeAntiDebugProtection:
       1. 全局基线 (每 metric 单份) 初始化
       2. 进程基线哈希桶 + 链表
       3. 异常环

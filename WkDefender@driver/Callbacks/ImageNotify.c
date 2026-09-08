@@ -33,40 +33,16 @@
 #include "../AnalysisEngine/IocAppControl.h"
 #include "../Common/PeParser.h"
 #include "../Common/Utils.h"
+#include "../Common/ExportParser.h"
 #include <ntimage.h>
 #include <ntstrsafe.h>
 
 //
-// 未文档化 ntoskrnl 导出 API 声明（对齐 PS ImageNotify.c:154-166）
+// PsGetProcessInheritedFromUniqueProcessId / PsGetProcessSessionId /
+// SeGetCachedSigningLevel 的原型与函数指针统一由 Common/ExportParser.h
+// 提供（pfnPsGetProcessInheritedFromUniqueProcessId / pfnPsGetProcessSessionId /
+// pfnSeGetCachedSigningLevel）。
 //
-NTKERNELAPI
-HANDLE
-NTAPI
-PsGetProcessInheritedFromUniqueProcessId(
-    _In_ PEPROCESS Process
-    );
-
-NTKERNELAPI
-ULONG
-NTAPI
-PsGetProcessSessionId(
-    _In_ PEPROCESS Process
-    );
-
-//
-// SeGetCachedSigningLevel 在 WDK 26100 中未声明，手动声明函数指针类型
-//（Windows 11 WDK 已导出，兼容 Windows 10 运行时 ntoskrnl 中存在此导出）
-//
-typedef NTSTATUS (NTAPI *PFN_SeGetCachedSigningLevel)(
-    _In_ PFILE_OBJECT FileObject,
-    _Out_ PULONG Flags,
-    _Out_ PSE_SIGNING_LEVEL SigningLevel,
-    _Out_opt_ PUCHAR Thumbprint,
-    _Out_opt_ PULONG ThumbprintSize,
-    _Out_opt_ PULONG ThumbprintAlgorithm
-    );
-
-static PFN_SeGetCachedSigningLevel g_pfnSeGetCachedSigningLevel = NULL;
 
 // ============================================================================
 // 引导阶段关键镜像基名表 g_CriticalBootImages + ImgpIsCriticalBootImage
@@ -245,12 +221,12 @@ ImgpGetCachedSigningLevel(
         ULONG ciFlags = 0;
         SE_SIGNING_LEVEL level = SE_SIGNING_LEVEL_UNCHECKED;
 
-        if (g_pfnSeGetCachedSigningLevel == NULL) {
+        if (pfnSeGetCachedSigningLevel == NULL) {
             /* 函数不可用，跳过签名判定 */
             return;
         }
 
-        status = g_pfnSeGetCachedSigningLevel(
+        status = pfnSeGetCachedSigningLevel(
             imageInfoEx->FileObject, &ciFlags, &level, NULL, NULL, NULL);
 
         if (NT_SUCCESS(status)) {
@@ -416,10 +392,9 @@ CbpNotifyImageLoad(
 // 核心回调
 // ============================================================================
 
-_IRQL_requires_(PASSIVE_LEVEL)
-static
+_Use_decl_annotations_
 VOID
-CbpImageNotifyCallback(
+CbImageNotifyCallback(
     _In_opt_ PUNICODE_STRING FullImageName,
     _In_ HANDLE ProcessId,
     _In_ PIMAGE_INFO ImageInfo
@@ -619,15 +594,10 @@ CbInitializeImageNotify(
     VOID
     )
 {
-    UNICODE_STRING funcName;
-    RtlInitUnicodeString(&funcName, L"SeGetCachedSigningLevel");
-    g_pfnSeGetCachedSigningLevel = (PFN_SeGetCachedSigningLevel)MmGetSystemRoutineAddress(&funcName);
-    if (g_pfnSeGetCachedSigningLevel == NULL) {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-            "[WkDefender] SeGetCachedSigningLevel not found, signature check disabled.\n");
-    }
+    // pfnSeGetCachedSigningLevel 已统一由 Common/ExportParser 在 DriverEntry
+    // 早期解析，此处直接使用（可能为 NULL，调用点自行判空降级）。
 
-    NTSTATUS status = PsSetLoadImageNotifyRoutine(CbpImageNotifyCallback);
+    NTSTATUS status = PsSetLoadImageNotifyRoutine(CbImageNotifyCallback);
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
             "[WkDefender] CbInitializeImageNotify failed: 0x%X\n", status);
@@ -644,7 +614,7 @@ ImgNotifyCleanup(
     VOID
     )
 {
-    PsRemoveLoadImageNotifyRoutine(CbpImageNotifyCallback);
+    PsRemoveLoadImageNotifyRoutine(CbImageNotifyCallback);
 }
 
 /* 2026-08-11：ImgNotifyProcessTerminated 死代码已删除——模块追踪清理统一由

@@ -35,8 +35,101 @@
 #define WKD_REP_WEIGHT_CERT_REP_UNTRUSTED -50   /* cert_reputation 表命中不受信 (SS GetCertificateTrust 接线) */
 
 /**************************************************/
+/*            信任层级与验证细分枚举                */
+/*  (对齐 SS CertificateValidator TrustLevel /     */
+/*   ValidationResult, 2026-09-02 增量迁移)        */
+/**************************************************/
+
+/* 统一信任层级 (对齐 SS TrustLevel 7 级, 按 WKD 信任判定能力归并:
+ *  WKD 信任判定为 WinVerifyTrust 二元结果, 无自定义根 store,
+ *  CustomRoot/EnterpriseRoot/SystemRoot 归并为 Validated;
+ *  EV 由 CERT_EV_PROP_ID 提升为独立顶级。 */
+typedef enum _WKD_TRUST_LEVEL {
+    WkdTrust_Untrusted   = 0,  /* 未受信 (Revoked/Expired/Invalid/UntrustedRoot, 对齐 SS Untrusted) */
+    WkdTrust_Unknown     = 1,  /* 未知 (无法判定/未签名, 对齐 SS Unknown) */
+    WkdTrust_SelfSigned  = 2,  /* 有效自签名 (对齐 SS SelfSigned) */
+    WkdTrust_Validated   = 3,  /* 链验证通过 (系统/企业根归并, 对齐 SS SystemRoot/EnterpriseRoot/CustomRoot) */
+    WkdTrust_EvValidated = 4   /* EV 扩展验证 (对齐 SS EVValidated) */
+} WKD_TRUST_LEVEL, *PWKD_TRUST_LEVEL;
+
+/* 证书级验证细分结果 (对齐 SS ValidationResult 16 态, 按 WKD 文件级
+ * DEF_CERT_STATUS 8 态 + 深度校验字段细化映射)。
+ * 消费面: 告警文案 / 信誉归因细分。 */
+typedef enum _WKD_CERT_DETAIL {
+    WkdCertDetail_Valid               = 0,  /* SS ValidationResult::Valid */
+    WkdCertDetail_Invalid             = 1,  /* SS Invalid */
+    WkdCertDetail_Expired             = 2,  /* SS Expired */
+    WkdCertDetail_Revoked             = 3,  /* SS Revoked */
+    WkdCertDetail_UntrustedRoot       = 4,  /* SS UntrustedRoot */
+    WkdCertDetail_ChainBuildingFailed = 5,  /* SS ChainBuildingFailed (链构建失败/断裂) */
+    WkdCertDetail_WeakAlgorithm       = 6,  /* SS WeakAlgorithm (有效签名但 MD5/SHA-1) */
+    WkdCertDetail_Unsigned            = 7,  /* 未签名 (SS 无独立态, 独立化归并) */
+    WkdCertDetail_Unknown             = 8,  /* SS Error (无法判定) */
+    WkdCertDetail_MaxValue
+} WKD_CERT_DETAIL, *PWKD_CERT_DETAIL;
+
+/* 运行时证书黑名单条 (对齐 SS BlockCertificate kMaxBlockedCerts 防无界;
+ *  WKD 消费域为签名者指纹, 512 槽足矣, 拒绝恶意无限增长) */
+#define WKD_BLOCKED_SIGNER_MAX   512
+#define WKD_BLOCKED_REASON_CCH   96
+
+typedef struct _WKD_BLOCKED_SIGNER_ENTRY {
+    CHAR   Thumbprint[64];          /* SHA1 thumbprint hex 小写 (key) */
+    WCHAR  Reason[WKD_BLOCKED_REASON_CCH]; /* 阻断原因 (对齐 SS BlockCertificate reason) */
+} WKD_BLOCKED_SIGNER_ENTRY, *PWKD_BLOCKED_SIGNER_ENTRY;
+
+/**************************************************/
 /*                  函数声明                       */
 /**************************************************/
+
+/* 运行时证书黑名单 (对齐 SS BlockCertificate/UnblockCertificate/IsBlocked,
+ * 2026-09-02 CertificateValidator 增量迁移)。
+ * key = 叶证书 SHA1 thumbprint hex (小写, 大小写不敏感匹配)。 */
+BOOLEAN
+IocScan_BlockSigner(
+    _In_ PCSTR          Thumbprint, /* SHA1 thumbprint hex (40 字符) */
+    _In_opt_ PCWSTR     Reason      /* 阻断原因 (可为 NULL) */
+    );
+
+BOOLEAN
+IocScan_UnblockSigner(
+    _In_ PCSTR Thumbprint
+    );
+
+BOOLEAN
+IocScan_IsSignerBlocked(
+    _In_ PCSTR Thumbprint
+    );
+
+ULONG
+IocScan_GetBlockedSignerCount(
+    VOID
+    );
+
+NTSTATUS
+IocScan_GetBlockedSigners(
+    _Out_writes_to_(MaxEntries, *Count) PWKD_BLOCKED_SIGNER_ENTRY Entries,
+    _In_  ULONG MaxEntries,
+    _Out_ PULONG Count
+    );
+
+/* 统一信任层级评估 (对齐 SS CertificateValidator::GetTrustLevel) */
+WKD_TRUST_LEVEL
+IocScan_EvaluateTrustLevel(
+    _In_ PIOC_SCAN_RESULT Result
+    );
+
+/* 证书级验证细分映射 (对齐 SS ValidationResult 语义) */
+WKD_CERT_DETAIL
+IocScan_MapCertDetail(
+    _In_ PIOC_SCAN_RESULT Result
+    );
+
+/* 细分结果名 (供告警/归因文案) */
+PCWSTR
+IocScan_CertDetailName(
+    _In_ WKD_CERT_DETAIL Detail
+    );
 
 /*++
 Routine Description:

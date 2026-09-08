@@ -457,7 +457,7 @@ Return Value:
 BOOLEAN
 IocCert_GetInfo(
     _In_  PCCERT_CONTEXT Cert,
-    _Out_ PWKD_CERT_INFO Info
+    _Out_ PWKD_CERT_DETAILS Info
     )
 /*++
 Routine Description:
@@ -1482,9 +1482,10 @@ IocCert_VerifyAgainstCA(
 }
 
 /* 独立吊销查询 (对齐 SS GetRevocationStatus L2450-2572)。
- * CertVerifyRevocation + CRL reason 6 细分。不接入原因: wkd 现仅链内吊销
- * (IocScanner.c #60 门控), 独立查询供未来吊销情报消费。 */
-static
+ * CertVerifyRevocation + CRL reason 6 细分。2026-09-02 由 static 升级导出:
+ * SignatureVerifier Revoked 分支接线消费 (吊销原因细分, CertificateValidator
+ * 增量迁移)。注意: CertVerifyRevocation 在网络可达时可能访问吊销分发点,
+ * 调用方须处于吊销检查已启语境 (WKD cache-only 语义由链阶段判定把关)。 */
 BOOLEAN
 IocCert_GetRevocationStatus(
     _In_  PCCERT_CONTEXT Cert,

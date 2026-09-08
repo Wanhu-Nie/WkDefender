@@ -47,6 +47,7 @@ typedef enum _WKD_MESSAGE_SOURCE {
     WkdMessage_SourceNetwork,           // 网络监控模块（预留）
     WkdMessage_SourceHandleScanner,     // HandleScanner 句柄扫描模块
     WkdMessage_SourceAmsiBypass,        // AmsiBypassDetector 模块
+    WkdMessage_SourceEtw,               // ETW Provider（ETW 迁移 2026-09-07）
 } WKD_MESSAGE_SOURCE, *PWKD_MESSAGE_SOURCE;
 
 //
@@ -81,10 +82,13 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_MemoryAllocate = 0x1101,            // 内存分配
     WkdMessage_MemoryFree = 0x1102,                // 内存释放
     WkdMessage_MemoryProtect = 0x1103,             // 内存保护修改
+    WkdMessage_MemoryAlert = 0x1104,               // 内存告警（Shellcode/注入/Hollowing，ETW 全覆盖映射）
 
     // 注册表原始事件
     WkdMessage_RegistrySetValue = 0x1201,          // 注册表写入
     WkdMessage_RegistryDeleteValue = 0x1202,       // 注册表删除
+    WkdMessage_RegistrySuspicious = 0x1203,        // 注册表可疑操作（ETW 全覆盖映射）
+    WkdMessage_RegistryBlocked = 0x1204,           // 注册表阻断（ETW 全覆盖映射）
 
     // 文件原始事件
     WkdMessage_FileCreate = 0x1301,                // 文件创建
@@ -95,11 +99,22 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_FileShadowCopyDelete = 0x1306,      // 卷影副本删除（T1490，勒索检测）
     WkdMessage_NamedPipeCreate = 0x1307,           // 命名管道创建（NamedPipeMonitor 迁移 2026-08）
     WkdMessage_SectionMap = 0x1308,                // 可执行区段映射（代码执行映射检测，PreAcquireSection 迁移 2026-08）
+    WkdMessage_FileScanResult = 0x1309,            // 文件扫描结果（ETW 全覆盖映射，SS EtwEventId_FileScanResult 对齐）
+    WkdMessage_FileBlocked = 0x130A,               // 文件阻断（ETW 全覆盖映射，SS EtwEventId_FileBlocked 对齐）
+    WkdMessage_FileQuarantined = 0x130B,           // 文件隔离（ETW 全覆盖映射，SS EtwEventId_FileQuarantined 对齐）
 
     // 对象访问原始事件（ObjectNotify 发送）
     WkdMessage_ProcessObjectAccess = 0x1401,        // 敏感对象访问（进程）
     WkdMessage_ThreadObjectAccess = 0x1402,         // 敏感对象访问（线程）
     WkdMessage_HandleDuplicate = 0x1403,            // 句柄复制事件（HandleTracker 迁移 2026-08，死代码：依赖 Ob 回调激活）
+
+    // 网络原始事件（ETW 全覆盖映射，对标 SS EtwEventId_Network 600-605）
+    WkdMessage_NetworkConnect = 0x1601,             // 网络连接
+    WkdMessage_NetworkListen = 0x1602,              // 网络监听
+    WkdMessage_DnsQuery = 0x1603,                   // DNS 查询
+    WkdMessage_C2Detected = 0x1604,                 // C2 通信检测
+    WkdMessage_ExfiltrationDetected = 0x1605,       // 数据泄露检测
+    WkdMessage_NetworkBlocked = 0x1606,             // 网络阻断
 
     // ========================================
     // Layer 1B: 行为分析结果层（BehaviorEngine发送）
@@ -116,6 +131,13 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_ThreatScoreUpdated = 0x2201,        // 威胁评分更新
     WkdMessage_ThreatLevelChanged = 0x2202,        // 威胁等级变化
 
+    // 行为分析结果层（ETW 全覆盖映射，对标 SS EtwEventId_Behavior 700-704）
+    WkdMessage_BehaviorAlert = 0x2401,              // 行为告警
+    WkdMessage_AttackChainStarted = 0x2402,         // 攻击链启动
+    WkdMessage_AttackChainUpdated = 0x2403,         // 攻击链更新
+    WkdMessage_AttackChainCompleted = 0x2404,       // 攻击链完成
+    WkdMessage_MitreDetection = 0x2405,             // MITRE ATT&CK 检测映射
+
     // ========================================
     // Layer 2: 系统级事件（ProcessMonitor等基础模块发送）
     // ========================================
@@ -130,13 +152,28 @@ typedef enum _WKD_MESSAGE_TYPE {
     WkdMessage_ProcessSnapshot = 0x3008,            // 进程枚举快照（批量）
     WkdMessage_HandleScan = 0x3009,                  // 句柄扫描结果
 
+    // 系统级事件（ETW 全覆盖映射，Suspicious/Blocked 变体）
+    WkdMessage_ProcessCreatedSuspicious = 0x300A,   // 进程创建-可疑（SS EtwEventId_ProcessSuspicious 对齐）
+    WkdMessage_ProcessCreatedBlocked = 0x300B,      // 进程创建-阻断（SS EtwEventId_ProcessBlocked 对齐）
+    WkdMessage_ThreadCreatedSuspicious = 0x300C,    // 线程创建-可疑（SS EtwEventId_ThreadSuspicious 对齐）
+    WkdMessage_ImageLoadedSuspicious = 0x300D,      // 镜像加载-可疑（SS EtwEventId_ImageSuspicious 对齐）
+    WkdMessage_ImageLoadedBlocked = 0x300E,         // 镜像加载-阻断（SS EtwEventId_ImageBlocked 对齐）
+
     // ========================================
     // Layer 3: 通用消息
     // ========================================
 
     WkdMessage_SecurityEvent = 0x4001,             // 安全事件
     WkdMessage_SystemStatus = 0x4002,              // 系统状态
-    WkdMessage_Error = 0x4003                      // 错误报告
+    WkdMessage_Error = 0x4003,                      // 错误报告
+
+    // Layer 3 诊断消息（ETW 全覆盖映射，对标 SS EtwEventId_Diagnostic 900-905，不进编排链，仅审计）
+    WkdMessage_DriverStarted = 0x4101,              // 驱动启动
+    WkdMessage_DriverStopping = 0x4102,             // 驱动停止
+    WkdMessage_Heartbeat = 0x4103,                  // 心跳
+    WkdMessage_PerformanceStats = 0x4104,           // 性能统计
+    WkdMessage_ComponentHealth = 0x4105,            // 组件健康
+    WkdMessage_DriverError = 0x4106,                // 驱动错误
 } WKD_MESSAGE_TYPE, WKD_EVENT_TYPE;
 
 //
@@ -246,7 +283,7 @@ typedef struct _WKD_MESSAGE_BODY_OBJECT_ACCESS {
 
 //
 // 句柄复制事件消息体（对齐 SS HtRecordDuplication 参数语义，HandleTracker 迁移 2026-08）
-// 死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE，CbObjectNotifyInitialize 未激活；
+// 死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE，CbInitializeObjectNotify 未激活；
 // Agent 侧由因果图消费（跨进程边，对齐 SS PrAddRelationship(PrRelation_HandleDuplication)）。
 //
 typedef struct _WKD_MESSAGE_BODY_HANDLE_DUPLICATE {
@@ -536,6 +573,123 @@ typedef struct _WKD_MESSAGE_BODY_SECTION_CREATE {
 
     LARGE_INTEGER   Timestamp;
 } WKD_MESSAGE_BODY_SECTION_CREATE, *PWKD_MESSAGE_BODY_SECTION_CREATE;
+
+/**************************************************/
+/*       网络事件消息体（驱动→Agent，线格式）       */
+/*                                                  */
+/*  用于 WkdMessage_Network*（ETW 全覆盖映射，对标  */
+/*  SS ETW_NETWORK_EVENT）。定长，无变长数据。       */
+/*  IP 字段：V4 存 LocalIpV4/RemoteIpV4，V6 存       */
+/*  LocalIpV6/RemoteIpV6（V4 时清零）。              */
+/**************************************************/
+
+#define WKD_NETWORK_IPV4_ADDR_LEN         4
+#define WKD_NETWORK_IPV6_ADDR_LEN         16
+
+typedef struct _WKD_MESSAGE_BODY_NETWORK_EVENT {
+    /* === 共同上下文 === */
+    HANDLE          ProcessId;          /* 源进程 ID */
+    HANDLE          ThreadId;           /* 源线程 ID */
+    ULONG           SessionId;          /* 会话 ID */
+
+    /* === 连接描述 === */
+    ULONG           Protocol;           /* IPPROTO_*（6=TCP 17=UDP） */
+    ULONG           Direction;          /* 0=出站 1=入站 */
+    USHORT          LocalPort;
+    USHORT          RemotePort;
+    UINT32          LocalIpV4;          /* 网络序或主机序（约定主机序） */
+    UINT32          RemoteIpV4;
+    UINT8           LocalIpV6[WKD_NETWORK_IPV6_ADDR_LEN];
+    UINT8           RemoteIpV6[WKD_NETWORK_IPV6_ADDR_LEN];
+    UINT64          BytesSent;
+    UINT64          BytesReceived;
+
+    /* === 检测 === */
+    UINT32          ThreatScore;        /* 0-100 */
+    UINT32          ThreatType;         /* 0=正常 1=C2 2=Exfil 3=Malware */
+
+    /* === 字符串 === */
+    WCHAR           RemoteHostname[128]; /* 远端主机名 */
+    WCHAR           ProcessPath[512];   /* 源进程路径 */
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_NETWORK_EVENT, *PWKD_MESSAGE_BODY_NETWORK_EVENT;
+
+/**************************************************/
+/*       行为分析事件消息体（驱动→Agent，线格式）   */
+/*                                                  */
+/*  用于 WkdMessage 行为/攻击链/Mitre 系列事件       */
+/*  （ETW 全覆盖映射，对标 SS ETW_BEHAVIOR_EVENT /  */
+/*  ETW_SECURITY_ALERT）。定长，无变长数据。         */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_BEHAVIOR_EVENT {
+    /* === 共同上下文 === */
+    HANDLE          ProcessId;          /* 关联进程 ID */
+    HANDLE          ThreadId;           /* 关联线程 ID */
+    ULONG           SessionId;          /* 会话 ID */
+
+    /* === 行为描述 === */
+    ULONG           BehaviorType;       /* 行为类型（对齐 BehaviorTypes） */
+    ULONG           Category;           /* 行为类别 */
+    LONG64          ChainId;            /* 攻击链 ID（0=无） */
+    ULONG           MitreTechnique;     /* MITRE ATT&CK Technique ID */
+    ULONG           MitreTactic;        /* MITRE ATT&CK Tactic ID */
+    ULONG           ThreatScore;        /* 0-100 */
+    ULONG           Confidence;         /* 置信度 0-1000 */
+
+    /* === 字符串 === */
+    WCHAR           ProcessPath[512];   /* 进程路径 */
+    WCHAR           Description[256];   /* 描述 */
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_BEHAVIOR_EVENT, *PWKD_MESSAGE_BODY_BEHAVIOR_EVENT;
+
+/**************************************************/
+/*       诊断事件消息体（驱动→Agent，线格式）       */
+/*                                                  */
+/*  用于 WkdMessage_DriverStarted/Heartbeat/Error   */
+/*  等诊断消息（ETW 全覆盖映射，对标 SS 9xx 事件）。*/
+/*  仅审计用途，不进编排链。定长，无变长数据。       */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_DIAGNOSTIC_EVENT {
+    ULONG           ComponentId;        /* 组件 ID */
+    ULONG           Severity;           /* 1-10（对齐 DebugLevel/威胁等级） */
+    ULONG           ErrorCode;          /* NTSTATUS 或自定义错误码 */
+    HANDLE          RelatedProcessId;   /* 相关进程 ID */
+    WCHAR           ComponentName[128]; /* 组件名 */
+    WCHAR           Message[512];       /* 诊断消息 */
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_DIAGNOSTIC_EVENT, *PWKD_MESSAGE_BODY_DIAGNOSTIC_EVENT;
+
+/**************************************************/
+/*       内存/注入告警事件体（驱动→Agent，线格式）  */
+/*                                                  */
+/*  用于 WkdMessage_MemoryAlert（ETW 全覆盖映射，   */
+/*  对标 SS ETW_MEMORY_EVENT）。定长，无变长数据。  */
+/*  已有 WKD_MESSAGE_BODY_SECTION_MAP/SECTION_CREATE */
+/*  覆盖映射/区段轨，本结构覆盖注入/Shellcode/Hollow*/
+/*  ing 内存告警。                                  */
+/**************************************************/
+
+typedef struct _WKD_MESSAGE_BODY_MEMORY_ALERT {
+    /* === 上下文 === */
+    HANDLE          SourceProcessId;    /* 源进程（发起者） */
+    HANDLE          TargetProcessId;    /* 目标进程 */
+    HANDLE          ThreadId;           /* 相关线程 */
+
+    /* === 告警描述 === */
+    ULONG           AlertType;          /* 0=Shellcode 1=Injection 2=Hollowing 3=Allocation 4=ProtectionChange */
+    UINT64          BaseAddress;        /* 内存基址 */
+    UINT64          RegionSize;         /* 区域大小 */
+    ULONG           Protection;         /* 内存保护（PAGE_* 或请求保护） */
+    ULONG           OldProtection;      /* 旧保护（ProtectionChange 时） */
+    ULONG           ThreatScore;        /* 0-100 */
+    ULONG           Flags;              /* 保留 */
+
+    /* === 字符串 === */
+    WCHAR           ProcessPath[512];   /* 源进程路径 */
+    LARGE_INTEGER   Timestamp;
+} WKD_MESSAGE_BODY_MEMORY_ALERT, *PWKD_MESSAGE_BODY_MEMORY_ALERT;
 
 /**************************************************/
 /*       句柄扫描结果事件体（驱动→Agent，线格式）   */

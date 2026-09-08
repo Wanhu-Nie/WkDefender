@@ -3,21 +3,10 @@
 #include "IocEngine.h"
 #include "IoaEngine.h"
 #include "../Notification/NotificationManager.h"
+#include "../Common/ExportParser.h"
 
-//
-// Forward declaration for undocumented but supported API (Win8.1+)
-// PsGetProcessSignatureLevel returns VOID and populates output params
-//
-#if (NTDDI_VERSION >= NTDDI_WINBLUE)
-typedef
-NTKERNELAPI
-UCHAR
-(*PFN_PsGetProcessSignatureLevel)(
-    _In_ PEPROCESS Process,
-    _Out_ PUCHAR SectionSignatureLevel
-    );
-PFN_PsGetProcessSignatureLevel pfnPsGetProcessSignatureLevel;
-#endif
+// PsGetProcessSignatureLevel 的 typedef 原型与函数指针（pfnPsGetProcessSignatureLevel）
+// 已统一由 Common/ExportParser.h 提供（Win8.1+）。
 
 //
 // AnalysisEngine — IOC/IOA 统一容器

@@ -18,8 +18,14 @@
 #pragma comment(lib, "crypt32.lib")
 
 /* 驱动 CI 签名状态 (对齐 WkDefenderHeader.h IMG_SIGNATURE_* 值, 避免引入协议头) */
+#ifndef IMG_SIGNATURE_UNEVALUATED
+#define IMG_SIGNATURE_UNEVALUATED 0
+#endif
+#ifndef IMG_SIGNATURE_VALID
+#define IMG_SIGNATURE_VALID       1
+#endif
 #ifndef IMG_SIGNATURE_UNSIGNED
-#define IMG_SIGNATURE_UNSIGNED  2
+#define IMG_SIGNATURE_UNSIGNED    2
 #endif
 
 /**************************************************/
@@ -500,6 +506,23 @@ Return Value:
         IoaSigHunt_AddAnomaly(hunt, WkdSigAnom_SupplyChainAnomaly,
                               WKD_SIG_ANOMALY_SEVERITY_HIGH,
                               "T1553.006", 80);
+    }
+
+    /* 内核已签名 fast path (SS DSV OnKernelImageLoad L2282-2293 迁移, 2026-09-02):
+     * 内核 CI 判定 VALID (等级 > SE_SIGNING_LEVEL_UNSIGNED) 且用户态 9 类分析干净
+     * (无被盗证书 + 无 anomaly) → RiskScore 直置 0。受信系统/厂商签名镜像, 事件
+     * 风险清零供消费方 (Orchestrator 提级判定) 免于低危信号 (如 catalog-only +25)
+     * 误污染。
+     *
+     * 降级说明: WKD 内核上报为 3 态粗粒度 (IMG_SIGNATURE_*), 无 SS 的 8 位 CI 签名
+     * 等级 (SE_SIGNING_LEVEL_WINDOWS=8 起), VALID 涵盖全部等级>0; 这是 SS
+     * "isSystemImage && kernelSigLevel >= 8" 在 WKD 信号面上的最优等价子集
+     * (事件能到达用户态必已过驱动白名单/CI 过滤, 见 Engine.c 阶段4b 注释)。
+     * 不干净则保留风险 (被盗证书/异常仍生效); 置于全部异常检查之后, 低等级 VALID
+     * 镜像的用户态未签名驱动异常 (+100) 不会被误清零。 */
+    if (KernelSigStatus == IMG_SIGNATURE_VALID &&
+        !hunt->IsStolenCert && hunt->AnomalyCount == 0) {
+        hunt->RiskScore = 0;
     }
 
     return STATUS_SUCCESS;

@@ -3,6 +3,7 @@
 #include "../Memory/AmsiBypassDetector.h"
 #include "../Notification/AlpcService.h"
 #include "../FileSystem/FileBackupEngine.h"   /* FBE 进程退出提交备份 */
+#include "../Process/ProcessAccessProtection.h"  /* Pap 进程退出清理钩子 */
 
 //
 // 函数声明
@@ -42,18 +43,6 @@ static
 VOID
 CbEtwCleanup(
     VOID
-    );
-
-//
-// 回调处理函数
-//
-_IRQL_requires_(PASSIVE_LEVEL)
-static
-VOID
-CbpProcessNotifyCallback(
-    _Inout_ PEPROCESS Process,
-    _In_ HANDLE ProcessId,
-    _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo
     );
 
 //
@@ -257,7 +246,7 @@ CbProcessNotifyRegister(
     )
 {
     NTSTATUS Status = PsSetCreateProcessNotifyRoutineEx(
-        CbpProcessNotifyCallback,
+        CbProcessNotifyCallback,
         FALSE
         );
 
@@ -282,7 +271,7 @@ CbProcessNotifyUnregister(
     }
 
     NTSTATUS Status = PsSetCreateProcessNotifyRoutineEx(
-        CbpProcessNotifyCallback,
+        CbProcessNotifyCallback,
         TRUE
         );
 
@@ -570,7 +559,6 @@ CbpHanleProcessTermination(
     /* TODO[ProcessNotify→HandleProtection]: HpProcessTerminated(g_HandleProtection, ProcessId); */
     /* TODO[ProcessNotify→SelfProtection]: ShadowStrikeUnprotectProcess(ProcessId); */
     /* TODO[ProcessNotify→ResourceThrottling]: RtRemoveProcess(g_ResourceThrottler, ProcessId); */
-    /* TODO[ProcessNotify→AntiUnload]: AuUnprotectProcess(g_AntiUnloadProtector, ProcessId); */
     /* TODO[ProcessNotify→ClipboardMonitor]: IocpClipboardRemoveProcess(ProcessId);
      *   （T1115 剪贴板追踪表清理，IocProcess.c §8 死代码——追踪表未激活时无需清理，
      *     待 Filter.c IRP_MJ_WRITE 接线 + IocpClipboardTrackProcess 入表后启用） */
@@ -624,9 +612,8 @@ CbpHanleProcessTermination(
 // 进程回调处理函数
 //
 _Use_decl_annotations_
-static
 VOID
-CbpProcessNotifyCallback(
+CbProcessNotifyCallback(
     _Inout_ PEPROCESS Process,
     _In_ HANDLE ProcessId,
     _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo

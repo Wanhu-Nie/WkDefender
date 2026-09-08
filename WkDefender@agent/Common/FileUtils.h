@@ -1,45 +1,21 @@
 ﻿/**************************************************/
-/*  WkDefender Agent — 文件/字节/哈希工具层          */
+/*  WkDefender Agent — 文件/字节/通用工具层          */
 /*                                                  */
 /*  2026-08-15 重构: 自 IOC/IocScanner.c 迁出        */
-/*  与扫描无关的文件 I/O、多算法哈希(含 CTPH/TLSH)    */
-/*  与文件类型识别(魔数/消歧/分类/扩展名) 逻辑。      */
-/*  保留在 IocScanner.c 的扫描逻辑通过本头调用。      */
+/*  与扫描无关的文件 I/O、文件类型识别(魔数/消歧/     */
+/*  分类/扩展名) 与熵计算(统一) 逻辑。               */
+/*                                                  */
+/*  2026-09-08 重构: 多算法哈希 (SHA256/MD5/CTPH/    */
+/*  TLSH) 与哈希高层已迁出至 BCrypUtils.{c,h} 统一   */
+/*  整合, 本头通过 BCrypUtils.h 转发其 API 声明,     */
+/*  既有调用方（含 IOC 层）保持零改动。             */
 /**************************************************/
 
 #pragma once
 
 #include "../DefendTypes.h"
 #include "../IOC/IocTypes.h"   /* WKD_FILE_FORMAT/WKD_FILE_TYPE_INFO/WKD_FILE_HASH_SET 等 */
-
-/**************************************************/
-/*          多算法哈希 / CTPH 公共 API               */
-/**************************************************/
-
-/* 计算文件 SHA256（BCrypt 分块读取）。 */
-NTSTATUS
-CoComputeFileSha256(
-    _In_ PCWSTR FilePath,
-    _Out_ PDEF_SHA256_HASH Hash
-    );
-
-/* 计算内存缓冲区 SHA256（BCrypt）。 */
-BOOLEAN IocScanner_ComputeBufferSha256(_In_ const BYTE* Buffer, _In_ ULONG Size, _Out_ PDEF_SHA256_HASH Hash);
-
-/* 多算法文件哈希（单遍多句柄, 带 4GB / reparse 护栏）。 */
-BOOLEAN IocScanner_ComputeFileHashMulti(_In_ PCWSTR FilePath, _In_ ULONG Mask, _Out_ PWKD_FILE_HASH_SET Hashes);
-
-/* 多算法缓冲哈希（单遍多句柄）。 */
-BOOLEAN IocScanner_ComputeBufferHashMulti(_In_ const BYTE* Buffer, _In_ ULONG Size, _In_ ULONG Mask, _Out_ PWKD_FILE_HASH_SET Hashes);
-
-/* CTPH 模糊哈希生成（ssdeep 语义）。输出 "blockSize:sig1:sig2"; 0=成功, -1=失败。Out 需 ≥128 字节。 */
-INT IocScanner_ComputeFuzzyHash(_In_ const BYTE* Data, _In_ SIZE_T Size, _Out_ CHAR* Out, _In_ ULONG OutCch);
-
-/* CTPH 相似度比较。0-100 相似度, -1=非法输入。 */
-INT IocScanner_CompareFuzzyHash(_In_ PCSTR Digest1, _In_ PCSTR Digest2);
-
-/* 计算缓冲区 MD5 小写十六进制串 (33 字节含尾 0)。供 ImpHash 计算。 */
-BOOLEAN IocScan_ComputeMd5Hex(_In_ const BYTE* Data, _In_ ULONG Size, _Out_ CHAR* HexOut);
+#include "BCrypUtils.h"        /* 哈希 API 统一出口（2026-09-08 迁移） */
 
 /**************************************************/
 /*               文件类型识别                       */

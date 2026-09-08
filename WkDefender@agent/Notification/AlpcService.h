@@ -213,6 +213,12 @@ typedef enum _WKD_ALPC_MESSAGE_TYPE {
     WkdAlpcMessage_FileEvent              = 0x300A,  /* 文件操作事件（FBE 迁移 2026-08，Driver→Agent）*/
     WkdAlpcMessage_FileRollbackResult     = 0x300B,  /* 回滚结果（FBE 迁移 2026-08，Driver→Agent，死代码：agent 暂不解析，待 UI 消费接线） */
     WkdAlpcMessage_NamedPipeEvent         = 0x300C,  /* 命名管道创建（NamedPipeMonitor 迁移 2026-08，Driver→Agent）*/
+    WkdAlpcMessage_SecurityEvent          = 0x300D,  /* 自保护/安全事件（Driver→Agent，与驱动端 AlpcService 对齐。
+                                                     * 2026-09-01 自保护桥接接线：驱动自防护模块（AntiDebug/AntiUnload/
+                                                     * IntegrityMonitor/RegistryProtection/CallbackProtection）经
+                                                     * WkdReportSelfProtectionEvent → WkdMessage_SecurityEvent(0x4001)
+                                                     * 上报，驱动转换层映射到 0x300D 送达。载荷=整包 WKD_MESSAGE
+                                                     * （Header+Body，Body=WKD_MESSAGE_BODY_SECURITY_EVENT）。*/
 
     WkdAlpcMessage_ThreadOpen               = 0x3101,
     WkdAlpcMessage_MemoryRead               = 0x3102,

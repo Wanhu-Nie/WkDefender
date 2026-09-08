@@ -105,14 +105,18 @@ IoaSigHunt_AnalyzeSignature(
 
 /*++
 Routine Description:
-    镜像加载签名异常分析 (SS DSV OnKernelImageLoad L2274-2338 迁移, 2026-08-09)。
-    供镜像加载链 (Orchestrator/Engine.c 阶段4b) 调用, 在 9 类异常之上叠加两个
-    镜像链专属信号:
+镜像加载签名异常分析 (SS DSV OnKernelImageLoad L2274-2338 迁移, 2026-08-09;
+     fast path 2026-09-02 补齐)。供镜像加载链 (Orchestrator/Engine.c 阶段4b) 调用,
+     在 9 类异常之上叠加镜像链专属信号:
 
-      未签名驱动加载    CertStatus==Unsigned && .sys → RiskScore=100, Critical, T1014
-                      (rootkit 线索, 对齐 SS "Unsigned driver loaded")
-      签名等级不匹配    内核判 IMG_SIGNATURE_UNSIGNED 但用户态签名有效 → +80,
-                      High, T1553.006 (SupplyChainAnomaly: catalog-only/cross-signed 绕过)
+       未签名驱动加载    CertStatus==Unsigned && .sys → RiskScore=100, Critical, T1014
+                       (rootkit 线索, 对齐 SS "Unsigned driver loaded")
+       签名等级不匹配    内核判 IMG_SIGNATURE_UNSIGNED 但用户态签名有效 → +80,
+                       High, T1553.006 (SupplyChainAnomaly: catalog-only/cross-signed 绕过)
+       内核已签名清零    内核判 IMG_SIGNATURE_VALID 且 9 类分析干净 (无被盗证书 +
+                       无 anomaly) → RiskScore=0 (SS fast path L2282-2293 语义降级:
+                       WKD 仅 3 态签名信号, VALID 涵盖 CI 等级>0, 为 WINDOWS 级 >=8
+                       的最优等价子集)
 
     若 CertResult->SignatureHunt.Ran==FALSE (统一入口未做狩猎), 内部先补跑
     IoaSigHunt_AnalyzeSignature。

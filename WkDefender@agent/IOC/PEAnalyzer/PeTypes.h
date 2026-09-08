@@ -10,6 +10,9 @@
 #pragma once
 
 #include <windows.h>
+/* PWKD_PROCESS（PE_PARSER_CONTEXT 内嵌字段 VerifyProcess, 2026-09-07）
+ * 本头自足声明：PeInternal.h 等内部头直接含本头时也能安全解析 */
+#include "../../Process/ProcessTypes.h"
 
 /**************************************************/
 /*              公共 Limits (数组维度/外部使用)      */
@@ -452,6 +455,57 @@ typedef struct _PE_PARSE_OPTIONS {
 } PE_PARSE_OPTIONS, *PPE_PARSE_OPTIONS;
 
 /**************************************************/
+/*       导入校验回调 (双 reader 模式, 2026-09-07)   */
+/*                                                  */
+/*  回调数组挂 PE_PARSER_CONTEXT::ImportVerify:      */
+/*   [0]=常规导入表, [1]=延迟导入表。回调非 NULL 时   */
+/*  PepParseImports/WpeParseDelayImports 截断到 DLL  */
+/*  层（不再展开 Functions），逐 DLL 调回调；回调内  */
+/*  for 循环处理该 DLL 全部函数，用主 reader(内存)    */
+/*  读 IAT 槽实际值 + 校验 reader(文件)读 INT 槽权威  */
+/*  函数名 + 目标 DLL 导出表(临时 ctx)计算期望。      */
+/**************************************************/
+#define PE_MAX_IMPORT_VERIFY_CALLBACKS  2
+
+/* 回调签名：DllInfo 按槽位解释（[0]=PE_IMPORT_DLL*, [1]=PE_DELAY_IMPORT_DLL*）。
+ * 回调返回 STATUS_SUCCESS 且 *Terminated=TRUE 表示命中/提前终止整表。
+ * VerifyHit 为门面（PeVerifyFunctionAddressTable）经 ImportVerify[i].Context 注入的
+ * PPE_IMPORT_VERIFY_HIT 命中输出；VerifyProcess/VerifyProcessHandle 取自
+ * Ctx->VerifyProcess/Ctx->VerifyProcessHandle（2026-09-07 重构：调用方上下文
+ * PE_IMPORT_VERIFY_CONTEXT 已废除，输入全部内聚于解析上下文，输出由门面托管）。 */
+typedef NTSTATUS (*PE_IMPORT_VERIFY_CALLBACK)(
+    _In_ const struct _PE_PARSER_CONTEXT* Ctx,   /* 主解析上下文（内存模式 Reader + VerifyReader） */
+    _In_ const void* DllInfo,                    /* [0]=PE_IMPORT_DLL* / [1]=PE_DELAY_IMPORT_DLL* */
+    _In_ PCWSTR DllName,                         /* 当前 DLL 宽名（NameBlob 解析，可 NULL） */
+    _Inout_ void* VerifyHit,                     /* PPE_IMPORT_VERIFY_HIT（门面注入的命中输出） */
+    _Out_ BOOLEAN* Terminated                    /* 置 TRUE 提前终止整表 */
+    );
+
+typedef struct _PE_IMPORT_VERIFY_CALLBACK_ENTRY {
+    PE_IMPORT_VERIFY_CALLBACK Callback;
+    PVOID  Context;                              /* 门面注入：PPE_IMPORT_VERIFY_HIT（槽位对应） */
+} PE_IMPORT_VERIFY_CALLBACK_ENTRY, *PPE_IMPORT_VERIFY_CALLBACK_ENTRY;
+
+/* 导入校验命中输出（2026-09-07 重构）：PE_IMPORT_VERIFY_CONTEXT 废除后，
+ * 输出内聚为精简结构，由门面 PeVerifyFunctionAddressTable 以
+ * PE_IMPORT_VERIFY_RESULT 聚合（Iat=[0] 常规 / Delay=[1] 延迟）经回调注入。 */
+typedef struct _PE_IMPORT_VERIFY_HIT {
+    BOOLEAN    Found;              /* TRUE=检测到导入槽被篡改（期望≠实际） */
+    WCHAR      DllName[PE_MAX_DLL_NAME + 1];       /* 命中 DLL 宽名 */
+    CHAR       FuncName[PE_MAX_FUNCTION_NAME + 1]; /* 命中函数 ANSI 名（Ordinal≠0 时为空） */
+    USHORT     Ordinal;            /* 按序号导入时的序号（ByName 时为 0） */
+    ULONG_PTR  ExpectedAddress;    /* 期望地址（文件 INT 权威 + 目标 DLL 导出目录推导） */
+    ULONG_PTR  ActualAddress;      /* IAT 槽实际值（内存 reader 读取） */
+} PE_IMPORT_VERIFY_HIT, *PPE_IMPORT_VERIFY_HIT;
+
+/* 导入表校验聚合结果：一次门面调用覆盖常规 + 延迟导入表（复用同一
+ * 进程句柄 / 主模块域 / 校验 reader）。AntiDebug 按 Found 映射两类技术。 */
+typedef struct _PE_IMPORT_VERIFY_RESULT {
+    PE_IMPORT_VERIFY_HIT Iat;      /* 常规导入表（ImportVerify[0] 回调回填） */
+    PE_IMPORT_VERIFY_HIT Delay;    /* 延迟导入表（ImportVerify[1] 回调回填） */
+} PE_IMPORT_VERIFY_RESULT, *PPE_IMPORT_VERIFY_RESULT;
+
+/**************************************************/
 /*             解析上下文                           */
 /**************************************************/
 typedef struct _PE_PARSER_CONTEXT {
@@ -469,6 +523,20 @@ typedef struct _PE_PARSER_CONTEXT {
     BOOLEAN         Parsed;
     BOOLEAN         IsMemoryMode;   /* 内存模式: RvaToOffset 恒等 */
     PE_PARSE_OPTIONS Options;
+
+    /* 导入校验回调（2026-09-07）：非 NULL 时导入解析截断到 DLL 层逐回调校验。
+     * [0]=常规导入表, [1]=延迟导入表。Context 由门面注入对应槽位的
+     * PPE_IMPORT_VERIFY_HIT（命中回填）。 */
+    PE_IMPORT_VERIFY_CALLBACK_ENTRY ImportVerify[PE_MAX_IMPORT_VERIFY_CALLBACKS];
+    /* 校验 reader（文件模式，主模块磁盘副本）：回调内经节表换算读取磁盘 INT/IAT 槽，
+     * 与主 reader（内存模式, Ctx->Reader）双 reader 比对。门面负责构造与销毁。 */
+    PE_READER       VerifyReader;
+    /* 校验载体（2026-09-07 重构, PE_IMPORT_VERIFY_CONTEXT 废除后内聚）：
+     * VerifyProcess      = 目标 WKD_PROCESS（回调查目标 DLL 模块表基址用, 强转自 PVOID）；
+     * VerifyProcessHandle = 目标进程句柄（回调做目标 DLL 导出目录解析临时 ctx 用），
+     *                       句柄所有权归门面，解析结束后由门面关闭。 */
+    PWKD_PROCESS    VerifyProcess;
+    HANDLE          VerifyProcessHandle;
 } PE_PARSER_CONTEXT, *PPE_PARSER_CONTEXT;
 
 /**************************************************/

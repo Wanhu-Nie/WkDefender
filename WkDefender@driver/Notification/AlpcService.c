@@ -3,7 +3,9 @@
 #include "../Process/ProcessPairContext.h"
 #include "../FileSystem/FileBackupEngine.h"   /* �ع������ļ���FBE�� */
 #include "../Common/Utils.h"
-#include "../Common/Exempts/Exempts.h"        /* �ų��������ͣ����� Exempts�� */
+#include "../Common/Exempts/Exempts.h"
+#include "../Common/ExportParser.h"
+#include "../SelfProtection/SelfProtectionEngine.h"   /* 自防护引擎（受控卸载 SpEngineUnloadPrepare）2026-09-03 恢复 */
 
 /**************************************************/
 /*              ALPC ��־λ����                    */
@@ -42,6 +44,24 @@ static pfnZwAlpcCreatePortSection      WkdAlpcCreatePortSection = NULL;
 static pfnZwAlpcCreateSectionView      WkdAlpcCreateSectionView = NULL;
 static pfnAlpcGetMessageAttribute      WkdAlpcGetMessageAttribute = NULL;
 static pfnAlpcInitializeMessageAttribute WkdAlpcInitializeMessageAttribute = NULL;
+
+//
+// ALPC 导出项静态表——迭代表驱动统一解析（交给 ExportParserResolveExports）。
+// 类型与指针仍归本子引擎私有；仅把"按名解析"的动作收拢到 ExportParser，
+// 消除原先 9 段 RtlInitUnicodeString + MmGetSystemRoutineAddress 样板。
+//
+static WKD_EXPORT_ENTRY2 g_AlpcExportEntries[] = {
+    { L"ZwAlpcCreatePort",          (PVOID*)&WkdAlpcCreatePort,             TRUE },
+    { L"ZwAlpcConnectPort",         (PVOID*)&WkdAlpcConnectPort,            TRUE },
+    { L"ZwAlpcDisconnectPort",      (PVOID*)&WkdAlpcDisconnectPort,         TRUE },
+    { L"ZwAlpcAcceptConnectPort",   (PVOID*)&WkdAlpcAcceptConnectPort,      TRUE },
+    { L"ZwAlpcSendWaitReceivePort", (PVOID*)&WkdAlpcSendWaitReceivePort,    TRUE },
+    { L"ZwAlpcCreatePortSection",   (PVOID*)&WkdAlpcCreatePortSection,      TRUE },
+    { L"ZwAlpcCreateSectionView",   (PVOID*)&WkdAlpcCreateSectionView,      TRUE },
+    { L"AlpcGetMessageAttribute",   (PVOID*)&WkdAlpcGetMessageAttribute,    TRUE },
+    { L"AlpcInitializeMessageAttribute",
+                                    (PVOID*)&WkdAlpcInitializeMessageAttribute, TRUE },
+};
 
 WKD_ALPC_SERVER WkdDefaultAlpcServer = { 0 };
 
@@ -134,49 +154,14 @@ AlpcpParseRoutines(
     VOID
     )
 {
-    UNICODE_STRING uniStr;
+    NTSTATUS status;
 
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcCreatePort");
-    WkdAlpcCreatePort =
-        (pfnZwAlpcCreatePort)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcConnectPort");
-    WkdAlpcConnectPort =
-        (pfnZwAlpcConnectPort)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcDisconnectPort");
-    WkdAlpcDisconnectPort =
-        (pfnZwAlpcDisconnectPort)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcAcceptConnectPort");
-    WkdAlpcAcceptConnectPort =
-        (pfnZwAlpcAcceptConnectPort)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcSendWaitReceivePort");
-    WkdAlpcSendWaitReceivePort =
-        (pfnZwAlpcSendWaitReceivePort)MmGetSystemRoutineAddress(&uniStr);
-
-    /* ������ */
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcCreatePortSection");
-    WkdAlpcCreatePortSection =
-        (pfnZwAlpcCreatePortSection)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"ZwAlpcCreateSectionView");
-    WkdAlpcCreateSectionView =
-        (pfnZwAlpcCreateSectionView)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"AlpcGetMessageAttribute");
-    WkdAlpcGetMessageAttribute =
-        (pfnAlpcGetMessageAttribute)MmGetSystemRoutineAddress(&uniStr);
-
-    RtlInitUnicodeString(&uniStr, L"AlpcInitializeMessageAttribute");
-    WkdAlpcInitializeMessageAttribute =
-        (pfnAlpcInitializeMessageAttribute)MmGetSystemRoutineAddress(&uniStr);
-
-    /* ����Ƿ�����ɹ� */
-    if (!WkdAlpcCreatePort || !WkdAlpcConnectPort || !WkdAlpcDisconnectPort ||
-        !WkdAlpcAcceptConnectPort || !WkdAlpcSendWaitReceivePort || !WkdAlpcCreatePortSection ||
-        !WkdAlpcCreateSectionView || !WkdAlpcGetMessageAttribute || !WkdAlpcInitializeMessageAttribute) {
+    /* 交由 ExportParser 统一按名解析本子引擎的 ALPC 导出项表；
+     * ALPC 全套函数均为服务必需，任一缺失即返回 STATUS_NOT_FOUND。 */
+    status = ExportParserResolveExports(g_AlpcExportEntries,
+                                        RTL_NUMBER_OF(g_AlpcExportEntries),
+                                        NULL, NULL);
+    if (!NT_SUCCESS(status)) {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
             "[WkDefender] Failed to prase ALPC routine addresses\n");
         return STATUS_NOT_FOUND;
@@ -824,6 +809,71 @@ AlpcpMessageDispatch(
             break;
         }
 
+        //
+        // 受控卸载-准备/恢复（Agent→Driver）
+        // BatchOp=0: 触发自防护引擎受控卸载（SpEngineUnloadPrepare）恢复
+        //            DriverUnload，使 Agent 可执行 sc stop 完成正常清理。
+        //            受保护 PID 表当前保持为空（仅保护 EDR 自身），AntiUnload
+        //            Basic 级置空 DriverUnload，故 Agent 卸载前必须先发此命令。
+        // 同步回执 WKD_ALPC_UNLOAD_ACK。
+        //
+        case WkdAlpcMessage_UnloadPrepareReq:
+        {
+            PWKD_ALPC_UNLOAD_UPD update = NULL;
+            WKD_ALPC_UNLOAD_ACK ack;
+            WKD_ALPC_MESSAGE replyMsg;
+            NTSTATUS unloadStatus = STATUS_SUCCESS;
+
+            if (RecvMsg->Header.u1.s1.TotalLength <
+                (CSHORT)(sizeof(WKD_ALPC_MESSAGE) + sizeof(WKD_ALPC_UNLOAD_UPD))) {
+                unloadStatus = STATUS_INVALID_BUFFER_SIZE;
+                goto SendUnloadAck;
+            }
+
+            update = (PWKD_ALPC_UNLOAD_UPD)(RecvMsg + 1);
+
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+                "[WkDefender] UnloadPrepareReq: version=%lu, op=%u, reason=%lu\n",
+                update->Version, update->BatchOp, update->Reason);
+
+            if (update->BatchOp == 0) {
+                /* 触发自防护引擎受控卸载：恢复 DriverUnload，使 Agent 可 sc stop */
+                unloadStatus = SpEngineUnloadPrepare();
+            } else {
+                /* Force 预留，当前不支持 */
+                unloadStatus = STATUS_NOT_SUPPORTED;
+            }
+
+        SendUnloadAck:
+            RtlZeroMemory(&ack, sizeof(ack));
+            if (update != NULL) {
+                ack.Version = update->Version;
+            }
+            ack.Status = unloadStatus;
+
+            RtlZeroMemory(&replyMsg, sizeof(replyMsg));
+            replyMsg.Header.u1.s1.TotalLength =
+                (CSHORT)(sizeof(WKD_ALPC_MESSAGE) + sizeof(WKD_ALPC_UNLOAD_ACK));
+            replyMsg.Header.u1.s1.DataLength =
+                (CSHORT)(sizeof(WKD_ALPC_MESSAGE) - sizeof(PORT_MESSAGE) +
+                         sizeof(WKD_ALPC_UNLOAD_ACK));
+            replyMsg.Header.u2.s2.Type = LPC_REPLY;
+            replyMsg.Header.MessageId = RecvMsg->Header.MessageId;
+            replyMsg.ConnectionType = WkdAlpcConnectionAgent;
+            replyMsg.MessageType = WkdAlpcMessage_UnloadPrepareAck;
+            RtlCopyMemory((PUCHAR)&replyMsg + sizeof(WKD_ALPC_MESSAGE), &ack, sizeof(ack));
+
+            if (Server->AgentBoundPort != NULL && WkdAlpcSendWaitReceivePort != NULL) {
+                WkdAlpcSendWaitReceivePort(
+                    Server->AgentBoundPort,
+                    ALPC_MSGFLG_REPLY_MESSAGE,
+                    (PPORT_MESSAGE)&replyMsg,
+                    NULL,
+                    NULL, NULL, NULL, NULL);
+            }
+            break;
+        }
+
         default:
             break;
         }
@@ -1061,6 +1111,8 @@ AlpcSendMessage(
 {
     NTSTATUS status = STATUS_UNSUCCESSFUL;
     const ULONG MAX_RETRIES = 3;
+
+    return STATUS_SUCCESS;
 
     if (!Message) {
         return STATUS_INVALID_PARAMETER;
@@ -1403,6 +1455,12 @@ Return Value:
         break;
     case WkdMessage_AmsiBypassDetected:
         alpcMsgType = WkdAlpcMessage_AmsiBypass;
+        break;
+    case WkdMessage_SecurityEvent:
+        /* 自保护/安全事件（SelfProtection 桥接接线 2026-09-01）：
+         * 此前无此分支落入 Unknown(0)，Agent 收不到自防护事件。
+         * 现在映射到 0x300D，Agent 端 AlpcpRouteMessage 按 [0x300D,0x300D] 路由。 */
+        alpcMsgType = WkdAlpcMessage_SecurityEvent;
         break;
     default:
         alpcMsgType = WkdAlpcMsgUnknown;

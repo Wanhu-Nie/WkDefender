@@ -54,6 +54,13 @@ Return Value:
     PsDestroyThreadContext(WkdProcess);
     PsDestroyModuleContext(WkdProcess);
 
+    /* 访问控制上下文兜底释放 (2026-09-06)：构建/正常释放归 AccessControl
+     * 子系统（进程退出钩子抢先摘除），此处仅防异常路径泄漏。 */
+    if (WkdProcess->AccessControlContext) {
+        free(InterlockedExchangePointer(
+            (PVOID volatile *)&WkdProcess->AccessControlContext, NULL));
+    }
+
     /* 子侧清理防悬链: 若本节点自身作为「子」挂入了父进程 ChildrenHead,
      * 从父链摘除本节点并释放对父的引用 (self 作为「子」的父引用线)。
      * 与 PspUnlinkAndOrphanChildren (本节点作为「父」时解链其子) 是两条

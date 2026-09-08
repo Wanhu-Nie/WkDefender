@@ -214,6 +214,10 @@ typedef enum _WKD_ALPC_MESSAGE_TYPE {
     WkdAlpcMessage_FileEvent            = 0x300A,  /* 文件操作事件（FBE 迁移 2026-08，Driver→Agent） */
     WkdAlpcMessage_FileRollbackResult   = 0x300B,  /* 回滚结果（FBE 迁移 2026-08，Driver→Agent） */
     WkdAlpcMessage_NamedPipeEvent       = 0x300C,  /* 命名管道创建（NamedPipeMonitor 迁移 2026-08，Driver→Agent） */
+    WkdAlpcMessage_SecurityEvent        = 0x300D,  /* 自保护/安全事件（Driver→Agent，载荷=WKD_MESSAGE_BODY_SECURITY_EVENT。
+                                                   * 2026-09-01 自保护桥接接线：此前 WkdMessage_SecurityEvent(0x4001)
+                                                   * 在 AlpcSendWkdMessage 无映射落入 Unknown(0)，Agent 收不到；新增映射到
+                                                   * 0x300D 并对齐 Agent 端枚举/路由。载荷=整包 WKD_MESSAGE（Header+Body）。 */
 
     /* 系统调用 */
     WkdAlpcMessage_ThreadOpen           = 0x3101,
@@ -225,6 +229,8 @@ typedef enum _WKD_ALPC_MESSAGE_TYPE {
     WkdAlpcMessage_RollbackProcessReq   = 0x3104,  /* 回滚进程文件（FBE 迁移 2026-08，Agent→Driver，载荷=ULONG PID） */
     WkdAlpcMessage_ExemptsUpdate        = 0x3105,  /* 排除规则推送（Agent→Driver，载荷=WKD_ALPC_EXEMPT_UPDATE，同步回执 0x3106） */
     WkdAlpcMessage_ExemptsAck           = 0x3106,  /* 排除规则回执（Driver→Agent，载荷=WKD_ALPC_EXEMPT_ACK） */
+    WkdAlpcMessage_UnloadPrepareReq     = 0x3107,  /* 受控卸载-准备/恢复（Agent→Driver，载荷=WKD_ALPC_UNLOAD_UPD，同步回执 0x3108） */
+    WkdAlpcMessage_UnloadPrepareAck     = 0x3108,  /* 受控卸载回执（Driver→Agent，载荷=WKD_ALPC_UNLOAD_ACK） */
 
     /* Driver ↔ Agent 共享节控制（与 Agent 端统一） */
     WkdAlpcMessage_SectionViewRequest   = 0x5001,  /* Driver→Agent: 请求创建/扩展共享节 */
@@ -332,6 +338,28 @@ typedef struct _WKD_ALPC_EXEMPT_ACK {
     ULONG   AppliedCount;   /* 已应用条目数（Clear+Replace=清除数） */
     NTSTATUS Status;        /* 处理结果 */
 } WKD_ALPC_EXEMPT_ACK, *PWKD_ALPC_EXEMPT_ACK;
+
+/**************************************************/
+/*        受控卸载消息载荷                          */
+/*  Agent→Driver 受控卸载前置命令                    */
+/*  BatchOp: 0=Resume(恢复DriverUnload以允许sc stop) */
+/*           1=Force(忽略，预留)                     */
+/*  该命令触发 AuShutdown，恢复 DriverUnload 后      */
+/*  Agent 再执行 sc stop 完成正常清理。              */
+/**************************************************/
+
+typedef struct _WKD_ALPC_UNLOAD_UPD {
+    ULONG   Version;        /* 命令版本（单调递增） */
+    UINT8   BatchOp;        /* 0=Resume(恢复DriverUnload) 1=Force(预留) */
+    UINT8   Flags;          /* 保留 */
+    ULONG   Reason;         /* 卸载原因码 */
+    WCHAR   AuthToken[64];  /* 可选授权令牌（预留） */
+} WKD_ALPC_UNLOAD_UPD, *PWKD_ALPC_UNLOAD_UPD;
+
+typedef struct _WKD_ALPC_UNLOAD_ACK {
+    ULONG   Version;        /* 原样带回 */
+    NTSTATUS Status;        /* 处理结果 */
+} WKD_ALPC_UNLOAD_ACK, *PWKD_ALPC_UNLOAD_ACK;
 
 /**************************************************/
 /*              ALPC 服务器结构体                  */

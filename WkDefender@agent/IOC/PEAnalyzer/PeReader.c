@@ -137,7 +137,7 @@ Return Value:
 
 _Use_decl_annotations_
 VOID
-IocpInitializeReader(
+PepCreateFileReader(
     _Out_ PPE_READER Reader,
     _In_ HANDLE FileHandle,
     _In_ SIZE_T Size
@@ -203,7 +203,7 @@ Return Value:
 }
 
 PE_READER
-WpeReaderFromProcess(
+PepCreateProcessReader(
     _In_ HANDLE    ProcessHandle,
     _In_ ULONG_PTR BaseAddress,
     _In_ SIZE_T    Size
