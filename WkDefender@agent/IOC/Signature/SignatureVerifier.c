@@ -32,7 +32,7 @@ BOOLEAN g_IocCatalogEnabled = FALSE;
 /* 签名时间豁免门控 (SS PE_sig_verf ValidateTimestamp/IsTimeValidWithGrace 迁移,
  * 死代码开关默认关闭)。置 TRUE 后 CertVerify 的 CERT_E_EXPIRED 分支提取 legacy
  * 计数器签名时间, 签名落在证书有效期内 (±300s 宽限) 则轻罚 (CertScore 15→5)
- * 并回填 SignTime, 对齐 SS "签名时未过期即可信" 语义。 */
+ * 并回填 SignTime, "签名时未过期即可信" 语义。 */
 BOOLEAN g_IocSignTimeExemptionEnabled = FALSE;
 
 /* cert_reputation 表接线门控 (SS GetCertificateTrust 迁移, 死代码开关默认关闭)。
@@ -52,7 +52,7 @@ BOOLEAN g_IocCertCacheEnabled = FALSE;
  *   !IsCodeSigningEku → CertTrusted=FALSE (有效签名但无代码签名 EKU, SS 拒绝)
  *   IsWeakSignature  → CertTrusted=FALSE (弱签名算法, SS 拒绝)
  * 同时新增 TRUST_E_SUBJECT_NOT_TRUSTED 分支 (默认 SAFER_FLAG 抑制, 严格模式可达),
- * 补齐 DefCertStatus_UntrustedRoot 状态 (对齐 SS UntrustedRoot, 原枚举无生产者)。 */
+ * 补齐 DefCertStatus_UntrustedRoot 状态 (UntrustedRoot, 原枚举无生产者)。 */
 BOOLEAN g_IocStrictSignatureEnabled = FALSE;
 
 /* 吊销原因细分 (SS CertificateValidator GetRevocationStatus 增量迁移 2026-09-02):
@@ -187,7 +187,7 @@ Return Value:
 
         /* 严格判定门控 (SS PE_sig_verf/KED 迁移, 2026-08-09): 去 SAFER_FLAG 使不受信根
          * 告警不被抑制 (TRUST_E_SUBJECT_NOT_TRUSTED → UntrustedRoot 分支可达), 开整链
-         * 吊销 (WTD_REVOKE_WHOLECHAIN + cache-only, 对齐 SS KED/IPCManager 组合)。
+         * 吊销 (WTD_REVOKE_WHOLECHAIN + cache-only, KED/IPCManager 组合)。
          * 默认关闭零行为变化。 */
         //if (g_IocStrictSignatureEnabled) {
         //    wtd.fdwRevocationChecks = WTD_REVOKE_WHOLECHAIN;
@@ -214,12 +214,12 @@ Return Value:
         Result->CertValid = TRUE;
         Result->CertTrusted = TRUE;
         Result->CertStatus = DefCertStatus_Valid;
-        /* 完整证书详情 (签名者/颁发者/链/有效期/thumbprint, 对齐 SS ExtractCertificateDetailsImpl;
+        /* 完整证书详情 (签名者/颁发者/链/有效期/thumbprint, ExtractCertificateDetailsImpl;
          * 内部含 SignerName 填充, 兼容原 ExtractSigner 语义) — 传 wtd.hWVTStateData 走 WTHelper */
         IocScan_ExtractCertDetails(FilePath, Result, wtd.hWVTStateData);
 
         /* 严格判定门控 (SS PE_sig_verf 拒绝语义 L740-789 迁移, 2026-08-09,
-         * 死代码开关默认关闭): 对齐 SS VerifyPESignature 的
+         * 死代码开关默认关闭): VerifyPESignature 的
          * isChainTrusted && isEKUValid && 签名强度 拒绝语义。 */
         if (g_IocStrictSignatureEnabled) {
             if (!Result->IsTrustedStrict) {
@@ -277,7 +277,7 @@ Return Value:
 
         /* 签名时间豁免 (SS PE_sig_verf ValidateTimestamp/IsTimeValidWithGrace 迁移,
          * 2026-08, 门控 g_IocSignTimeExemptionEnabled): 证书当前过期但签名发生在
-         * 证书有效期内 → 轻罚 (CertScore 15→5), 对齐 SS "签名时未过期即可信"。
+         * 证书有效期内 → 轻罚 (CertScore 15→5), "签名时未过期即可信"。
          * 提取 legacy 计数器签名时间 + 复用 ExtractCertDetails 有效期字段。 */
         if (g_IocSignTimeExemptionEnabled) {
             FILETIME signTime;
@@ -323,7 +323,7 @@ Return Value:
 /**************************************************/
 
 /* 内存缓冲验签: 写临时文件 (DELETE_ON_CLOSE 持句柄防替换) → 统一 CertVerify+Reputation。
- * 对齐 SS DSV "验证期间保持句柄" 防 TOCTOU (随机临时文件名 + DELETE_ON_CLOSE 等效防护)。 */
+ * DSV "验证期间保持句柄" 防 TOCTOU (随机临时文件名 + DELETE_ON_CLOSE 等效防护)。 */
 static NTSTATUS
 IocScan_VerifyMemoryToTemp(
     _In_  const BYTE*      Data,

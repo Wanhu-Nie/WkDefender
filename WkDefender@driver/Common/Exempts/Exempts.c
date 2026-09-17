@@ -253,7 +253,7 @@ CoEvaluateProcessExemption(
     )
 /*++
 Routine Description:
-     统一排除入口判定（对齐 SS PnpIsTrustedProcess）。判定顺序：
+     统一排除入口判定（PnpIsTrustedProcess）。判定顺序：
        0. EDR 自身组件（IntegrityLevel==WkdIntegrityEdr）→ Trusted
        1. 路径排除（系统服务精确路径）+ 进程名排除 → Trusted
        2. TrustedPID 位图（CoExemptCreatedProcess 已播种）→ Trusted

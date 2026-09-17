@@ -5,13 +5,13 @@
 /*  按功能融合重实现非复制。                          */
 /*                                                  */
 /*  职责 (agent L2 深度分析):                       */
-/*   - 每进程分配窗口聚合 (对齐 SS HS_PROCESS_      */
+/*   - 每进程分配窗口聚合 (HS_PROCESS_      */
 /*     CONTEXT 聚合计数 + HspPruneOldAllocations)    */
-/*   - 门控内容采样 (对齐 SS HsRecordAllocation 的   */
+/*   - 门控内容采样 (HsRecordAllocation 的   */
 /*     PatternSample, 采样移至 agent ReadProcess     */
 /*     Memory, 见 Memory/MemoryScan.c MsReadMemory)  */
-/*   - 评分 (对齐 SS HspCalculateSprayScore, 0-1000) */
-/*   - 告警构造 (对齐 SS HsInvokeCallbacks →         */
+/*   - 评分 (HspCalculateSprayScore, 0-1000) */
+/*   - 告警构造 (HsInvokeCallbacks →         */
 /*     IOA_ALERT + PersistQueue, ALPC 覆盖回调)      */
 /*                                                  */
 /*  死代码: 消费方 IoaEngine 阶段4.11 门控           */
@@ -28,7 +28,7 @@
 
 /**************************************************/
 /*               配置常量                           */
-/*  对齐 SS HeapSpray.h                             */
+/*  HeapSpray.h                             */
 /**************************************************/
 
 #define WKD_HS_MIN_SPRAY_SIZE           (1024 * 1024)            /* 1 MB (SS HS_MIN_SPRAY_SIZE) */
@@ -51,7 +51,7 @@
 /*++
 Routine Description:
     分配事件处理 — 窗口聚合 + 门控内容采样 + 评分 + 判定。
-    对齐 SS HsRecordAllocation + HspPruneOldAllocations +
+    HsRecordAllocation + HspPruneOldAllocations +
     HspCalculateSprayScore。滑窗采用 IoaRateAnalyzer 轮转
     (到期全清, agent 无 65536 记录池只存聚合计数)。
 
@@ -76,7 +76,7 @@ IoaHeapSpray_OnAllocate(
 
 /*++
 Routine Description:
-    堆喷评分 (0-1000)。对齐 SS HspCalculateSprayScore:
+    堆喷评分 (0-1000)。HspCalculateSprayScore:
     rep×3 + count 100~300 + size 100~200 + rate 150 + known 200
     + nopsled 250 + shellcode 300 + exec 100 + aligned 50。
 
@@ -116,7 +116,7 @@ IoaHeapSpray_AllocAlert(
 
 /*++
 Routine Description:
-    堆喷完整分析 (查询 API)。对齐 SS HsAnalyzeProcess。
+    堆喷完整分析 (查询 API)。HsAnalyzeProcess。
     ※ 死代码: 供 UI/进程详情查询, 当前无调用者。
 
 Arguments:
@@ -135,7 +135,7 @@ IoaHeapSpray_AnalyzeProcess(
 
 /*++
 Routine Description:
-    堆喷快速检查 (查询 API)。对齐 SS HsCheckForSpray。
+    堆喷快速检查 (查询 API)。HsCheckForSpray。
     ※ 死代码: 供快速体检, 当前无调用者。
 
 Arguments:

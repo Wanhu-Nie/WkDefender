@@ -387,7 +387,7 @@ WpeAnalyzePEDeep(
     )
 /*++
 Routine Description:
-    深度 PE 验证 (对齐 SS ValidatePEImpl): 读头区 → SHA256 →
+    深度 PE 验证 (ValidatePEImpl): 读头区 → SHA256 →
     完整解析 → 节表 + 逐节熵 (0-1000) → packed/encrypted → 数据目录完备性。
     供定向无背衬 PE 确认 (反射加载/隐藏模块) 使用。
 
@@ -824,7 +824,7 @@ WpeReconstructPeFromMemory(
     )
 /*++
 Routine Description:
-    从内存重建文件对齐 PE (收敛 MsReconstructPE, 对齐 SS ReconstructPE):
+    从内存重建文件对齐 PE (收敛 MsReconstructPE, ReconstructPE):
      读头 4096 → 校验 (DOS/NT/节数/SizeOfImage≤256MB) →
      读整个内存映像 → 按节表 PointerToRawData 重建文件布局。
     无 raw 数据指针时内存直出。死代码: 取证阶段接入。
@@ -857,7 +857,7 @@ Return Value:
     *OutBuffer = NULL;
     *OutSize = 0;
 
-    /* 1. 读 PE 头 (对齐 SS MAX_PE_HEADER_SCAN=4096) */
+    /* 1. 读 PE 头 (MAX_PE_HEADER_SCAN=4096) */
     if (!NT_SUCCESS(WpeRpmAlloc(ProcessId, BaseAddress, 4096, &headerBuf, &headerBytes))) {
         return STATUS_UNSUCCESSFUL;
     }
@@ -1022,7 +1022,7 @@ WpeGetVersionInfo(
 /*++
 Routine Description:
     提取文件版本信息 (GetFileVersionInfoSizeW/GetFileVersionInfoW/VerQueryValueW)。
-    对齐 SS GetVersionInfoImpl L2508-2583: 文件/产品四段版本 +
+    GetVersionInfoImpl L2508-2583: 文件/产品四段版本 +
     CompanyName/FileDescription/FileVersion/InternalName/LegalCopyright/
     OriginalFilename/ProductName/ProductVersion。
 
@@ -1116,7 +1116,7 @@ Return Value:
 }
 
 /**************************************************/
-/*        ML 特征向量 (死代码, 对齐 SS ExtractMLFeatures)  */
+/*        ML 特征向量 (死代码, ExtractMLFeatures)  */
 /**************************************************/
 
 #define PE_ML_SECTIONS_CAP     16
@@ -1154,7 +1154,7 @@ WpeExtractMlFeatures(
     )
 /*++
 Routine Description:
-    提取静态 PE 特征向量 (EMBER 对齐布局骨架, 对齐 SS ExtractMLFeatures L2799-2921)。
+    提取静态 PE 特征向量 (EMBER 对齐布局骨架, ExtractMLFeatures L2799-2921)。
     死代码: wkd 无 ONNX/PhantomCortex, 供未来 ML 融合预留。
     注: 导入/导出/资源明细与 overallEntropy/riskScore 不内嵌 PE_INFO
         (PeLazy 惰性输出), 相关特征用目录 Present/0 近似 (注释标注)。
@@ -1536,7 +1536,7 @@ WpeFreeDelayImportList(
 /* 5.1 可疑 API 分类表                                 */
 /* -------------------------------------------------- */
 
-/* 可疑 API 表: 对齐 SS InitializeSuspiciousImports。
+/* 可疑 API 表: InitializeSuspiciousImports。
  * 剔除 GetDC (SS 归 ScreenCapture, 常见于正常 GUI 程序, 高误报);
  * 补齐网络/下载/凭据等高风险类别条目
  * (socket/connect/WinHttp/WinExec/CryptUnprotectData)。 */
@@ -1629,7 +1629,7 @@ static const IOC_API_CAT_ENTRY g_IocSuspiciousApis[] = {
     { "OleGetClipboard",            IocApiCat_ClipboardAccess },
     { "RegisterClipboardFormat",    IocApiCat_ClipboardAccess },
     /* SS RiskyAPIDatabase 补漏 (2026-08): Nt/Zw 直接调用系 / 凭据 / 提权 / 反审计。
-     * 对齐 SS InitializeSuspiciousImports 的底层 API 集, 映射到 wkd 既有分类 (重功能非复制)。
+     * InitializeSuspiciousImports 的底层 API 集, 映射到 wkd 既有分类 (重功能非复制)。
      * 注: Nt 直接调用常被静态分析器误报 (动态存在) 或由静态 IAT 呈现, 为有效信号。 */
     /* 内存/线程直接 (注入/引用) */
     { "NtAllocateVirtualMemory",     IocApiCat_CodeInjection },
@@ -1673,7 +1673,7 @@ static const IOC_API_CAT_ENTRY g_IocSuspiciousApis[] = {
 #define IOC_API_CAT_COUNT \
     (sizeof(g_IocSuspiciousApis) / sizeof(g_IocSuspiciousApis[0]))
 
-/* 分类 → 加分 (对齐 SS ClassifyImport: 注入/进程操作 5, 防审计/凭据/提权 4,
+/* 分类 → 加分 (ClassifyImport: 注入/进程操作 5, 防审计/凭据/提权 4,
  * 加密/网络 3, 其它 2; ×10 转 0-1000 尺度) */
 static ULONG
 IocScan_ApiCategoryScore(
@@ -1712,7 +1712,7 @@ static const PCSTR g_IocPackerTypeNames[] = {
     "AutoIt", "PyInstaller", "PESpin", "Generic",
 };
 
-/* 节名 → 加壳器 (对齐 SS InitializePackerSignatures 全量 32 条) */
+/* 节名 → 加壳器 (InitializePackerSignatures 全量 32 条) */
 static const PE_PACKER_ENTRY g_IocPackerSections[] = {
     /* 常见加壳节名 */
     { "UPX0",      IocPacker_Upx,        FALSE, FALSE },
@@ -1843,7 +1843,7 @@ IocScan_ClassifyString(
         score += 20;
     }
 
-    /* 勒索信关键词 (对齐 SS AnalyzeExtractedStringImpl 静态表) */
+    /* 勒索信关键词 (AnalyzeExtractedStringImpl 静态表) */
     {
         static const PCSTR ransomKw[] = {
             "your files have been encrypted", "bitcoin", "btc wallet",
@@ -1870,7 +1870,7 @@ IocScan_ClassifyString(
     return score;
 }
 
-/* ASCII 字符串提取 + 计分 (对齐 SS AnalyzeStrings: 扫前 16MB, 长度 [6,2048], cap 180) */
+/* ASCII 字符串提取 + 计分 (AnalyzeStrings: 扫前 16MB, 长度 [6,2048], cap 180) */
 static ULONG
 IocScan_StringAnalysis(
     _In_  const BYTE*       Data,
@@ -1905,7 +1905,7 @@ IocScan_StringAnalysis(
         score += IocScan_ClassifyString(cur, curLen);
     }
 
-    if (score > 180) score = 180;   /* 对齐 SS MAX_STRING_SCORE(15)*STRING_WEIGHT(1.2) */
+    if (score > 180) score = 180;   /* MAX_STRING_SCORE(15)*STRING_WEIGHT(1.2) */
     Result->StringScore = score;
     return score;
 }
@@ -1988,7 +1988,7 @@ IocpPeImportAnalysis(
             CHAR funcNameAscii[PE_MAX_FUNCTION_NAME];
             IOC_SUSPICIOUS_API_CATEGORY cat = IocApiCat_None;
 
-            /* 序号导入: 无函数名, 不影响 ImpHash (对齐 SS 只计具名函数) */
+            /* 序号导入: 无函数名, 不影响 ImpHash (只计具名函数) */
             if (fn->ByOrdinal || fn->NameLength == 0 ||
                 fn->NameOffset >= imports.NameBlobChars) {
                 continue;
@@ -2111,7 +2111,7 @@ IocpPeImportAnalysis(
 }
 
 /* -------------------------------------------------- */
-/* 5.3b 延迟导入风险分析 (2026-08-19 新增, 对齐 SS     */
+/* 5.3b 延迟导入风险分析 (2026-08-19 新增,     */
 /*      ExecutableAnalyzer::ParseDelayLoadImportsImpl + */
 /*      HeuristicAnalyzer delay-load 风险分类)          */
 /*                                                   */
@@ -2252,7 +2252,7 @@ IocpPeEntryPointSignatureMatch(
     return STATUS_UNSUCCESSFUL;
 }
 
-/* 对齐 SS DetectPacker: 节名精确匹配 → EP 签名 → 熵回退, 多信号叠加。
+/* DetectPacker: 节名精确匹配 → EP 签名 → 熵回退, 多信号叠加。
  * 返回加壳分 (0-1000)。 */
 NTSTATUS
 IocpDetectPePacker(
@@ -2353,7 +2353,7 @@ IocpDetectPePacker(
 }
 
 /* -------------------------------------------------- */
-/* 5.6 PE 结构异常评分 (对齐 SS AnalyzePE/DetectHeuristicAnomalies) */
+/* 5.6 PE 结构异常评分 (AnalyzePE/DetectHeuristicAnomalies) */
 /* -------------------------------------------------- */
 
 static ULONG
@@ -2363,7 +2363,7 @@ IocScan_AnomalyScore(
     )
 /*++
 Routine Description:
-    把 PeParser 采集的结构异常 + 挽救缺失映射为启发式分 (×10 对齐 SS 权重)。
+    把 PeParser 采集的结构异常 + 挽救缺失映射为启发式分 (×10 权重)。
     RWX ×15 / EP 异常 ×10 / 区段违规 ×5 / 时间戳异常 ×5 /
     无导入 ×10 / 无 ASLR+DEP+CFG+SEH 累计。cap 600 (MAX_PE_ANOMALY(30)*WEIGHT(2))。
 
@@ -2438,7 +2438,7 @@ Return Value:
         }
     }
 
-    /* DLL 无导出 (对齐 SS AnalyzePE: isDLL && !EXPORT 目录 → NoExportsForDLL) */
+    /* DLL 无导出 (AnalyzePE: isDLL && !EXPORT 目录 → NoExportsForDLL) */
     if (Info->IsDll && PE_DD_EXPORT < PE_DD_MAX_ENTRIES &&
         !Info->DataDirectories[PE_DD_EXPORT].Present) {
         score += 20;
@@ -2459,7 +2459,7 @@ IocScan_ScriptAnalysis(
     _In_ ULONG       Size
     );
 
-/* 路径扩展名是否脚本 (对齐 SS DetectFileType 路径版脚本分支 L1829-1832) */
+/* 路径扩展名是否脚本 (DetectFileType 路径版脚本分支 L1829-1832) */
 static BOOLEAN
 IocScan_IsScriptFile(
     _In_ PCWSTR FilePath
@@ -2650,7 +2650,7 @@ IocHeuristicPeAnalysis(
         //IocScan_UnpackClosure(ctx, (const BYTE*)view,
         //                      (SIZE_T)fileSize.QuadPart, Result);
     } else if (IocScan_IsScriptFile(FilePath)) {
-        /* 脚本: 对齐 SS AnalyzeBufferInternal Script 分支 → AnalyzeScript
+        /* 脚本: AnalyzeBufferInternal Script 分支 → AnalyzeScript
          * (混淆/能力/URL), 0-100 分 ×10 转 0-1000 */
         ULONG scriptScore;
         Result->HeuristicRan = TRUE;
@@ -2659,7 +2659,7 @@ IocHeuristicPeAnalysis(
                                              (ULONG)fileSize.LowPart);
         total = ((scriptScore > 100) ? 100 : scriptScore) * 10;
     } else {
-        /* 非脚本非 PE (未知/文档/归档): 对齐 SS AnalyzeBufferInternal default 分支 →
+        /* 非脚本非 PE (未知/文档/归档): AnalyzeBufferInternal default 分支 →
          * 熵加值 + 字符串分析, cap 1000 */
         ULONG entropy = 0;
         Result->HeuristicRan = TRUE;
@@ -2668,14 +2668,14 @@ IocHeuristicPeAnalysis(
                                        (ULONG)fileSize.LowPart, Result);
         entropy = (ULONG)(CoEntropyBinary(view, (ULONG)fileSize.LowPart, 0) * 1000.0);
         if (entropy >= WPA_ENTROPY_THRESHOLD_PACKED) {
-            total += 150;   /* 对齐 SS entropy>7.0 时 entropy*1.5 (高位) */
+            total += 150;   /* entropy>7.0 时 entropy*1.5 (高位) */
         }
     }
 
     if (total > 1000) total = 1000;
     Result->HeuristicConfidence = total;
 
-    /* 启发式威胁命名 (对齐 SS GenerateThreatName: "Heuristic:Win/<category>",
+    /* 启发式威胁命名 (GenerateThreatName: "Heuristic:Win/<category>",
      * 在给予高置信度时命名) */
     if (total >= 500) {
         PCSTR category;

@@ -1,0 +1,798 @@
+﻿/*
+ * ShadowStrike - Enterprise NGAV/EDR Platform
+ * Copyright (C) 2026 ShadowStrike Security
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+/**
+ * ============================================================================
+ * ShadowStrike NGAV - MEMORY MONITORING MODULE
+ * ============================================================================
+ *
+ * @file MemoryMonitor.h
+ * @brief Memory monitoring subsystem header for PhantomSensor kernel driver.
+ *
+ * This module provides comprehensive memory monitoring capabilities including:
+ * - VirtualAlloc/VirtualProtect tracking
+ * - Cross-process memory operations
+ * - Section object monitoring
+ * - Shellcode detection
+ * - Code injection detection
+ * - Process hollowing detection
+ *
+ * @author ShadowStrike Security Team
+ * @version 1.0.0
+ * @copyright (c) 2026 ShadowStrike Security. All rights reserved.
+ * ============================================================================
+ */
+
+#pragma once
+
+/* 【WkD 迁移说明】(2026-09-11)
+ * 本头由 SS MemoryMonitor.h 迁移（全部 655 行随 .c 一起迁移）。
+ * 结构调整：
+ *   - 删除 Shared include（../../Shared/MemoryTypes.h、../../Shared/BehaviorTypes.h），
+ *     所需类型内联于本头（见下方"内联类型区"）；
+ *   - MEMORY_MONITOR_GLOBALS：删除 PVOID VadTracker 成员（VadTracker 模块
+ *     不迁移，VAD 职责由 WkD 既有 Memory\MemoryRegion.c 覆盖，
+ *     参见 .c 中四处 Vad* 调用删除说明）；
+ *   - MEMORY_MONITOR_GLOBALS：新增 PMS_SCANNER MemoryScanner 成员
+ *     （SS 全局单例 getter 的 WkD 落点，
+ *     当前未接线恒 NULL）；
+ *   - 新增 MemoryScanner.h（上述新增成员的类型来源）。
+ */
+
+#pragma warning(push)
+#pragma warning(disable:4324)
+#include <fltKernel.h>
+#pragma warning(pop)
+#include "MemoryScanner.h"
+
+// ============================================================================
+// 内联类型区（【WkD 迁移说明】(2026-09-11)）
+// 源文件（SS MemoryMonitor.h）此处原为：
+//   Shared/MemoryTypes.h
+//   Shared/BehaviorTypes.h
+// WkD 无 Shared 目录。BehaviorTypes.h（BehaviorEvent_*/BehaviorCategory_*）
+// 仅供 SS BeEngineSubmitEvent 行为事件上报使用，WkD 以 DbgPrint 占位后不再需要；
+// MemoryTypes.h 所需类型全部内联如下（对齐 HeapSpray.h / SectionTracker.h 等
+// 已迁移模块的"类型内联"惯例），内容与 SS 原版一致
+// （源自 PhantomSensor\Shared\MemoryTypes.h）。
+// 另增 MemoryScanner.h：为新增 MemoryScanner 成员
+// （PMS_SCANNER，SS 中为全局单例 getter）提供类型。
+// ============================================================================
+
+#ifndef MAX_FILE_PATH_LENGTH
+#define MAX_FILE_PATH_LENGTH 1024
+#endif
+
+/**
+ * @brief Memory region classification (from SS MemoryTypes.h).
+ */
+typedef enum _MEMORY_REGION_TYPE {
+    MemRegion_Unknown = 0,
+    MemRegion_Image,                      // MEM_IMAGE (DLL/EXE)
+    MemRegion_Private,                    // MEM_PRIVATE (heap/stack)
+    MemRegion_Mapped,                     // MEM_MAPPED (file mapping)
+    MemRegion_Stack,                      // Thread stack
+    MemRegion_Heap,                       // Process heap
+    MemRegion_PEB,                        // Process Environment Block
+    MemRegion_TEB,                        // Thread Environment Block
+    MemRegion_CFG,                        // Control Flow Guard
+    MemRegion_Max
+} MEMORY_REGION_TYPE;
+
+/**
+ * @brief Code injection detection types (from SS MemoryTypes.h).
+ */
+typedef enum _INJECTION_TYPE {
+    Injection_None = 0,
+    Injection_ClassicDLL,                 // LoadLibrary injection
+    Injection_ReflectiveDLL,              // Reflective DLL loading
+    Injection_ProcessHollowing,           // Process hollowing
+    Injection_ProcessDoppelganging,       // Process doppelganging
+    Injection_AtomBombing,                // Atom table injection
+    Injection_EarlyBird,                  // Early bird APC injection
+    Injection_ThreadHijack,               // Thread execution hijack
+    Injection_APCInjection,               // QueueUserAPC injection
+    Injection_NtMapViewInjection,         // NtMapViewOfSection injection
+    Injection_SetWindowsHookEx,           // Hook-based injection
+    Injection_GhostWriting,               // Ghost writing technique
+    Injection_ModuleStomping,             // Module stomping/overwriting
+    Injection_Transacted,                 // Transacted section (TxF)
+    Injection_PROPagate,                  // Window subclassing
+    Injection_ListPlanting,               // List entry hijacking
+    Injection_Max
+} INJECTION_TYPE;
+
+/**
+ * @brief Memory monitor configuration (from SS MemoryTypes.h).
+ */
+typedef struct _MEMORY_MONITOR_CONFIG {
+    BOOLEAN EnableAllocationMonitoring;
+    BOOLEAN EnableProtectionMonitoring;
+    BOOLEAN EnableCrossProcessMonitoring;
+    BOOLEAN EnableSectionMonitoring;
+    BOOLEAN EnableShellcodeDetection;
+    BOOLEAN EnableInjectionDetection;
+    BOOLEAN EnableHollowingDetection;
+    BOOLEAN EnableVADTracking;
+    BOOLEAN EnableHeapSprayDetection;
+    BOOLEAN EnableROPDetection;
+    BOOLEAN EnableSectionTracking;
+    UINT8 Reserved1;
+
+    UINT32 MinAllocationSizeToTrack;      // Minimum size (bytes)
+    UINT32 MaxEventsPerSecond;            // Rate limiting
+    UINT32 ShellcodeScanThreshold;        // Entropy threshold
+    UINT32 MaxRegionSizeToScan;           // Max region to scan for shellcode
+
+    UINT32 Flags;
+    UINT32 Reserved[4];
+} MEMORY_MONITOR_CONFIG, *PMEMORY_MONITOR_CONFIG;
+
+/**
+ * @brief VAD entry for process memory map (from SS MemoryTypes.h).
+ */
+typedef struct _VAD_ENTRY {
+    UINT64 StartVpn;                      // Start virtual page number
+    UINT64 EndVpn;                        // End virtual page number
+    UINT64 BaseAddress;                   // Base address
+    UINT64 Size;                          // Region size
+    UINT32 Protection;                    // Page protection
+    UINT32 VadType;                       // VAD type flags
+    MEMORY_REGION_TYPE RegionType;
+    UINT32 Flags;
+    UINT64 FileObject;                    // Backing file object
+    WCHAR FileName[MAX_FILE_PATH_LENGTH]; // Backing file name
+} VAD_ENTRY, *PVAD_ENTRY;
+
+/**
+ * @brief Process VAD map summary (from SS MemoryTypes.h).
+ */
+typedef struct _PROCESS_VAD_MAP {
+    UINT32 ProcessId;
+    UINT32 VadCount;
+    UINT64 TotalVirtualSize;
+    UINT64 TotalCommittedSize;
+    UINT64 TotalExecutableSize;
+    UINT64 TotalWritableSize;
+    UINT64 TotalRWXSize;
+    UINT32 UnbackedExecutableCount;       // Suspicious regions
+    UINT32 Flags;
+    // Variable: VAD_ENTRY entries follow
+} PROCESS_VAD_MAP, *PPROCESS_VAD_MAP;
+
+// VAD flags
+#define VAD_FLAG_EXECUTABLE               0x00000001
+#define VAD_FLAG_WRITABLE                 0x00000002
+#define VAD_FLAG_RWX                      0x00000004
+#define VAD_FLAG_UNBACKED                 0x00000008
+#define VAD_FLAG_PRIVATE                  0x00000010
+#define VAD_FLAG_MAPPED                   0x00000020
+#define VAD_FLAG_IMAGE                    0x00000040
+#define VAD_FLAG_MODIFIED                 0x00000080  // Recently modified
+#define VAD_FLAG_SUSPICIOUS               0x00000100  // Flagged suspicious
+// 2026-09-13 迁移：HollowingDetector 自 Memory/ → Process/ 进程域
+#include "../Process/HollowingDetector.h"
+#include "InjectionDetector.h"
+#include "ROPDetector.h"
+#include "ShellcodeDetector.h"
+#include "SectionTracker.h"
+
+// ============================================================================
+// MEMORY MONITOR CONFIGURATION
+// ============================================================================
+
+/**
+ * @brief Default configuration values.
+ */
+#define MM_DEFAULT_MIN_ALLOC_SIZE           4096        // 4KB minimum to track
+#define MM_DEFAULT_MAX_EVENTS_PER_SEC       10000       // Rate limit
+#define MM_DEFAULT_SHELLCODE_SCAN_THRESHOLD 5000        // Entropy * 1000 (lowered from 6000 to compensate for integer log2 underestimation)
+#define MM_DEFAULT_MAX_REGION_SCAN_SIZE     (1024*1024) // 1MB max to scan
+
+/**
+ * @brief Pool tags for memory monitor allocations.
+ */
+#define MM_POOL_TAG_GENERAL     'mMsS'  // General allocations
+#define MM_POOL_TAG_CONTEXT     'cMsS'  // Context structures
+#define MM_POOL_TAG_EVENT       'eMsS'  // Event structures
+#define MM_POOL_TAG_CACHE       'hMsS'  // Cache entries
+
+// ============================================================================
+// MEMORY REGION TRACKING
+// ============================================================================
+
+/**
+ * @brief Tracked memory region state.
+ */
+typedef struct _MM_TRACKED_REGION {
+    LIST_ENTRY ListEntry;
+    
+    // Region identification
+    UINT64 BaseAddress;
+    UINT64 Size;
+    UINT32 ProcessId;
+    
+    // Current state
+    UINT32 Protection;
+    UINT32 State;                         // MEM_COMMIT, MEM_RESERVE
+    UINT32 Type;                          // MEM_PRIVATE, MEM_MAPPED
+    MEMORY_REGION_TYPE RegionType;
+    
+    // Tracking info
+    UINT64 AllocationTime;
+    UINT64 LastProtectionChangeTime;
+    UINT32 ProtectionChangeCount;
+    UINT32 Flags;
+    
+    // Content analysis
+    UINT32 LastContentEntropy;            // Entropy * 1000
+    BOOLEAN WasWritten;
+    BOOLEAN NowExecutable;
+    BOOLEAN IsHighRisk;
+    UINT8 Reserved;
+    
+    // Backing info
+    UNICODE_STRING BackingFile;
+    WCHAR BackingFileBuffer[MAX_FILE_PATH_LENGTH];
+} MM_TRACKED_REGION, *PMM_TRACKED_REGION;
+
+// Tracked region flags
+#define MM_REGION_FLAG_MONITORED          0x00000001
+#define MM_REGION_FLAG_HIGH_ENTROPY       0x00000002
+#define MM_REGION_FLAG_SHELLCODE_SCAN     0x00000004
+#define MM_REGION_FLAG_INJECTION_SRC      0x00000008
+#define MM_REGION_FLAG_INJECTION_DST      0x00000010
+#define MM_REGION_FLAG_HOLLOWING          0x00000020
+
+// ============================================================================
+// PROCESS MEMORY CONTEXT
+// ============================================================================
+
+/**
+ * @brief Per-process memory monitoring context.
+ */
+typedef struct _MM_PROCESS_CONTEXT {
+    LIST_ENTRY ListEntry;
+    
+    // Process identification
+    UINT32 ProcessId;
+    PEPROCESS ProcessObject;
+    UINT64 ProcessCreateTime;
+    
+    // Tracked regions (push lock allows APC_LEVEL acquisition, no DISPATCH constraint)
+    LIST_ENTRY TrackedRegions;
+    EX_PUSH_LOCK RegionLock;
+    UINT32 TrackedRegionCount;
+    
+    // Statistics (volatile for interlocked operations from concurrent threads)
+    volatile LONG64 TotalAllocations;
+    volatile LONG64 TotalProtectionChanges;
+    volatile LONG64 SuspiciousOperations;
+    
+    // Risk scoring
+    UINT32 MemoryRiskScore;               // 0-1000
+    volatile LONG ShellcodeDetectionCount;
+    volatile LONG InjectionAttemptCount;
+    
+    // Flags (volatile for InterlockedOr from concurrent threads)
+    volatile LONG Flags;
+    BOOLEAN IsMonitored;
+    BOOLEAN IsHighRisk;
+    UINT16 Reserved;
+    
+    // Reference counting
+    volatile LONG RefCount;
+} MM_PROCESS_CONTEXT, *PMM_PROCESS_CONTEXT;
+
+// Process context flags
+#define MM_PROCESS_FLAG_SYSTEM            0x00000001
+#define MM_PROCESS_FLAG_PROTECTED         0x00000002
+#define MM_PROCESS_FLAG_ELEVATED          0x00000004
+#define MM_PROCESS_FLAG_HOLLOWING_TARGET  0x00000008
+#define MM_PROCESS_FLAG_INJECTION_SOURCE  0x00000010
+#define MM_PROCESS_FLAG_INJECTION_TARGET  0x00000020
+
+// ============================================================================
+// MEMORY MONITOR GLOBAL STATE
+// ============================================================================
+
+/**
+ * @brief Memory monitor global state.
+ */
+typedef struct _MEMORY_MONITOR_GLOBALS {
+    // Initialization state
+    volatile LONG InitState;              // 0=uninit, 1=initializing, 2=initialized
+    volatile LONG ShuttingDown;
+    KEVENT ShutdownEvent;
+    volatile LONG OutstandingRefs;
+    BOOLEAN Enabled;
+    UINT8 Reserved1[3];
+    
+    // Configuration
+    MEMORY_MONITOR_CONFIG Config;
+    
+    // Process contexts
+    LIST_ENTRY ProcessContextList;
+    ERESOURCE ProcessContextLock;
+    UINT32 ProcessContextCount;
+    UINT32 Reserved2;
+    
+    // Lookaside lists for allocations
+    NPAGED_LOOKASIDE_LIST RegionLookaside;
+    NPAGED_LOOKASIDE_LIST ContextLookaside;
+    NPAGED_LOOKASIDE_LIST EventLookaside;
+    
+    //
+    // Sub-module detector instances.
+    // Stored as PVOID here to avoid pulling sub-module headers into the globals struct.
+    // Cast to the concrete type (PHS_DETECTOR, PROP_DETECTOR, etc.) in MemoryMonitor.c.
+    //
+    PVOID HeapSprayDetector;      // PHS_DETECTOR
+    PVOID ROPDetector;            // PROP_DETECTOR
+    PVOID SectionTracker;         // PSEC_TRACKER
+    PVOID InjectionDetector;      // PINJ_DETECTOR
+    PVOID HollowingDetector;      // PPH_DETECTOR
+    PVOID ShellcodeDetector;      // PSD_DETECTOR
+    PMS_SCANNER MemoryScanner;    // 【WkD 迁移】(2026-09-11) SS 无此成员
+                                  // （SS 经全局单例 getter
+                                  //   获取 MemoryScanner；WkD 未接线，当前恒 NULL，
+                                  //   扫描分支空转并 DbgPrint 提示）
+    
+    // Statistics
+    volatile LONG64 TotalEventsProcessed;
+    volatile LONG64 TotalShellcodeDetections;
+    volatile LONG64 TotalInjectionDetections;
+    volatile LONG64 TotalHollowingDetections;
+    volatile LONG64 TotalHeapSprayDetections;
+    volatile LONG64 TotalROPDetections;
+    volatile LONG64 TotalSectionAnomalies;
+    volatile LONG64 EventsDropped;
+    
+    // Rate limiting
+    volatile LONG EventsThisSecond;
+    volatile LONG64 CurrentSecondStart;
+    
+    // Callback registrations (for hooks)
+    PVOID AllocationCallbackHandle;
+    PVOID ProtectionCallbackHandle;
+    PVOID SectionCallbackHandle;
+} MEMORY_MONITOR_GLOBALS, *PMEMORY_MONITOR_GLOBALS;
+
+/**
+ * @brief Safe statistics output structure (no sync primitives or internal pointers).
+ */
+typedef struct _MEMORY_MONITOR_STATISTICS {
+    BOOLEAN Enabled;
+    UINT8 Reserved[3];
+    UINT32 ProcessContextCount;
+    LONG64 TotalEventsProcessed;
+    LONG64 TotalShellcodeDetections;
+    LONG64 TotalInjectionDetections;
+    LONG64 TotalHollowingDetections;
+    LONG64 TotalHeapSprayDetections;
+    LONG64 TotalROPDetections;
+    LONG64 TotalSectionAnomalies;
+    LONG64 EventsDropped;
+    MEMORY_MONITOR_CONFIG Config;
+} MEMORY_MONITOR_STATISTICS, *PMEMORY_MONITOR_STATISTICS;
+
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
+/**
+ * @brief Initialize the memory monitoring subsystem.
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorInitialize(VOID);
+
+/**
+ * @brief Shutdown the memory monitoring subsystem.
+ */
+VOID
+MmMonitorShutdown(VOID);
+
+/**
+ * @brief Enable or disable memory monitoring.
+ * @param Enable TRUE to enable, FALSE to disable.
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorSetEnabled(
+    _In_ BOOLEAN Enable
+    );
+
+/**
+ * @brief Update memory monitor configuration.
+ * @param Config New configuration.
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorUpdateConfig(
+    _In_ PMEMORY_MONITOR_CONFIG Config
+    );
+
+/**
+ * @brief Get current memory monitor statistics.
+ * @param Stats Output statistics structure (safe copy, no internal state).
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorGetStatistics(
+    _Out_ PMEMORY_MONITOR_STATISTICS Stats
+    );
+
+/**
+ * @brief Get hollowing detector statistics for DRIVER_STATUS reporting.
+ * @param Stats Output PH_STATISTICS filled from the hollowing detector.
+ * @return STATUS_SUCCESS, or STATUS_DEVICE_NOT_READY if detector not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSTATUS
+MmMonitorGetHollowingStats(
+    _Out_ PPH_STATISTICS Stats
+    );
+
+/**
+ * @brief Get the HollowingDetector instance for creation-time analysis.
+ * @return PPH_DETECTOR pointer (opaque to caller), or NULL if not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+PPH_DETECTOR
+MmMonitorGetHollowingDetector(
+    VOID
+    );
+
+/**
+ * @brief Get the InjectionDetector instance pointer.
+ * @return PINJ_DETECTOR opaque pointer, or NULL if not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+PINJ_DETECTOR
+MmMonitorGetInjectionDetector(
+    VOID
+    );
+
+/**
+ * @brief Get the ROPDetector instance for stack analysis.
+ * @return PROP_DETECTOR opaque pointer, or NULL if not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+PROP_DETECTOR
+MmMonitorGetROPDetector(
+    VOID
+    );
+
+/**
+ * @brief Get the ShellcodeDetector instance for region analysis.
+ * @return PSD_DETECTOR opaque pointer, or NULL if not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+PSD_DETECTOR
+MmMonitorGetShellcodeDetector(
+    VOID
+    );
+
+/**
+ * @brief Get the SectionTracker instance for cross-process section analysis.
+ * @return PSEC_TRACKER opaque pointer, or NULL if not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+PSEC_TRACKER
+MmMonitorGetSectionTracker(
+    VOID
+    );
+
+/**
+ * @brief Get aggregated injection detection statistics.
+ * @param Stats Output buffer for INJ_STATISTICS.
+ * @return STATUS_SUCCESS or STATUS_NOT_FOUND if detector not initialized.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_Must_inspect_result_
+NTSTATUS
+MmMonitorGetInjectionStats(
+    _Out_ PINJ_STATISTICS Stats
+    );
+
+/**
+ * @brief Notify InjectionDetector of process exit for context cleanup.
+ * Must be called from process termination path to prevent context leaks.
+ * @param ProcessId Exiting process handle.
+ */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+VOID
+MmMonitorNotifyInjectionProcessExit(
+    _In_ HANDLE ProcessId
+    );
+
+// ============================================================================
+// PROCESS CONTEXT MANAGEMENT
+// ============================================================================
+
+/**
+ * @brief Create or get memory context for a process.
+ * @param ProcessId Process ID.
+ * @param ProcessObject Optional EPROCESS pointer.
+ * @param Context Output context pointer.
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorGetProcessContext(
+    _In_ UINT32 ProcessId,
+    _In_opt_ PEPROCESS ProcessObject,
+    _Out_ PMM_PROCESS_CONTEXT* Context
+    );
+
+/**
+ * @brief Release reference to process context.
+ * @param Context Context to release.
+ */
+VOID
+MmMonitorReleaseProcessContext(
+    _In_ PMM_PROCESS_CONTEXT Context
+    );
+
+/**
+ * @brief Remove process context (on process termination).
+ * @param ProcessId Process ID.
+ */
+VOID
+MmMonitorRemoveProcessContext(
+    _In_ UINT32 ProcessId
+    );
+
+// ============================================================================
+// MEMORY OPERATION HANDLERS
+// ============================================================================
+
+/**
+ * @brief Handle memory allocation operation.
+ * @param ProcessId Target process ID.
+ * @param BaseAddress Allocation base address.
+ * @param RegionSize Allocation size.
+ * @param AllocationType Allocation type (MEM_COMMIT, etc.).
+ * @param Protection Memory protection.
+ * @param IsCrossProcess TRUE if cross-process allocation.
+ * @param SourceProcessId Source process ID (if cross-process).
+ * @return STATUS_SUCCESS to allow, STATUS_ACCESS_DENIED to block.
+ */
+NTSTATUS
+MmMonitorHandleAllocation(
+    _In_ UINT32 ProcessId,
+    _In_ UINT64 BaseAddress,
+    _In_ UINT64 RegionSize,
+    _In_ UINT32 AllocationType,
+    _In_ UINT32 Protection,
+    _In_ BOOLEAN IsCrossProcess,
+    _In_ UINT32 SourceProcessId
+    );
+
+/**
+ * @brief Handle memory protection change.
+ * @param ProcessId Target process ID.
+ * @param BaseAddress Region base address.
+ * @param RegionSize Region size.
+ * @param OldProtection Old protection.
+ * @param NewProtection New protection.
+ * @param IsCrossProcess TRUE if cross-process operation.
+ * @param SourceProcessId Source process ID (if cross-process).
+ * @return STATUS_SUCCESS to allow, STATUS_ACCESS_DENIED to block.
+ */
+NTSTATUS
+MmMonitorHandleProtectionChange(
+    _In_ UINT32 ProcessId,
+    _In_ UINT64 BaseAddress,
+    _In_ UINT64 RegionSize,
+    _In_ UINT32 OldProtection,
+    _In_ UINT32 NewProtection,
+    _In_ BOOLEAN IsCrossProcess,
+    _In_ UINT32 SourceProcessId
+    );
+
+/**
+ * @brief Handle cross-process memory write.
+ * @param SourceProcessId Writer process ID.
+ * @param TargetProcessId Target process ID.
+ * @param TargetAddress Target address.
+ * @param Size Write size.
+ * @param SourceBuffer Source buffer (kernel address).
+ * @return STATUS_SUCCESS to allow, STATUS_ACCESS_DENIED to block.
+ */
+NTSTATUS
+MmMonitorHandleCrossProcessWrite(
+    _In_ UINT32 SourceProcessId,
+    _In_ UINT32 TargetProcessId,
+    _In_ UINT64 TargetAddress,
+    _In_ UINT64 Size,
+    _In_opt_ PVOID SourceBuffer
+    );
+
+/**
+ * @brief Handle section create/map operation.
+ * @param ProcessId Process creating/mapping section.
+ * @param SectionHandle Section handle.
+ * @param BaseAddress Mapped base address.
+ * @param ViewSize View size.
+ * @param Protection Protection.
+ * @param IsCrossProcess TRUE if mapping into another process.
+ * @param TargetProcessId Target process (if cross-process).
+ * @return STATUS_SUCCESS to allow, STATUS_ACCESS_DENIED to block.
+ */
+NTSTATUS
+MmMonitorHandleSectionMap(
+    _In_ UINT32 ProcessId,
+    _In_ HANDLE SectionHandle,
+    _In_ UINT64 BaseAddress,
+    _In_ UINT64 ViewSize,
+    _In_ UINT32 Protection,
+    _In_ BOOLEAN IsCrossProcess,
+    _In_ UINT32 TargetProcessId
+    );
+
+// ============================================================================
+// DETECTION FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Scan memory region for shellcode.
+ * @param ProcessId Process ID.
+ * @param BaseAddress Region base.
+ * @param Size Region size.
+ * @param Event Output detection event (if detected).
+ * @return TRUE if shellcode detected.
+ */
+BOOLEAN
+MmMonitorScanForShellcode(
+    _In_ UINT32 ProcessId,
+    _In_ UINT64 BaseAddress,
+    _In_ UINT64 Size,
+    _Out_opt_ PSHELLCODE_DETECTION_EVENT Event
+    );
+
+/**
+ * @brief Detect code injection attempt.
+ * @param SourceProcessId Source (attacker) process.
+ * @param TargetProcessId Target (victim) process.
+ * @param TargetAddress Injection address.
+ * @param Size Injection size.
+ * @param InjectionType Detected injection type.
+ * @param Event Output detection event.
+ * @return TRUE if injection detected.
+ */
+BOOLEAN
+MmMonitorDetectInjection(
+    _In_ UINT32 SourceProcessId,
+    _In_ UINT32 TargetProcessId,
+    _In_ UINT64 TargetAddress,
+    _In_ UINT64 Size,
+    _In_ INJECTION_TYPE InjectionType,
+    _Out_opt_ PINJECTION_DETECTION_EVENT Event
+    );
+
+/**
+ * @brief Detect process hollowing.
+ * @param ProcessId Suspected hollowed process.
+ * @param Event Output detection event.
+ * @return TRUE if hollowing detected.
+ */
+BOOLEAN
+MmMonitorDetectHollowing(
+    _In_ UINT32 ProcessId,
+    _Out_opt_ PHOLLOWING_DETECTION_EVENT Event
+    );
+
+/**
+ * @brief Calculate entropy of memory region.
+ * @param Buffer Memory buffer.
+ * @param Size Buffer size.
+ * @return Entropy value * 1000 (0-8000).
+ */
+UINT32
+MmMonitorCalculateEntropy(
+    _In_reads_bytes_(Size) PVOID Buffer,
+    _In_ SIZE_T Size
+    );
+
+// ============================================================================
+// VAD TRACKING
+// ============================================================================
+
+/**
+ * @brief Build VAD map for a process.
+ * @param ProcessId Process ID.
+ * @param VadMap Output VAD map (caller must free).
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorBuildVadMap(
+    _In_ UINT32 ProcessId,
+    _Out_ PPROCESS_VAD_MAP* VadMap
+    );
+
+/**
+ * @brief Free VAD map.
+ * @param VadMap VAD map to free.
+ */
+VOID
+MmMonitorFreeVadMap(
+    _In_ PPROCESS_VAD_MAP VadMap
+    );
+
+/**
+ * @brief Find suspicious VAD entries.
+ * @param ProcessId Process ID.
+ * @param SuspiciousEntries Output array of suspicious VAD entries.
+ * @param MaxEntries Maximum entries to return.
+ * @param EntryCount Output number of entries found.
+ * @return STATUS_SUCCESS on success.
+ */
+NTSTATUS
+MmMonitorFindSuspiciousVads(
+    _In_ UINT32 ProcessId,
+    _Out_writes_to_(MaxEntries, *EntryCount) PVAD_ENTRY SuspiciousEntries,
+    _In_ UINT32 MaxEntries,
+    _Out_ PUINT32 EntryCount
+    );
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Check if address is in executable region.
+ * @param ProcessId Process ID.
+ * @param Address Address to check.
+ * @return TRUE if in executable region.
+ */
+BOOLEAN
+MmMonitorIsAddressExecutable(
+    _In_ UINT32 ProcessId,
+    _In_ UINT64 Address
+    );
+
+/**
+ * @brief Get backing file for memory region.
+ * @param ProcessId Process ID.
+ * @param Address Address in region.
+ * @param FileName Output file name buffer.
+ * @param FileNameSize Buffer size in bytes.
+ * @return STATUS_SUCCESS on success, STATUS_NOT_FOUND if unbacked.
+ */
+NTSTATUS
+MmMonitorGetBackingFile(
+    _In_ UINT32 ProcessId,
+    _In_ UINT64 Address,
+    _Out_writes_bytes_(FileNameSize) PWCHAR FileName,
+    _In_ UINT32 FileNameSize
+    );
+
+/**
+ * @brief Check if protection change is suspicious.
+ * @param OldProtection Old protection.
+ * @param NewProtection New protection.
+ * @param RegionType Region type.
+ * @return Suspicion score 0-100.
+ */
+UINT32
+MmMonitorGetProtectionChangeSuspicion(
+    _In_ UINT32 OldProtection,
+    _In_ UINT32 NewProtection,
+    _In_ MEMORY_REGION_TYPE RegionType
+    );
+

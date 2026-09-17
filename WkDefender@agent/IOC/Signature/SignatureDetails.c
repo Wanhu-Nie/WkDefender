@@ -1,12 +1,13 @@
 ﻿/**************************************************/
 /*  WkDefender IOC — 证书详情提取与时间戳            */
 /*  自 IocScanner.c 独立 (2026-08 重构)              */
-/*  对齐 SS ExtractCertificateDetailsImpl/PE_sig_verf */
+/*  ExtractCertificateDetailsImpl/PE_sig_verf */
 /**************************************************/
 
 #include "SignatureDetails.h"
 #include <wintrust.h>   /* WTHelper* / WINTRUST_DATA — 替换 deprecated 的 CryptQueryObject 路径 */
 #include <softpub.h>    /* WINTRUST_ACTION_GENERIC_VERIFY_V2 策略 GUID (定义于 SoftPub.h) */
+#include "../../Common/BCrypUtils.h"   /* IocScan_ComputeAuthentihash (Authenticode 认证哈希) */
 
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "wintrust.lib")
@@ -33,7 +34,7 @@ Routine Description:
     EV/EKU/弱算法/吊销(cache-only)/cert_reputation 表接线。
     数据源: 优先使用调用方提供的 WinVerifyTrust 状态 (WvtStateData, 走 WTHelper
     非 deprecated 路径); 为 NULL 时内部自建 WinVerifyTrust(VERIFY→提取→CLOSE),
-    彻底避免 CryptQueryObject (deprecated)。对齐 SS ExtractCertificateDetailsImpl
+    彻底避免 CryptQueryObject (deprecated)。ExtractCertificateDetailsImpl
     / DigitalSignatureValidator WTHelper 路径。
 
 Arguments:
@@ -288,6 +289,10 @@ Return Value:
         }
 
     }   /* 关叶证书块 (pLeaf 由 WTHelper 状态拥有, 不可 CertFreeCertificateContext) */
+
+    /* Authenticode 认证哈希 (Authentihash): 整文件 SHA-256 (清 CheckSum +
+     * 排除证书表)。供离线 catalog / 威胁情报比对; 非 PE / 失败保持空。 */
+    IocScan_ComputeAuthentihash(FilePath, Result->Authentihash, sizeof(Result->Authentihash));
 }
 
 /**************************************************/
@@ -374,7 +379,7 @@ Routine Description:
     提取签名时间戳 (legacy 计数器签名 / RFC3161), 用于签名时间豁免与未来时间戳检测。
     数据源: 优先使用调用方提供的 WinVerifyTrust 状态 (WvtStateData, WTHelper 路径);
     为 NULL 时内部自建 WinVerifyTrust(VERIFY→提取→CLOSE), 彻底避免 CryptQueryObject
-    (deprecated)。对齐 SS PE_sig_verf CheckTimestampCounterSignatureFromMessage。
+    (deprecated)。PE_sig_verf CheckTimestampCounterSignatureFromMessage。
 
 Arguments:
     FilePath      - 文件路径 (WvtStateData 为 NULL 时用于内部验签)。

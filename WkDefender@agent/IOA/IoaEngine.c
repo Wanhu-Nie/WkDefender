@@ -37,7 +37,7 @@
 #include "../Memory/MemoryScan.h"
 #include "../CmdLineAnalyzer.h"             /* 命令行深度分析 (SS CommandLineParser 迁移) */
 #include "../TokenAnalyzer.h"               /* 令牌分析 (SS TokenAnalyzer+PrivilegeMonitor 迁移) */
-#include "../FileLockManager.h"             /* 文件锁模式关联 (FileLockManager 迁移 2026-08) */
+#include "../FileSystem/FileLockManager.h"     /* 文件锁模式关联 (FileLockManager 迁移 2026-08) */
 #include "IoaHeapSprayDetect.h"             /* 堆喷检测 (HeapSpray 迁移 2026-08) */
 // #include "../Notification/EventParser.h"
 
@@ -298,7 +298,7 @@ Return Value:
 
     /* 11. 速率分析器 */
     printf("[IoaEngine] [11/12] Initializing Rate Analyzer...\n");
-    status = RaInitialize(&WkdIoaEngine.RateAnalyzer);
+    status = IoaRaInitialize(&WkdIoaEngine.RateAnalyzer);
     if (!NT_SUCCESS(status)) { goto fail_rate; }
 
     /* 11b. 全局边聚合表 <spn, tpn, type> */
@@ -577,7 +577,7 @@ PolicyDecideDispatch(
 
 /*
  * IoaHandleRealTimeMemoryEvent — 实时内存监控事件处理。
- * 对齐 SS ReflectiveDLLDetector OnMemoryAllocation (cpp L1835-1878)
+ * ReflectiveDLLDetector OnMemoryAllocation (cpp L1835-1878)
  *   / OnProtectionChange (cpp L1880-1901)。
  *
  * RWX 分配 / RW→RX 保护变更 → PE 预判 → 定向扫描 (MsScanRegionAt)。
@@ -609,7 +609,7 @@ IoaHandleRealTimeMemoryEvent(
     sourceProcessId = (ULONG)(ULONG_PTR)payload->SourceProcessId;
 
     if (Event->Type == WkdEvent_MemoryAllocate) {
-        /* 对齐 SS OnMemoryAllocation: RWX 分配 + 大块可执行无背衬 */
+        /* OnMemoryAllocation: RWX 分配 + 大块可执行无背衬 */
         address = (ULONG_PTR)payload->ParameterBase[1];
         size    = (SIZE_T)payload->ParameterBase[3];
         protect = (ULONG)(ULONG_PTR)payload->ParameterBase[5];   /* PageProtection */
@@ -619,7 +619,7 @@ IoaHandleRealTimeMemoryEvent(
             /* RWX 分配几乎从不合法 (对齐 SS): 若含 PE 结构 → 定向扫描 */
             printf("[IoaMem] RWX alloc pid=%lu addr=0x%p size=%zu\n",
                    sourceProcessId, (void*)address, size);
-            if (size >= 4096) {   /* 对齐 SS MIN_PE_SIZE */
+            if (size >= 4096) {   /* MIN_PE_SIZE */
                 scan = (PWKD_MEM_SCAN_RESULT)malloc(sizeof(WKD_MEM_SCAN_RESULT));
                 if (scan != NULL) {
                     MsScanRegionAt(sourceProcessId, address, size, scan);
@@ -634,7 +634,7 @@ IoaHandleRealTimeMemoryEvent(
                    sourceProcessId, (void*)address, size);
         }
     } else if (Event->Type == WkdEvent_MemoryProtect) {
-        /* 对齐 SS OnProtectionChange: RW->RX 过渡 (反射加载/手动映射标志) */
+        /* OnProtectionChange: RW->RX 过渡 (反射加载/手动映射标志) */
         address     = (ULONG_PTR)payload->ParameterBase[1];
         size        = (SIZE_T)payload->ParameterBase[2];
         protect     = (ULONG)(ULONG_PTR)payload->ParameterBase[3];  /* NewProtection */
@@ -722,7 +722,7 @@ Arguments:
         break;
 
     case WkdEvent_SetThreadContext:
-        /* 跨进程 SetContext 本身即可疑 (对齐 SS OnContextChangeInternal
+        /* 跨进程 SetContext 本身即可疑 (OnContextChangeInternal
            L1825-1861): 即使无挂起前置, 跨进程修改另一进程线程上下文
            是强注入信号。提升事件供分类器/评分链路消费。 */
         if ((ULONG)(ULONG_PTR)payload->SourceProcessId !=
@@ -756,7 +756,7 @@ Arguments:
             tracker->ResumeTime = now;
             tracker->Confirmed = TRUE;
             tracker->Confidence = 85;   /* 对齐 IoaComputeInjectionConfidence ThreadHijacking 基准 */
-            /* 挂起时长维度 (对齐 SS CalculateRiskScore: >500ms +5) */
+            /* 挂起时长维度 (CalculateRiskScore: >500ms +5) */
             elapsedMs = (now.QuadPart - tracker->SuspendTime.QuadPart) / 10000;
             if (elapsedMs > 500) {
                 tracker->Confidence = min(90, tracker->Confidence + 5);
@@ -951,7 +951,7 @@ Return Value:
             sourceProcessId = Pair->SourceProcessId;
             targetProcessId = Pair->TargetProcessId;
 
-            /* 实时内存监控 (对齐 SS OnMemoryAllocation/OnProtectionChange, cpp L1835-1901)
+            /* 实时内存监控 (OnMemoryAllocation/OnProtectionChange, cpp L1835-1901)
                ※ 死代码: 依赖驱动 Sm 启用 (NtAllocateVirtualMemory/NtProtectVirtualMemory
                上送), 当前无内存事件到达 */
    /*         if (Event->Type == WkdEvent_MemoryAllocate ||

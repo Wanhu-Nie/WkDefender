@@ -1,7 +1,7 @@
 ﻿/**************************************************/
 /*  WkDefender IOC — Catalog 目录签名验证           */
 /*  自 IocScanner.c 独立 (2026-08 重构)              */
-/*  对齐 SS VerifyCatalogSignature + DSV FindCatalog */
+/*  VerifyCatalogSignature + DSV FindCatalog */
 /**************************************************/
 
 #pragma once
@@ -38,7 +38,7 @@ IocScan_CatalogFindForFile(
 /*++
 Routine Description:
     验证目录文件签名 (WTD_CHOICE_CATALOG + WinVerifyTrust), 成功后从 catalog 文件
-    提取签名者详情。对齐 SS VerifyCatalogSignature L828-1020。
+    提取签名者详情。VerifyCatalogSignature L828-1020。
     SignatureVerifier CertVerify 的 NOSIGNATURE 分支 (门控 g_IocCatalogEnabled) 调用。
 
 Arguments:

@@ -1,7 +1,7 @@
 ﻿/**************************************************/
 /*  WkDefender IOC — Catalog 目录签名验证           */
 /*  自 IocScanner.c 独立 (2026-08 重构)              */
-/*  对齐 SS VerifyCatalogSignature + DSV FindCatalog */
+/*  VerifyCatalogSignature + DSV FindCatalog */
 /**************************************************/
 
 #include "SignatureCatalog.h"
@@ -70,7 +70,7 @@ Return Value:
     if (!FilePath || !CatalogPath || CatalogPathCch == 0) return FALSE;
     CatalogPath[0] = L'\0';
 
-    /* catalog 成员哈希即文件哈希 (对齐 SS CalculateAuthenticodeHash 语义) */
+    /* catalog 成员哈希即文件哈希 (CalculateAuthenticodeHash 语义) */
     if (!IocScanner_ComputeFileSha256(FilePath, &hash)) {
         return FALSE;
     }
@@ -106,7 +106,7 @@ IocScan_CatalogVerify(
 Routine Description:
     验证目录文件签名 (WTD_CHOICE_CATALOG + WinVerifyTrust), 成功后从 catalog 文件
     提取签名者详情 (catalog 文件自身即 PKCS7 签名对象, 复用 IocScan_ExtractCertDetails)。
-    对齐 SS VerifyCatalogSignature L828-1020 (memberTag 弱哈希门控; catalog 链/吊销
+    VerifyCatalogSignature L828-1020 (memberTag 弱哈希门控; catalog 链/吊销
     由 WinVerifyTrust provider 内部处理, 深度校验走 ExtractCertDetails 门控吊销段)。
 
 Arguments:

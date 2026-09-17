@@ -15,7 +15,7 @@
 #include "DefendTypes.h"   /* 列表宏: InsertTailList/RemoveEntryList/InitializeListHead 等 */
 
 //
-// 完整性级别常量（对齐 SS TA_INTEGRITY_* / PM_INTEGRITY_*）
+// 完整性级别常量（TA_INTEGRITY_* / PM_INTEGRITY_*）
 //
 #define WPA_INTEGRITY_UNTRUSTED     0x00000000UL
 #define WPA_INTEGRITY_LOW           0x00001000UL
@@ -85,7 +85,7 @@
 #define WPA_PRIV_MANAGE_VOLUME      0x00040000
 
 //
-// 敏感特权掩码（对齐 SS PmCheckForEscalation 敏感集）
+// 敏感特权掩码（PmCheckForEscalation 敏感集）
 //
 #define WPA_PRIV_SENSITIVE_MASK     (WPA_PRIV_DEBUG | WPA_PRIV_TCB | \
                                      WPA_PRIV_LOAD_DRIVER | WPA_PRIV_CREATE_TOKEN | \
@@ -93,7 +93,7 @@
                                      WPA_PRIV_TAKE_OWNERSHIP)
 
 //
-// 危险特权组合（对齐 SS TokenAnalyzer 无条件检测）
+// 危险特权组合（TokenAnalyzer 无条件检测）
 //
 #define WPA_PRIV_DANGEROUS_COMBO    (WPA_PRIV_DEBUG | WPA_PRIV_IMPERSONATE | \
                                      WPA_PRIV_ASSIGN_PRIMARY)
@@ -111,7 +111,7 @@
 #define WPA_TA_DEFAULT_BLOCK_SCORE  90
 
 //
-// 可疑分阈值（对齐 SS PM_SUSPICION_*）
+// 可疑分阈值（PM_SUSPICION_*）
 //
 #define WPA_SUSPICION_NONE          0
 #define WPA_SUSPICION_LOW           20
@@ -120,7 +120,7 @@
 #define WPA_SUSPICION_CRITICAL      90
 
 //
-// 事件标志（对齐 SS PM_EVENT_FLAG_*）
+// 事件标志（PM_EVENT_FLAG_*）
 //
 #define WPA_EVENT_FLAG_LEGITIMATE   0x00000001
 #define WPA_EVENT_FLAG_ALERTABLE    0x00000002
@@ -128,7 +128,7 @@
 #define WPA_EVENT_FLAG_REPORTED     0x00000008
 
 //
-// 令牌攻击类型（对齐 SS TA_TOKEN_ATTACK）
+// 令牌攻击类型（TA_TOKEN_ATTACK）
 //
 typedef enum _WPA_TOKEN_ATTACK {
     WpaAttack_None = 0,
@@ -143,7 +143,7 @@ typedef enum _WPA_TOKEN_ATTACK {
 } WPA_TOKEN_ATTACK;
 
 //
-// 提权类型（对齐 SS PM_ESCALATION_TYPE 9 类）
+// 提权类型（PM_ESCALATION_TYPE 9 类）
 //
 typedef enum _WPA_ESCALATION_TYPE {
     WpaEscalation_None = 0,
@@ -201,7 +201,7 @@ typedef struct _WPA_TOKEN_INFO {
 } WPA_TOKEN_INFO, *PWPA_TOKEN_INFO;
 
 //
-// UAC 绕过模式（对齐 SS g_UACBypassPatterns）
+// UAC 绕过模式（g_UACBypassPatterns）
 // 注: CommandLinePattern 为死代码 — SS PmpDetectUACBypass 从不比对命令行。
 //
 typedef struct _WPA_UAC_PATTERN {
@@ -290,7 +290,7 @@ typedef struct _WPA_ESCALATION_EVENT {
 } WPA_ESCALATION_EVENT, *PWPA_ESCALATION_EVENT;
 
 //
-// 引擎配置（对齐 SS PM_CONFIG）
+// 引擎配置（PM_CONFIG）
 //
 typedef struct _WPA_TOKEN_CONFIG {
     BOOLEAN EnableIntegrityMonitoring;
@@ -298,14 +298,14 @@ typedef struct _WPA_TOKEN_CONFIG {
     BOOLEAN EnableUACBypassDetection;
     BOOLEAN EnableTokenManipulationDetection;
     BOOLEAN EnableCrossSessionDetection;
-    BOOLEAN AlertOnEscalation;      /* 对齐 SS PM_CONFIG (SS 未实际消费, 预留) */
+    BOOLEAN AlertOnEscalation;      /* PM_CONFIG (SS 未实际消费, 预留) */
     BOOLEAN BlockHighRiskEscalation;
     ULONG   MinAlertScore;
     ULONG   BlockThresholdScore;
 } WPA_TOKEN_CONFIG, *PWPA_TOKEN_CONFIG;
 
 //
-// 引擎统计（对齐 SS PM_STATISTICS，PrivilegeMonitor 迁移 2026-08-06 补漏）
+// 引擎统计（PM_STATISTICS，PrivilegeMonitor 迁移 2026-08-06 补漏）
 //
 typedef struct _WPA_TOKEN_STATISTICS {
     LONG      EscalationsDetected;    /* 检测到提权次数 */
@@ -338,7 +338,7 @@ WpaTokenAnalyzerShutdown(
     );
 
 //
-// 全量令牌分析（对齐 SS TaAnalyzeToken:784-1092）
+// 全量令牌分析（TaAnalyzeToken:784-1092）
 // 采集 + 无条件攻击检测 + 评分。结果写 Info。
 //
 _Check_return_
@@ -349,7 +349,7 @@ WpaAnalyzeToken(
     );
 
 //
-// 检测令牌篡改（对齐 SS TaDetectTokenManipulation:1096-1255）
+// 检测令牌篡改（TaDetectTokenManipulation:1096-1255）
 // 需先 WpaRecordBaseline 建立基线；无基线时退化为无条件检测。
 //
 _Check_return_
@@ -361,7 +361,7 @@ WpaDetectTokenManipulation(
     );
 
 //
-// 比较两个令牌快照（对齐 SS TaCompareTokens:1256-1410）
+// 比较两个令牌快照（TaCompareTokens:1256-1410）
 // 补权限/组 SID 增量对比（SS TapComparePrivileges/TapCompareGroups）。
 //
 _Check_return_
@@ -373,7 +373,7 @@ WpaCompareTokens(
     );
 
 //
-// 记录进程令牌基线（对齐 SS PmRecordBaseline:1095）
+// 记录进程令牌基线（PmRecordBaseline:1095）
 // ProcessName/ParentProcessName 可为 NULL（调用者无父信息时 UAC 父匹配降半）。
 //
 _Check_return_
@@ -395,7 +395,7 @@ WpaRemoveBaseline(
     );
 
 //
-// 获取基线快照（对齐 SS TaGetBaselineSnapshot:1471）
+// 获取基线快照（TaGetBaselineSnapshot:1471）
 //
 _Check_return_
 HRESULT
@@ -405,7 +405,7 @@ WpaGetBaselineSnapshot(
     );
 
 //
-// 提权检测（对齐 SS PmCheckForEscalation:1364 + PmpDetermineEscalationType）
+// 提权检测（PmCheckForEscalation:1364 + PmpDetermineEscalationType）
 // Event 可为 NULL（仅刷新 Current 状态不产事件，对齐 wkd 周期检查用法）。
 //
 _Check_return_
@@ -416,7 +416,7 @@ WpaCheckForEscalation(
     );
 
 //
-// UAC 绕过检测（对齐 SS PmpDetectUACBypass:2868，10 模式）
+// UAC 绕过检测（PmpDetectUACBypass:2868，10 模式）
 //
 BOOLEAN
 WpaDetectUACBypass(
@@ -426,7 +426,7 @@ WpaDetectUACBypass(
     );
 
 //
-// 进程终止清理基线（对齐 SS TaOnProcessTerminated:1516）
+// 进程终止清理基线（TaOnProcessTerminated:1516）
 //
 VOID
 WpaOnProcessTerminated(
@@ -434,7 +434,7 @@ WpaOnProcessTerminated(
     );
 
 //
-// 获取待处理提权事件（对齐 SS PmGetEvents; 调用者 HeapFree 释放出队项）
+// 获取待处理提权事件（PmGetEvents; 调用者 HeapFree 释放出队项）
 // ※死代码: 当前无消费方, 事件已由 WpaCheckForEscalation 入队。
 //
 _Check_return_
@@ -446,7 +446,7 @@ WpaGetEscalationEvents(
     );
 
 //
-// 清空提权事件队列（对齐 SS PmClearEvents）
+// 清空提权事件队列（PmClearEvents）
 //
 _Check_return_
 HRESULT
@@ -455,7 +455,7 @@ WpaClearEscalationEvents(
     );
 
 //
-// 查询进程是否已提权（对齐 SS PmQueryProcessEscalation）
+// 查询进程是否已提权（PmQueryProcessEscalation）
 // ※死代码: 无消费方。
 //
 _Check_return_
@@ -468,7 +468,7 @@ WpaQueryProcessEscalation(
     );
 
 //
-// 获取/设置引擎配置（对齐 SS PmGetConfiguration/PmSetConfiguration）
+// 获取/设置引擎配置（PmGetConfiguration/PmSetConfiguration）
 // ※死代码: 配置默认值硬编码, 无外部接口消费。
 //
 _Check_return_
@@ -484,7 +484,7 @@ WpaSetConfig(
     );
 
 //
-// 获取引擎统计（对齐 SS PmGetStatistics:1964-1996）
+// 获取引擎统计（PmGetStatistics:1964-1996）
 // ※死代码: 无消费方, 供状态查询/调优。
 //
 _Check_return_
@@ -494,7 +494,7 @@ WpaGetStatistics(
     );
 
 //
-// 清理过期基线（对齐 SS PmpCleanupStaleBaselines, 进程消失则移除）
+// 清理过期基线（PmpCleanupStaleBaselines, 进程消失则移除）
 // ※死代码: wkd 进程退出回调 (ProcessExit 事件) 已触发 WpaOnProcessTerminated
 //   立即清理, 此为 SS 周期兜底迁移, 无周期触发源。
 //

@@ -80,7 +80,7 @@ static const char* const g_WkdEvOids[15] = {
 /**************************************************/
 /*           被盗证书数据库                         */
 /*  定长数组 (WKD_STOLEN_CERT_MAX) + SRWLOCK        */
-/*  (静态初始化免 main 接线; 对齐 SS 动态 map 降级)  */
+/*  (静态初始化免 main 接线; 动态 map 降级)  */
 /**************************************************/
 
 #define WKD_STOLEN_CERT_MAX  256
@@ -262,8 +262,8 @@ IoaSigHunt_AddStolenCert(
     )
 /*++
 Routine Description:
-    追加单条被盗证书 (SHA1 指纹 hex 小写为键, 对齐 SS AddStolenCertificate L1961)。
-    定长数组满时返回 INSUFFICIENT_RESOURCES (对齐 SS 无上限 map 的降级)。
+    追加单条被盗证书 (SHA1 指纹 hex 小写为键, AddStolenCertificate L1961)。
+    定长数组满时返回 INSUFFICIENT_RESOURCES (无上限 map 的降级)。
 
 Arguments:
     Entry - 条目 (指纹/威胁组织/活动/MITRE 组/严重度)。
@@ -294,7 +294,7 @@ IoaSigHunt_LoadStolenCertDb(
     )
 /*++
 Routine Description:
-    批量导入被盗证书库 (威胁情报 feed, 对齐 SS LoadStolenCertDatabase L1971)。
+    批量导入被盗证书库 (威胁情报 feed, LoadStolenCertDatabase L1971)。
 
 Arguments:
     Entries - 条目数组。
@@ -321,7 +321,7 @@ IoaSigHunt_ClearStolenCertDb(
     )
 /*++
 Routine Description:
-    清空被盗证书库 (对齐 SS 动态库 Clear)。
+    清空被盗证书库 (动态库 Clear)。
 
 Return Value:
     无。

@@ -1,7 +1,7 @@
 ﻿/**************************************************/
 /*  WkDefender — 路径算法实现                        */
 /*                                                   */
-/*  按 wkd 架构重写自 SS PathExclusion.c（对齐 SS     */
+/*  按 wkd 架构重写自 SS PathExclusion.c（    */
 /*  行号: PeNormalizePath L236 / MatchPathPattern     */
 /*  L343 / ExtractExtension L456）                    */
 /*                                                   */

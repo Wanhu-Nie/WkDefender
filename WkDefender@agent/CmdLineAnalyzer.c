@@ -17,7 +17,7 @@
 #include <stdlib.h>
 
 //
-// 检测阈值（对齐 SS CLP_*）
+// 检测阈值（CLP_*）
 //
 #define WPA_OBFUSCATION_CARET_THRESHOLD     5
 #define WPA_OBFUSCATION_PERCENT_THRESHOLD   10
@@ -27,7 +27,7 @@
 #define WPA_MIN_BASE64_LENGTH               8
 
 //
-// 评分权重（对齐 SS CLP_SCORE_*）
+// 评分权重（CLP_SCORE_*）
 //
 #define WPA_SCORE_ENCODED_COMMAND       25
 #define WPA_SCORE_OBFUSCATED            20
@@ -49,7 +49,7 @@
 /**************************************************/
 
 //
-// 大小写不敏感子串搜索（对齐 SS ClppContainsPatternBounded）
+// 大小写不敏感子串搜索（ClppContainsPatternBounded）
 //
 static
 BOOLEAN
@@ -173,7 +173,7 @@ WpaExtractFileName(
 }
 
 //
-// PowerShell 上下文判定（对齐 SS ClppDetectEncodedCommand IsPowerShell 判定 L1689-1704）
+// PowerShell 上下文判定（ClppDetectEncodedCommand IsPowerShell 判定 L1689-1704）
 //
 static
 BOOLEAN
@@ -187,11 +187,11 @@ WpaIsPowerShell(
 }
 
 /**************************************************/
-/*       检测函数（对齐 SS ClppDetect*）            */
+/*       检测函数（ClppDetect*）            */
 /**************************************************/
 
 //
-// 编码命令检测（对齐 SS ClppDetectEncodedCommand L1677）
+// 编码命令检测（ClppDetectEncodedCommand L1677）
 // 长参数无条件；短参数 (-e/-ec) 仅 PS 上下文，防误报。
 //
 static
@@ -218,7 +218,7 @@ WpaDetectEncodedCommand(
 }
 
 //
-// 混淆检测（对齐 SS ClppDetectObfuscation L1760）
+// 混淆检测（ClppDetectObfuscation L1760）
 //
 static
 BOOLEAN
@@ -266,7 +266,7 @@ WpaDetectObfuscation(
 }
 
 //
-// 下载器检测（对齐 SS ClppDetectDownloadCradle L1861）
+// 下载器检测（ClppDetectDownloadCradle L1861）
 //
 static
 BOOLEAN
@@ -330,7 +330,7 @@ WpaDetectDownloadCradle(
 }
 
 //
-// 执行绕过检测（对齐 SS ClppDetectExecutionBypass L1941）
+// 执行绕过检测（ClppDetectExecutionBypass L1941）
 //
 static
 BOOLEAN
@@ -379,7 +379,7 @@ WpaDetectExecutionBypass(
 }
 
 //
-// 隐藏窗口检测（对齐 SS ClppDetectHiddenWindow L2005）
+// 隐藏窗口检测（ClppDetectHiddenWindow L2005）
 //
 static
 BOOLEAN
@@ -421,7 +421,7 @@ WpaDetectHiddenWindow(
 }
 
 //
-// 远程执行检测（对齐 SS ClppDetectRemoteExecution L2060）
+// 远程执行检测（ClppDetectRemoteExecution L2060）
 //
 static
 BOOLEAN
@@ -467,7 +467,7 @@ WpaDetectRemoteExecution(
 }
 
 //
-// 可疑路径检测（对齐 SS ClppDetectSuspiciousPath L2121）
+// 可疑路径检测（ClppDetectSuspiciousPath L2121）
 //
 static
 BOOLEAN
@@ -512,7 +512,7 @@ WpaDetectSuspiciousPath(
 }
 
 //
-// 脚本执行检测（对齐 SS ClppDetectScriptExecution L2181）
+// 脚本执行检测（ClppDetectScriptExecution L2181）
 //
 static
 BOOLEAN
@@ -542,7 +542,7 @@ WpaDetectScriptExecution(
 
 /**************************************************/
 /*       PowerShell -EncodedCommand Base64 解码    */
-/*  对齐 SS ClppDecodeBase64Unicode（用户态简化）   */
+/*  ClppDecodeBase64Unicode（用户态简化）   */
 /**************************************************/
 
 //
@@ -771,7 +771,7 @@ WpaExtractEncodedArgument(
 }
 
 /**************************************************/
-/*           主分析函数（对齐 SS ClpAnalyze）       */
+/*           主分析函数（ClpAnalyze）       */
 /**************************************************/
 
 VOID
@@ -808,7 +808,7 @@ WpaAnalyzeCommandLine(
     }
 
     /* PS 上下文 + 脚本宿主判定
-     * 对齐 SS ClppDetectEncodedCommand L1690-1704：ImageFileName 无 PS 名时，
+     * ClppDetectEncodedCommand L1690-1704：ImageFileName 无 PS 名时，
      * 命令行含 powershell/pwsh 也算 PS 上下文（短参数 -e/-ec 命中）。 */
     isPowerShell = WpaIsPowerShell(exeFileName) ||
                    WpaContainsPatternCI(CmdLine, L"powershell") ||
@@ -818,12 +818,12 @@ WpaAnalyzeCommandLine(
                    WpaContainsPatternCI(exeFileName, L"cscript") ||
                    WpaContainsPatternCI(exeFileName, L"mshta");
 
-    /* 1. 编码命令检测（对齐 SS ClpAnalyze L709） */
+    /* 1. 编码命令检测（ClpAnalyze L709） */
     if (WpaDetectEncodedCommand(CmdLine, isPowerShell)) {
         flags |= WPA_CMD_SUSPICION_ENCODED;
         score += WPA_SCORE_ENCODED_COMMAND;
 
-        /* 尝试 Base64 解码（对齐 SS L716-768） */
+        /* 尝试 Base64 解码（L716-768） */
         if (WpaExtractEncodedArgument(CmdLine, isPowerShell,
                                       encodedArg, ARRAYSIZE(encodedArg)) &&
             WpaDecodeBase64(encodedArg, Result->DecodedContent,
@@ -864,7 +864,7 @@ WpaAnalyzeCommandLine(
 
     /* 7. LOLBin 检测（统一 IocLolbinDb.h）
      * 排除脚本解释器（powershell/pwsh/cmd/wscript/cscript/mshta）——
-     * 解释器由步骤8 ScriptExecution 覆盖，对齐 SS g_LOLBinDefinitions
+     * 解释器由步骤8 ScriptExecution 覆盖，g_LOLBinDefinitions
      * 53 条不含解释器（wkd IocLolbinDb 含解释器是为注入白名单设计）。 */
     if (exeFileName[0] != L'\0') {
         BOOLEAN isInterpreter =
@@ -887,11 +887,11 @@ WpaAnalyzeCommandLine(
                                         (lolbin->RiskScore >= 60) ? 2 : 1;
             Result->LOLBinCategory = lolbin->Category;
 
-            /* LOLBin + 编码组合（对齐 SS CLP_SCORE_LOLBIN_ENCODED_COMBO=10） */
+            /* LOLBin + 编码组合（CLP_SCORE_LOLBIN_ENCODED_COMBO=10） */
             if (flags & WPA_CMD_SUSPICION_ENCODED) {
                 score += WPA_SCORE_LOLBIN_ENCODED_COMBO;
             }
-            /* LOLBin + 下载器组合（对齐 SS CLP_SCORE_LOLBIN_DOWNLOAD_COMBO=10） */
+            /* LOLBin + 下载器组合（CLP_SCORE_LOLBIN_DOWNLOAD_COMBO=10） */
             if (flags & WPA_CMD_SUSPICION_DOWNLOAD_CRADLE) {
                 score += WPA_SCORE_LOLBIN_DOWNLOAD_COMBO;
             }
@@ -910,7 +910,7 @@ WpaAnalyzeCommandLine(
         score += WPA_SCORE_SUSPICIOUS_PATH;
     }
 
-    /* 10. 长命令行检测（对齐 SS L851-858） */
+    /* 10. 长命令行检测（L851-858） */
     if (cmdLen > WPA_VERY_LONG_THRESHOLD) {
         flags |= WPA_CMD_SUSPICION_LONG_CMD;
         score += WPA_SCORE_VERY_LONG_COMMAND;
@@ -919,7 +919,7 @@ WpaAnalyzeCommandLine(
         score += WPA_SCORE_LONG_COMMAND;
     }
 
-    /* 11. 解码内容二次检测（对齐 SS L863-873；SS 仅查 download cradle，
+    /* 11. 解码内容二次检测（L863-873；SS 仅查 download cradle，
      *     此处补充混淆检测增强） */
     if (Result->WasDecoded && Result->DecodedContent[0]) {
         if (!(flags & WPA_CMD_SUSPICION_DOWNLOAD_CRADLE) &&

@@ -81,7 +81,7 @@ RaHashGuid(
     )
 /*++
 Routine Description:
-    进程节点 GUID → 哈希桶索引 (FNV-1a 变体, 对齐 SS AdpHashProcessId)。
+    进程节点 GUID → 哈希桶索引 (FNV-1a 变体, AdpHashProcessId)。
 
 Arguments:
     NodeId      — 进程节点 GUID。
@@ -109,7 +109,7 @@ RaNow(
     )
 /*++
 Routine Description:
-    获取当前时间 (FILETIME 100ns, 对齐 SS KeQuerySystemTime 语义)。
+    获取当前时间 (FILETIME 100ns, KeQuerySystemTime 语义)。
 --*/
 {
     GetSystemTimeAsFileTime((PFILETIME)Now);
@@ -117,7 +117,7 @@ Routine Description:
 
 /*
  * RaMapEventTypeToMetric — 事件类型 → 统计基线指标。
- * 对齐 SS BepProcessSingleEvent 步骤⑦ eventCategory 映射
+ * BepProcessSingleEvent 步骤⑦ eventCategory 映射
  * (EventType 高字节: 0x10 进程/0x20 线程/0x30 文件/0x40 注册表/
  *  0x50 网络/0x60 内存; 0x80 IOC 段返回 CUSTOM, 调用方跳过学习)。
  */
@@ -288,7 +288,7 @@ RaCreateProcessBaselineLocked(
     )
 /*++
 Routine Description:
-    创建进程基线并插入哈希表 (持锁调用, 对齐 SS AdpCreateProcessBaseline)。
+    创建进程基线并插入哈希表 (持锁调用, AdpCreateProcessBaseline)。
 
 Arguments:
     Analyzer      — 速率分析器。
@@ -355,7 +355,7 @@ RaCalculateStatisticsLocked(
 /*++
 Routine Description:
     从样本环重算 Mean/StdDev/Min/Max。
-    对齐 SS AdpCalculateStatisticsLocked (单遍 min/max/mean + 二次方差)。
+    AdpCalculateStatisticsLocked (单遍 min/max/mean + 二次方差)。
 
 Arguments:
     Baseline — 基线 (样本环已更新)。
@@ -401,7 +401,7 @@ RaUpdateBaselineLocked(
 /*++
 Routine Description:
     将样本写入环形缓冲, 每 10 样本重算统计。
-    对齐 SS AdpUpdateBaselineLocked。
+    AdpUpdateBaselineLocked。
 
 Arguments:
     Baseline — 基线。
@@ -494,7 +494,7 @@ RaInsertionSortDouble(
     )
 /*++
 Routine Description:
-    插入排序 (样本量小, 对齐 SS AdpInsertionSortDouble)。
+    插入排序 (样本量小, AdpInsertionSortDouble)。
 --*/
 {
     ULONG i, j;
@@ -540,7 +540,7 @@ Routine Description:
     Modified Z-Score (MAD 鲁棒版) = 0.6745 × |Value - Median| / MAD。
     使用用户态栈缓冲 (SS 内核用 scratch pool, 用户态无栈限制)。
 
-    对齐 SS AdpCalculateModifiedZScore:
+    AdpCalculateModifiedZScore:
       1. 拷贝样本到排序缓冲 + 偏差缓冲
       2. median = 中位数(排序缓冲)
       3. MAD = 中位数(|x_i - median|)
@@ -593,7 +593,7 @@ RaCalculateSeverityScore(
 /*++
 Routine Description:
     严重度评分 = sigma 基础分 × 指标乘数, clamp 0-100。
-    对齐 SS AdpCalculateSeverityScore (Privilege150%/Proc&Thread130%/
+    AdpCalculateSeverityScore (Privilege150%/Proc&Thread130%/
     Net&Reg120%/File&DLL110%/其他100%)。
 
 Arguments:
@@ -650,7 +650,7 @@ RaAddAnomalyToList(
 /*++
 Routine Description:
     异常入环 (LRU, 超上限移除最老)。
-    对齐 SS AdpAddAnomalyToList。
+    AdpAddAnomalyToList。
 
 Arguments:
     Analyzer — 速率分析器。
@@ -694,7 +694,7 @@ RaCheckForAnomaly(
     )
 /*++
 Routine Description:
-    检测+记录统计异常 (对齐 SS AdCheckForAnomaly)。
+    检测+记录统计异常 (AdCheckForAnomaly)。
 
     流程:
       1. 观测值 = 当前 10s 窗口内该指标事件计数
@@ -755,10 +755,10 @@ Return Value:
         processBaseline->LastActivityTime = now;
     }
 
-    /* 检测基线选择 (对齐 SS AdCheckForAnomaly 双轨):
+    /* 检测基线选择 (AdCheckForAnomaly 双轨):
      * 进程基线成熟 (样本≥MinimumSamples) → 用它;
-     * 否则回退全局基线 (所有进程样本混合, 对齐 SS GlobalBaselines)。
-     * 样本同时记录到全局 + 进程基线 (对齐 SS AdRecordSample)。 */
+     * 否则回退全局基线 (所有进程样本混合, GlobalBaselines)。
+     * 样本同时记录到全局 + 进程基线 (AdRecordSample)。 */
     if (processBaseline &&
         processBaseline->Baselines[Metric].SampleCount >= Analyzer->MinimumSamples) {
         baseline = &processBaseline->Baselines[Metric];
@@ -782,7 +782,7 @@ Return Value:
     baselineMin = baseline->Min;
     baselineMax = baseline->Max;
 
-    /* 双算法保守合并 (对齐 SS AdCheckForAnomaly) */
+    /* 双算法保守合并 (AdCheckForAnomaly) */
     zScore = RaCalculateZScoreLocked(baseline, (DOUBLE)value);
     modifiedZScore = RaCalculateModifiedZScore(baseline, (DOUBLE)value);
     effectiveDeviation = (zScore < modifiedZScore) ? zScore : modifiedZScore;
@@ -813,7 +813,7 @@ Return Value:
     }
 
     /*
-     * 记录样本 (对齐 SS AdRecordSample: 全局+进程基线同时更新):
+     * 记录样本 (AdRecordSample: 全局+进程基线同时更新):
      *  - 判定异常的样本不写入基线 (防驯化, SS 缺失补强) — 防止攻击者
      *    用攻击流量把基线"驯化"到异常水平, 后续不再触发。
      */
@@ -840,7 +840,7 @@ RaGetAnomalyScore(
 /*++
 Routine Description:
     查询进程当前统计异常分 [0,100] (跨 7 个有效指标取最高严重度)。
-    对齐 SS 严重度映射; 供阶段6 max 提升 / 策略选择 / 外部查询。
+    严重度映射; 供阶段6 max 提升 / 策略选择 / 外部查询。
 
 Arguments:
     Analyzer      — 速率分析器。
@@ -894,7 +894,7 @@ RaMaintenance(
 /*++
 Routine Description:
     进程基线 TTL 淘汰 (1h) + 异常环时间清理。
-    对齐 SS AdpCleanupWorkerThread 阶段1/2。
+    AdpCleanupWorkerThread 阶段1/2。
 
 Arguments:
     Analyzer — 速率分析器。
@@ -957,7 +957,7 @@ RaMaintenanceWorker(
     )
 /*++
 Routine Description:
-    维护线程 (1 分钟周期, 对齐 SS AdpCleanupWorkerThread)。
+    维护线程 (1 分钟周期, AdpCleanupWorkerThread)。
     被事件唤醒立即执行一次 (关闭时快速退出)。
 --*/
 {
@@ -976,7 +976,7 @@ Routine Description:
 }
 
 /**************************************************/
-/*        配置 / 统计 (对齐 SS AdSetThreshold)     */
+/*        配置 / 统计 (AdSetThreshold)     */
 /**************************************************/
 
 _Use_decl_annotations_
@@ -987,7 +987,7 @@ RaSetSigmaThreshold(
     )
 /*++
 Routine Description:
-    运行时调整 sigma 阈值 (对齐 SS AdSetThreshold, 范围 [1.5, 6.0])。
+    运行时调整 sigma 阈值 (AdSetThreshold, 范围 [1.5, 6.0])。
 
 Arguments:
     Analyzer — 速率分析器。
@@ -1013,7 +1013,7 @@ RaGetAnomalyStats(
     )
 /*++
 Routine Description:
-    统计快照 (对齐 SS AdGetStatistics, 供调试 printf)。
+    统计快照 (AdGetStatistics, 供调试 printf)。
 
 Arguments:
     Analyzer          — 速率分析器。
@@ -1040,7 +1040,7 @@ Arguments:
 }
 
 /**************************************************/
-/*   对齐 SS 公开 API 面补充 (无消费方, 死代码)      */
+/*   公开 API 面补充 (无消费方, 死代码)      */
 /**************************************************/
 
 _Use_decl_annotations_
@@ -1053,7 +1053,7 @@ RaRecordSample(
     )
 /*++
 Routine Description:
-    仅记录样本到全局 + 进程基线 (对齐 SS AdRecordSample)。
+    仅记录样本到全局 + 进程基线 (AdRecordSample)。
     ※死代码: 检测+记录已由 RaCheckForAnomaly 合并 (全局+进程基线双写),
     本函数供未来"纯学习模式" (新进程静默学习不告警) 接入; 当前无调用者。
 
@@ -1061,7 +1061,7 @@ Arguments:
     Analyzer      — 速率分析器。
     ProcessNodeId — 进程节点 GUID。
     Metric        — 统计基线指标。
-    Value         — 观测值 (显式传入, 对齐 SS 签名)。
+    Value         — 观测值 (显式传入, 签名)。
 
 Return Value:
     NTSTATUS。
@@ -1078,7 +1078,7 @@ Return Value:
 
     RaNow(&now);
 
-    /* 全局基线 (所有进程混合, 对齐 SS GlobalBaselines) */
+    /* 全局基线 (所有进程混合, GlobalBaselines) */
     RaUpdateBaselineLocked(&Analyzer->GlobalBaselines[Metric], Value);
 
     /* 进程基线 (惰性创建) */
@@ -1109,7 +1109,7 @@ RaGetRecentAnomalies(
     )
 /*++
 Routine Description:
-    时间窗口查询异常环 (对齐 SS AdGetRecentAnomalies)。
+    时间窗口查询异常环 (AdGetRecentAnomalies)。
     ※死代码: 无消费方 (VerdictEngine 活跃威胁表已覆盖告警查询),
     供未来 UI/调试按时间回溯统计异常历史。
 
@@ -1171,7 +1171,7 @@ RaGetBaseline(
     )
 /*++
 Routine Description:
-    查询基线统计快照 (对齐 SS AdGetBaseline)。
+    查询基线统计快照 (AdGetBaseline)。
     ※死代码: 无消费方 (SS AdGetBaseline 仅调试 UI 消费), 供未来进程行为画像。
 
 Arguments:
@@ -1196,7 +1196,7 @@ Return Value:
 
     EnterCriticalSection(&Analyzer->Lock);
 
-    /* 进程基线优先, 回退全局基线 (对齐 SS AdGetBaseline 双轨) */
+    /* 进程基线优先, 回退全局基线 (AdGetBaseline 双轨) */
     processBaseline = RaFindProcessBaselineLocked(Analyzer, ProcessNodeId);
     if (processBaseline) {
         baseline = &processBaseline->Baselines[Metric];
@@ -1230,14 +1230,14 @@ Return Value:
 
 _Use_decl_annotations_
 NTSTATUS
-RaInitialize(
+IoaRaInitialize(
     PIOA_RATE_ANALYZER* Out
     )
 /*++
 Routine Description:
     初始化速率分析器 + 统计基线引擎。
 
-    对齐 SS SpInitializeAntiDebugProtection:
+    SpInitializeAntiDebugProtection:
       1. 全局基线 (每 metric 单份) 初始化
       2. 进程基线哈希桶 + 链表
       3. 异常环
@@ -1273,7 +1273,7 @@ Return Value:
     a->MinimumSamples = RA_MIN_SAMPLES_FOR_DETECTION;
     a->BaselineMaxProcesses = RA_MAX_PROCESS_BASELINES;
 
-    /* 全局基线 (对齐 SS GlobalBaselines[AD_METRIC_COUNT]) */
+    /* 全局基线 (GlobalBaselines[AD_METRIC_COUNT]) */
     InitializeListHead(&a->BaselineList);
     RaNow(&now);
     for (i = 0; i < RA_METRIC_COUNT; i++) {
@@ -1534,7 +1534,7 @@ RaIsRateAlert(
 /*++
 Routine Description:
     检查指定进程是否触发速率告警。
-    统计异常分 ≥ 60 视为告警 (对齐 SS severity ≥ Medium)。
+    统计异常分 ≥ 60 视为告警 (severity ≥ Medium)。
 
 Arguments:
     Analyzer      — 速率分析器实例指针。
@@ -1691,9 +1691,9 @@ Routine Description:
     ULONG i, s;
     LONG baseSample;
 
-    NTSTATUS st = RaInitialize(&a);
+    NTSTATUS st = IoaRaInitialize(&a);
     if (!NT_SUCCESS(st)) {
-        printf("[RaSelfTest] FAIL: RaInitialize = 0x%lx\n", st);
+        printf("[RaSelfTest] FAIL: IoaRaInitialize = 0x%lx\n", st);
         return 1;
     }
 

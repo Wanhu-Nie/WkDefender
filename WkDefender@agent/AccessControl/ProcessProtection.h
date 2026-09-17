@@ -53,11 +53,11 @@ extern "C" {
 #define PP_MAX_IMAGE_HASH               32      /* 镜像 SHA-256 摘要长度 */
 #define PP_SELF_TEST_CHECKS             4       /* 自检项数 */
 
-/* 监测间隔（毫秒，对齐 SS MONITOR/HEALTH_CHECK） */
+/* 监测间隔（毫秒，MONITOR/HEALTH_CHECK） */
 #define PP_MONITOR_INTERVAL_MS          5000
 #define PP_HEALTH_CHECK_INTERVAL_MS     10000
 
-/* 危险进程/线程访问位（对齐 SS DANGEROUS_*_ACCESS） */
+/* 危险进程/线程访问位（DANGEROUS_*_ACCESS） */
 #define PP_DANGEROUS_PROCESS_ACCESS     (PROCESS_TERMINATE | PROCESS_SUSPEND_RESUME | \
                                          PROCESS_VM_WRITE | PROCESS_VM_OPERATION |   \
                                          PROCESS_CREATE_THREAD | PROCESS_SET_INFORMATION)
@@ -65,7 +65,7 @@ extern "C" {
                                          THREAD_SET_CONTEXT | THREAD_SET_INFORMATION | \
                                          THREAD_SET_THREAD_TOKEN)
 
-/* 安全进程/线程访问位（对齐 SS SAFE_*_ACCESS） */
+/* 安全进程/线程访问位（SAFE_*_ACCESS） */
 #define PP_SAFE_PROCESS_ACCESS          (PROCESS_QUERY_INFORMATION | \
                                          PROCESS_QUERY_LIMITED_INFORMATION | \
                                          PROCESS_VM_READ | SYNCHRONIZE)
@@ -73,14 +73,14 @@ extern "C" {
                                          THREAD_QUERY_LIMITED_INFORMATION | \
                                          THREAD_GET_CONTEXT | SYNCHRONIZE)
 
-/* 完整性级别常量（对齐 SS INTEGRITY_*） */
+/* 完整性级别常量（INTEGRITY_*） */
 #define PP_INTEGRITY_UNTRUSTED          0x00000000
 #define PP_INTEGRITY_LOW                0x00001000
 #define PP_INTEGRITY_MEDIUM             0x00002000
 #define PP_INTEGRITY_HIGH               0x00003000
 #define PP_INTEGRITY_SYSTEM             0x00004000
 
-/* 内核句柄告警"高度可疑"阈值（对齐 SS 机器学习高置信线 70） */
+/* 内核句柄告警"高度可疑"阈值（机器学习高置信线 70） */
 #define PP_KERNEL_ALERT_SUSPICION_THRESHOLD 70
 
 /* 核对占位：PPL 提升 ALPC 消息类型（SS 0x00BB0001，待与驱动核对） */
@@ -107,7 +107,7 @@ extern "C" {
 
 /**************************************************/
 /*               访问请求类型枚举                   */
-/*  对齐 SS ProcessProtectionAccessRequestType。    */
+/*  ProcessProtectionAccessRequestType。    */
 /**************************************************/
 
 typedef enum _PP_ACCESS_REQUEST_TYPE {
@@ -124,7 +124,7 @@ typedef enum _PP_ACCESS_REQUEST_TYPE {
 
 /**************************************************/
 /*               访问决策枚举                       */
-/*  对齐 SS ProcessProtectionAccessDecision。       */
+/*  ProcessProtectionAccessDecision。       */
 /**************************************************/
 
 typedef enum _PP_ACCESS_DECISION {
@@ -136,7 +136,7 @@ typedef enum _PP_ACCESS_DECISION {
 
 /**************************************************/
 /*               威胁动作枚举                       */
-/*  对齐 SS ThreatAction（位域）。                  */
+/*  ThreatAction（位域）。                  */
 /**************************************************/
 
 typedef enum _PP_THREAT_ACTION {
@@ -157,7 +157,7 @@ typedef enum _PP_THREAT_ACTION {
 
 /**************************************************/
 /*               威胁响应策略枚举                   */
-/*  对齐 SS ProcessProtectionThreatResponse（位域）。*/
+/*  ProcessProtectionThreatResponse（位域）。*/
 /**************************************************/
 
 typedef enum _PP_THREAT_RESPONSE {
@@ -175,7 +175,7 @@ typedef enum _PP_THREAT_RESPONSE {
 
 /**************************************************/
 /*               模块状态枚举                       */
-/*  对齐 SS ModuleStatus。                          */
+/*  ModuleStatus。                          */
 /**************************************************/
 
 typedef enum _PP_MODULE_STATUS {
@@ -189,7 +189,7 @@ typedef enum _PP_MODULE_STATUS {
 
 /**************************************************/
 /*               保护状态枚举                       */
-/*  对齐 SS ProtectionStatus。                      */
+/*  ProtectionStatus。                      */
 /**************************************************/
 
 typedef enum _PP_PROTECTION_STATUS {
@@ -202,7 +202,7 @@ typedef enum _PP_PROTECTION_STATUS {
 
 /**************************************************/
 /*               保护类型 / 签名人                  */
-/*  对齐 SS ProcessProtectionType / ProtectionSigner*/
+/*  ProcessProtectionType / ProtectionSigner*/
 /**************************************************/
 
 typedef enum _PP_PROTECTION_TYPE {
@@ -223,7 +223,7 @@ typedef enum _PP_PROTECTION_SIGNER {
 
 /**************************************************/
 /*               保护级别                           */
-/*  对齐 SS ProcessProtectionLevel。                */
+/*  ProcessProtectionLevel。                */
 /**************************************************/
 
 typedef struct _PP_PROTECTION_LEVEL {
@@ -232,14 +232,14 @@ typedef struct _PP_PROTECTION_LEVEL {
     UCHAR               RawLevel;   /* 原始保护级别值 */
 } PP_PROTECTION_LEVEL, * PPP_PROTECTION_LEVEL;
 
-/* 判断是否为 PPL（对齐 SS IsPPL） */
+/* 判断是否为 PPL（IsPPL） */
 #define PP_LEVEL_IS_PPL(_p)     ((_p).Type != PpProtectionTypeNone)
-/* 判断是否为反恶意软件保护（对齐 SS IsAntimalware） */
+/* 判断是否为反恶意软件保护（IsAntimalware） */
 #define PP_LEVEL_IS_ANTIMALWARE(_p) ((_p).Signer == PpProtectionSignerAntimalware)
-/* 组合级别（type<<4 | signer，对齐 SS GetCombinedLevel） */
+/* 组合级别（type<<4 | signer，GetCombinedLevel） */
 #define PP_LEVEL_COMBINED(_p)   (((ULONG)(_p).Type << 4) | (ULONG)(_p).Signer)
 
-/* 保护级别 >= 比较（对齐 SS operator>=） */
+/* 保护级别 >= 比较（operator>=） */
 #define PP_LEVEL_GE(_a, _b)     (PP_LEVEL_COMBINED(_a) >= PP_LEVEL_COMBINED(_b))
 
 /**************************************************/
@@ -258,11 +258,11 @@ typedef struct _PP_PROTECTION_LEVEL {
 
 /**************************************************/
 /*               配置结构                           */
-/*  对齐 SS ProcessProtectionConfiguration。        */
+/*  ProcessProtectionConfiguration。        */
 /**************************************************/
 
 typedef struct _PP_CONFIGURATION {
-    /* 功能开关（对齐 SS 布尔开关） */
+    /* 功能开关（布尔开关） */
     BOOLEAN EnablePPL;                  /* 启用 PPL 保护（需驱动/ELAM） */
     BOOLEAN EnableHandleFiltering;      /* 启用句柄过滤 */
     BOOLEAN EnableAntiTermination;      /* 启用防终止 */
@@ -278,7 +278,7 @@ typedef struct _PP_CONFIGURATION {
     BOOLEAN EnableCFG;                  /* 期望 CFG（默认 TRUE） */
 
     /* 策略 */
-    PP_THREAT_RESPONSE  DefaultResponse;    /* 默认威胁响应（对齐 SS defaultResponse） */
+    PP_THREAT_RESPONSE  DefaultResponse;    /* 默认威胁响应（defaultResponse） */
     ULONG               BlockedProcessAccess;  /* 进程危险访问掩码 */
     ULONG               BlockedThreadAccess;   /* 线程危险访问掩码 */
 
@@ -286,16 +286,16 @@ typedef struct _PP_CONFIGURATION {
     BOOLEAN             VerboseLogging;     /* 详细日志 */
     BOOLEAN             SendTelemetry;      /* 发送遥测 */
 
-    /* 配置内联白名单（小写镜像名；对齐 SS whitelistedCallers） */
+    /* 配置内联白名单（小写镜像名；whitelistedCallers） */
     WCHAR               WhitelistedCallers[PP_MAX_CONFIG_WHITELIST][PP_MAX_DESCRIPTION];
     ULONG               WhitelistedCallerCount;
 
-    /* 配置附加保护 PID 集（对齐 SS additionalProtectedPids） */
+    /* 配置附加保护 PID 集（additionalProtectedPids） */
     ULONG               AdditionalProtectedPids[PP_MAX_CONFIG_PIDS];
     ULONG               AdditionalProtectedPidCount;
 } PP_CONFIGURATION, * PPP_CONFIGURATION;
 
-/* 取默认配置（对齐 SS 默认值：全部启用，DefaultResponse=Active，
+/* 取默认配置（默认值：全部启用，DefaultResponse=Active，
     * 危险掩码=DANGEROUS_*_ACCESS；2026-09-06 线程保护/Monitor 已移除）。PASSIVE_LEVEL */
 VOID
     PpGetDefaultConfiguration(
@@ -304,7 +304,7 @@ VOID
 
 /**************************************************/
 /*               访问请求结构                       */
-/*  对齐 SS ProcessProtectionAccessRequest。        */
+/*  ProcessProtectionAccessRequest。        */
 /**************************************************/
 
 typedef struct _PP_ACCESS_REQUEST {
@@ -324,7 +324,7 @@ typedef struct _PP_ACCESS_REQUEST {
 
 /**************************************************/
 /*               访问决策结果                       */
-/*  对齐 SS ProcessProtectionAccessDecisionResult。 */
+/*  ProcessProtectionAccessDecisionResult。 */
 /**************************************************/
 
 typedef struct _PP_ACCESS_DECISION_RESULT {
@@ -353,7 +353,7 @@ typedef struct _PP_BLOCKED_ACCESS_EVENT {
 
 /**************************************************/
 /*               受保护进程信息                     */
-/*  对齐 SS ProtectedProcessInfo。                  */
+/*  ProtectedProcessInfo。                  */
 /**************************************************/
 
 typedef struct _PP_PROTECTED_PROCESS_INFO {
@@ -363,7 +363,7 @@ typedef struct _PP_PROTECTED_PROCESS_INFO {
     UCHAR                   ImageHash[PP_MAX_IMAGE_HASH];   /* SHA-256（0=未计算，Agent 侧不计算） */
     PP_PROTECTION_LEVEL     ProtectionLevel;    /* 保护级别（保护时采集） */
     PP_PROTECTION_STATUS    Status;             /* 保护状态 */
-    BOOLEAN                 IsWkdComponent;     /* 是否本产品组件（对齐 SS isShadowStrikeComponent） */
+    BOOLEAN                 IsWkdComponent;     /* 是否本产品组件（isShadowStrikeComponent） */
     BOOLEAN                 IsCritical;         /* 是否关键进程 */
     LARGE_INTEGER           ProtectedSince;     /* 保护起始时间戳 */
     ULONG                   ThreadCount;        /* 线程数 */
@@ -393,18 +393,18 @@ typedef struct _PP_STATISTICS {
     volatile LONG64         KernelHandleOperations;     /* 内核句柄操作数 */
     volatile LONG64         TotalElevations;            /* PPL 提升请求数 */
     volatile LONG64         IntegrityViolations;        /* 完整性违规数 */
-    volatile LONG64         AlertsRaised;               /* 告警次数（对齐 SS alertsRaised） */
+    volatile LONG64         AlertsRaised;               /* 告警次数（alertsRaised） */
     volatile LONG64         HardeningMismatchCount;     /* 加固不符告警数（2026-09-08 迁移） */
     volatile LONG           TotalProtected;    /* 受保护进程总数（累计，对齐 SS） */
     volatile LONG           ActiveProtected;      /* 当前受保护进程数 */
     volatile LONG           WhitelistCount;             /* 白名单调用方数 */
-    LARGE_INTEGER           StartTime;                  /* 引擎启动时间（对齐 SS startTime） */
-    LARGE_INTEGER           LastEventTime;              /* 最近事件时间（对齐 SS lastEventTime） */
+    LARGE_INTEGER           StartTime;                  /* 引擎启动时间（startTime） */
+    LARGE_INTEGER           LastEventTime;              /* 最近事件时间（lastEventTime） */
 } PP_STATISTICS, * PPP_STATISTICS;
 
 /**************************************************/
 /*               回调类型                           */
-/*  对齐 SS 4 类回调。                              */
+/*  4 类回调。                              */
 /**************************************************/
 
 /* 访问决策覆盖回调：返回 TRUE 表示已覆盖（OverrideResult 生效）。 */
@@ -476,14 +476,14 @@ BOOLEAN
         _In_ PPP_ENGINE Engine
     );
 
-/* 查询引擎状态（对齐 SS GetStatus）。PASSIVE_LEVEL */
+/* 查询引擎状态（GetStatus）。PASSIVE_LEVEL */
 PP_MODULE_STATUS
     PpGetStatus(
         _In_ PPP_ENGINE Engine
     );
 
 /* ------------------------------------------------ */
-/* 配置（对齐 SS SetConfiguration/GetConfiguration/  */
+/* 配置（SetConfiguration/GetConfiguration/  */
 /*        SetDefaultResponse/SetThreatResponse）     */
 /* ------------------------------------------------ */
 
@@ -508,7 +508,7 @@ VOID
         _In_ PP_THREAT_RESPONSE Response
     );
 
-/* 设置特定威胁动作的响应（对齐 SS m_threatResponses）。PASSIVE_LEVEL */
+/* 设置特定威胁动作的响应（m_threatResponses）。PASSIVE_LEVEL */
 VOID
     PpSetThreatResponse(
         _In_ PPP_ENGINE Engine,
@@ -517,7 +517,7 @@ VOID
     );
 
 /* ------------------------------------------------ */
-/* PPL（对齐 SS ElevateToPPL/IsPPLProtected/         */
+/* PPL（ElevateToPPL/IsPPLProtected/         */
 /*      GetProtectionLevelRaw/HasRequiredProtectionLevel） */
 /* ------------------------------------------------ */
 
@@ -563,7 +563,7 @@ AcAllocateProcessAccessControlContextLazy(
     _Out_opt_ PWKD_ACCESS_CONTROL_CONTEXT* Context
     );
 
-/* 注册受保护进程（收集信息并保护线程；对齐 SS ProtectProcess）。PASSIVE_LEVEL */
+/* 注册受保护进程（收集信息并保护线程；ProtectProcess）。PASSIVE_LEVEL */
 _Must_inspect_result_
 NTSTATUS
 AcRegisterProtectedProcessInternal(
@@ -586,7 +586,7 @@ BOOLEAN
         _In_ ULONG ProcessId
     );
 
-/* 获取受保护进程详细信息（对齐 SS GetProtectedProcessInfo）。PASSIVE_LEVEL */
+/* 获取受保护进程详细信息（GetProtectedProcessInfo）。PASSIVE_LEVEL */
 NTSTATUS
     PpGetProtectedProcessInfo(
         _In_  PPP_ENGINE Engine,
@@ -594,7 +594,7 @@ NTSTATUS
         _Out_ PPP_PROTECTED_PROCESS_INFO Info
     );
 
-/* 获取全部受保护进程信息（对齐 SS GetAllProtectedProcesses）。
+/* 获取全部受保护进程信息（GetAllProtectedProcesses）。
     *  Buffer=NULL 时返回所需条目数（*Count）。PASSIVE_LEVEL */
 NTSTATUS
     PpGetAllProtectedProcesses(
@@ -604,7 +604,7 @@ NTSTATUS
     );
 
 /* 设置进程为关键进程（仅当前进程，RtlSetProcessIsCritical）。
-    * 对齐 SS SetCriticalProcess。PASSIVE_LEVEL */
+    * SetCriticalProcess。PASSIVE_LEVEL */
 NTSTATUS
     PpSetCriticalProcess(
         _In_ PPP_ENGINE Engine,
@@ -682,7 +682,7 @@ BOOLEAN
 /* 访问控制                                          */
 /* ------------------------------------------------ */
 
-/* 便捷判定：访问是否允许（对齐 SS IsAccessAllowed，决策为 Allow/AllowReduced）。PASSIVE_LEVEL */
+/* 便捷判定：访问是否允许（IsAccessAllowed，决策为 Allow/AllowReduced）。PASSIVE_LEVEL */
 BOOLEAN
     PpIsAccessAllowed(
         _In_ PPP_ENGINE Engine,
@@ -691,7 +691,7 @@ BOOLEAN
         _In_ ULONG DesiredAccess
     );
 
-/* 核心：访问过滤决策（对齐 SS FilterAccessRequest）。PASSIVE_LEVEL */
+/* 核心：访问过滤决策（FilterAccessRequest）。PASSIVE_LEVEL */
 NTSTATUS
     PpFilterAccessRequest(
         _In_  PPP_ENGINE Engine,
@@ -699,13 +699,13 @@ NTSTATUS
         _Out_ PPP_ACCESS_DECISION_RESULT Result
     );
 
-/* 威胁分类（对齐 SS ClassifyAccessRequest）。PASSIVE_LEVEL */
+/* 威胁分类（ClassifyAccessRequest）。PASSIVE_LEVEL */
 PP_THREAT_ACTION
     PpClassifyAccessRequest(
         _In_  PPP_ACCESS_REQUEST Request
     );
 
-/* 剥离危险访问位（对齐 SS StripDangerousAccess，使用配置掩码）。PASSIVE_LEVEL */
+/* 剥离危险访问位（StripDangerousAccess，使用配置掩码）。PASSIVE_LEVEL */
 ULONG
     PpStripDangerousAccess(
         _In_ PPP_ENGINE Engine,
@@ -713,14 +713,14 @@ ULONG
         _In_ BOOLEAN IsThread
     );
 
-/* 设置配置中的进程危险访问掩码（对齐 SS SetBlockedProcessAccess）。PASSIVE_LEVEL */
+/* 设置配置中的进程危险访问掩码（SetBlockedProcessAccess）。PASSIVE_LEVEL */
 VOID
     PpSetBlockedProcessAccess(
         _In_ PPP_ENGINE Engine,
         _In_ ULONG AccessMask
     );
 
-/* 设置配置中的线程危险访问掩码（对齐 SS SetBlockedThreadAccess）。PASSIVE_LEVEL */
+/* 设置配置中的线程危险访问掩码（SetBlockedThreadAccess）。PASSIVE_LEVEL */
 VOID
     PpSetBlockedThreadAccess(
         _In_ PPP_ENGINE Engine,
@@ -728,7 +728,7 @@ VOID
     );
 
 /* ------------------------------------------------ */
-/* 安全描述符管理（对齐 SS ApplyRestrictiveSecurityDescriptor 系列） */
+/* 安全描述符管理（ApplyRestrictiveSecurityDescriptor 系列） */
 /* ------------------------------------------------ */
 
 /* 应用限制性安全描述符（SDDL 拒绝优先 DACL，仅被保护进程）。PASSIVE_LEVEL */
@@ -755,13 +755,13 @@ NTSTATUS
         _In_ ULONG IntegrityLevel
     );
 
-/* 查询进程完整性级别（对齐 SS GetProcessIntegrityLevel）。PASSIVE_LEVEL */
+/* 查询进程完整性级别（GetProcessIntegrityLevel）。PASSIVE_LEVEL */
 ULONG
     PpGetProcessIntegrityLevel(
         _In_ ULONG ProcessId
     );
 
-/* SYSTEM 进程判定（TokenUser → SYSTEM SID，对齐 SS IsSystemProcess）。PASSIVE_LEVEL */
+/* SYSTEM 进程判定（TokenUser → SYSTEM SID，IsSystemProcess）。PASSIVE_LEVEL */
 BOOLEAN
     PpIsSystemProcess(
         _In_ ULONG ProcessId
@@ -775,7 +775,7 @@ PP_PROTECTION_LEVEL
     );
 
 /* ------------------------------------------------ */
-/* 白名单管理（对齐 SS AddToWhitelist/RemoveFromWhitelist） */
+/* 白名单管理（AddToWhitelist/RemoveFromWhitelist） */
 /* ------------------------------------------------ */
 
 /* 添加白名单调用方（镜像名，不区分大小写）。PASSIVE_LEVEL */
@@ -799,7 +799,7 @@ BOOLEAN
         _In_ ULONG ProcessId
     );
 
-/* 按镜像名查询是否白名单（对齐 SS IsWhitelisted(name)）。PASSIVE_LEVEL */
+/* 按镜像名查询是否白名单（IsWhitelisted(name)）。PASSIVE_LEVEL */
 BOOLEAN
     PpIsWhitelistedName(
         _In_ PPP_ENGINE Engine,
@@ -807,7 +807,7 @@ BOOLEAN
     );
 
 /* ------------------------------------------------ */
-/* 回调管理（对齐 SS Register/Unregister 系列） */
+/* 回调管理（Register/Unregister 系列） */
 /* ------------------------------------------------ */
 
 /* 注册访问决策覆盖回调，返回回调 ID。PASSIVE_LEVEL */
@@ -874,7 +874,7 @@ VOID
 /* 统计 / 历史 / 报告 / 自检                         */
 /* ------------------------------------------------ */
 
-/* 取统计快照（对齐 SS GetStatistics）。PASSIVE_LEVEL */
+/* 取统计快照（GetStatistics）。PASSIVE_LEVEL */
 NTSTATUS
     PpGetStatistics(
         _In_ PPP_ENGINE Engine,
@@ -887,7 +887,7 @@ VOID
         _In_ PPP_ENGINE Engine
     );
 
-/* 取阻断历史（最新在前，最多 maxEntries 条；对齐 SS GetBlockedAccessHistory）。PASSIVE_LEVEL */
+/* 取阻断历史（最新在前，最多 maxEntries 条；GetBlockedAccessHistory）。PASSIVE_LEVEL */
 NTSTATUS
     PpGetBlockedAccessHistory(
         _In_      PPP_ENGINE Engine,
@@ -910,13 +910,13 @@ NTSTATUS
         _Inout_   PULONG Length
     );
 
-/* 自检（对齐 SS SelfTest：配置有效性/级别查询/完整性查询/访问过滤）。PASSIVE_LEVEL */
+/* 自检（SelfTest：配置有效性/级别查询/完整性查询/访问过滤）。PASSIVE_LEVEL */
 BOOLEAN
     PpSelfTest(
         _In_ PPP_ENGINE Engine
     );
 
-/* 版本字符串（对齐 SS GetVersionString）。返回静态串。PASSIVE_LEVEL */
+/* 版本字符串（GetVersionString）。返回静态串。PASSIVE_LEVEL */
 PCWSTR
     PpGetVersionString(
         VOID
@@ -926,7 +926,7 @@ PCWSTR
 /* 内核桥（待驱动桥接，保留对齐签名）               */
 /* ------------------------------------------------ */
 
-/* 消费内核句柄告警（对齐 SS OnKernelHandleAlert，输入来自未来驱动桥接）。PASSIVE_LEVEL */
+/* 消费内核句柄告警（OnKernelHandleAlert，输入来自未来驱动桥接）。PASSIVE_LEVEL */
 VOID
     PpOnKernelHandleAlert(
         _In_ PPP_ENGINE Engine,
@@ -944,7 +944,7 @@ NTSTATUS
         _In_ PPP_ENGINE Engine
     );
 
-/* 请求内核阻断进程（待驱动桥接→当前占位返回未实现；对齐 SS RequestKernelProcessBlock）。PASSIVE_LEVEL */
+/* 请求内核阻断进程（待驱动桥接→当前占位返回未实现；RequestKernelProcessBlock）。PASSIVE_LEVEL */
 NTSTATUS
     PpRequestKernelProcessBlock(
         _In_ PPP_ENGINE Engine,
@@ -953,7 +953,7 @@ NTSTATUS
     );
 
 /* ------------------------------------------------ */
-/* 名称工具（对齐 SS Get*Name 系列）                 */
+/* 名称工具（Get*Name 系列）                 */
 /* ------------------------------------------------ */
 
 /* 威胁动作 → 可读名。PASSIVE_LEVEL */
@@ -992,7 +992,7 @@ PCWSTR
         _In_ PP_PROTECTION_STATUS Status
     );
 
-/* 授权访问位格式化为可读串（对齐 SS FormatAccessRights）。PASSIVE_LEVEL */
+/* 授权访问位格式化为可读串（FormatAccessRights）。PASSIVE_LEVEL */
 VOID
     PpFormatAccessRights(
         _In_ ULONG AccessRights,

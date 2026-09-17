@@ -76,7 +76,7 @@ VerdictFindPairContext(
     }
 }
 
-/* 引擎权重 (Q8 定点) — 对齐 SS GetEngineWeight (cpp L529-554) */
+/* 引擎权重 (Q8 定点) — GetEngineWeight (cpp L529-554) */
 static ULONG
 VerdictEngineWeight(
     _In_ DEF_DETECTION_SOURCE Source
@@ -111,7 +111,7 @@ VerdictClassToCategory(
     }
 }
 
-/* 类别推断 — 对齐 SS InferCategory (cpp L159-198):
+/* 类别推断 — InferCategory (cpp L159-198):
  *   T3 确认类优先 → Ransomware 标志 → Behavior 源 → Malware 兜底 */
 static DEF_THREAT_CATEGORY
 VerdictInferCategory(
@@ -279,7 +279,7 @@ VerdictEngine_Fuse(
 
     if (!g_VerdictEngine.Initialized || !Event || !Verdict) return FALSE;
 
-    /* 本地白名单早退 (对齐 SS EnrichEvent isWhitelisted 跳过判定) */
+    /* 本地白名单早退 (EnrichEvent isWhitelisted 跳过判定) */
     if (VerdictEngine_IsWhitelisted(Event->SourceProcessId.Data1, NULL)) return FALSE;
 
     RtlZeroMemory(Verdict, sizeof(*Verdict));
@@ -326,7 +326,7 @@ VerdictEngine_Fuse(
     Verdict->BestEngineScore = bestScore;
     Verdict->PrimarySource = bestSource;
 
-    /* 严重度分级 (对齐 SS cpp L477-487) */
+    /* 严重度分级 (cpp L477-487) */
     if (score >= g_VerdictEngine.Config.CriticalThreshold) {
         Verdict->Severity = DefThreatSeverity_Critical;
     } else if (score >= g_VerdictEngine.Config.HighThreshold) {
@@ -339,7 +339,7 @@ VerdictEngine_Fuse(
         Verdict->Severity = DefThreatSeverity_None;
     }
 
-    /* 引擎一致率 → 置信度级别 (对齐 SS cpp L490-504) */
+    /* 引擎一致率 → 置信度级别 (cpp L490-504) */
     if (Verdict->EngineAgreement >= 90) {
         Verdict->ConfidenceLevel = DefConfidence_Confirmed;
     } else if (Verdict->EngineAgreement >= 70) {
@@ -354,7 +354,7 @@ VerdictEngine_Fuse(
     /* 类别推断 */
     Verdict->Category = VerdictInferCategory(pairCtx, dets, count, Verdict->DetectionFlags);
 
-    /* 推荐动作 (对齐 SS cpp L507-513) */
+    /* 推荐动作 (cpp L507-513) */
     switch (Verdict->Severity) {
         case DefThreatSeverity_Critical: Verdict->RecommendedAction = DefRespAction_Terminate;  break;
         case DefThreatSeverity_High:     Verdict->RecommendedAction = DefRespAction_Quarantine; break;
@@ -436,7 +436,7 @@ VerdictEngine_UpsertActiveThreat(
             InsertTailList(&g_VerdictEngine.HashBuckets[bucket], &entry->HashLink);
             g_VerdictEngine.Count++;
 
-            /* Verdict 统计细分 (新增条目时计数, 对齐 SS ThreatDetectorStats) */
+            /* Verdict 统计细分 (新增条目时计数, ThreatDetectorStats) */
             if ((ULONG)Verdict->Severity < 5) {
                 InterlockedIncrement64(
                     &g_VerdictEngine.ThreatsBySeverity[(ULONG)Verdict->Severity]);
@@ -532,7 +532,7 @@ VerdictEngine_GetProcessThreatScore(
     return maxScore;
 }
 
-/* 进程退出清理 (对齐 SS OnProcessTerminate cpp L2187-2224):
+/* 进程退出清理 (OnProcessTerminate cpp L2187-2224):
  * 删除该进程活跃威胁, 防 PID 复用误信 */
 VOID
 VerdictEngine_OnProcessTerminate(
@@ -557,7 +557,7 @@ VerdictEngine_OnProcessTerminate(
     }
     LeaveCriticalSection(&g_VerdictEngine.Lock);
 
-    /* 同步清理本地 PID 白名单 (防 PID 复用信任, 对齐 SS OnProcessTerminate cpp L2216-2219) */
+    /* 同步清理本地 PID 白名单 (防 PID 复用信任, OnProcessTerminate cpp L2216-2219) */
     EnterCriticalSection(&g_VerdictEngine.WhitelistLock);
     for (ULONG i = 0; i < g_VerdictEngine.WhitelistedPidCount; i++) {
         if (g_VerdictEngine.WhitelistedPids[i] == Pid) {
@@ -575,7 +575,7 @@ VerdictEngine_OnProcessTerminate(
 /**************************************************/
 /*               本地白名单 (SS 迁移)                */
 /*  WhitelistProcess/WhitelistHash — 防误报         */
-/*  哈希小写归一化防大小写绕过 (对齐 SS cpp L2243-2257) */
+/*  哈希小写归一化防大小写绕过 (cpp L2243-2257) */
 /**************************************************/
 
 static VOID
@@ -695,7 +695,7 @@ VerdictEngine_ReportFalsePositive(
 /**************************************************/
 /*               查询 API 补全 (SS 迁移)            */
 /*  GetThreatsByProcess/BySeverity/ByCategory/     */
-/*  HasActiveThreat — 对齐 SS cpp L1676-1750       */
+/*  HasActiveThreat — cpp L1676-1750       */
 /**************************************************/
 
 ULONG

@@ -51,6 +51,13 @@ WkdIsSystemProcess(
     _In_ HANDLE ProcessId
 );
 
+_Must_inspect_result_
+NTSTATUS
+CoDowncaseUnicodeString(
+    _Out_ PUNICODE_STRING* Dst,
+    _In_ PCUNICODE_STRING Src
+    );
+
 //
 // 路径归一化函数
 //
@@ -320,4 +327,9 @@ CoReadKernelRegionSafe(
     _Out_writes_bytes_(Size) PVOID Buffer,
     _In_ const PVOID Address,
     _In_ SIZE_T Size
+    );
+
+VOID
+CoFreeUnicodeStringSafe(
+    PUNICODE_STRING String
     );

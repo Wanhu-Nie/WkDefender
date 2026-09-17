@@ -218,7 +218,7 @@ typedef enum _PE_ANOMALY_TYPE {
     WpeAnom_SectionSizeMismatch,
     WpeAnom_TooManySections,
     WpeAnom_UnusualSectionOrder,
-    WpeAnom_OverlappingSections,     /* 节物理(raw)/虚拟(VA)重叠 — 对齐 SS DetectOverlappingSectionsImpl */
+    WpeAnom_OverlappingSections,     /* 节物理(raw)/虚拟(VA)重叠 — DetectOverlappingSectionsImpl */
     WpeAnom_CodeOutsideCodeSection,
     WpeAnom_SectionAlignmentViolation,
 
@@ -255,8 +255,8 @@ typedef enum _PE_ANOMALY_TYPE {
     WpeAnom_PackerSignatureDetected,
     WpeAnom_OverlayPresent,
     WpeAnom_OverlayHighEntropy,
-    WpeAnom_OverlayContainsPE,       /* overlay 数据起点含 MZ 头 (dropper) — 对齐 SS AnalyzeOverlayImpl */
-    WpeAnom_LargeOverlay,            /* overlay >1MB — 对齐 SS DetectAnomaliesImpl */
+    WpeAnom_OverlayContainsPE,       /* overlay 数据起点含 MZ 头 (dropper) — AnalyzeOverlayImpl */
+    WpeAnom_LargeOverlay,            /* overlay >1MB — DetectAnomaliesImpl */
     WpeAnom_SelfModifyingCode,
 
     /* .NET 异常 */

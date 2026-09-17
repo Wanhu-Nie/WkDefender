@@ -3,10 +3,10 @@
 //#include "Notification/MessageSync.h"
 //#include "Notification/NotificationManager.h"
 //#include "Process/ProcessMonitor.h"
-//#include "Callbacks/ProcessNotify.h"
+//#include "Callbacks/ProcessNotification.h"
 
-//#include "Callbacks/ObjectNotify.h"
-//#include "Callbacks/ImageNotify.h"   /* 步骤3：镜像加载回调（独立模块，DEC-05） */
+//#include "Callbacks/ObjectNotification.h"
+//#include "Callbacks/ImageNotification.h"   /* 步骤3：镜像加载回调（独立模块，DEC-05） */
 //#include "Object/ObjectManager.h"
 //#include "Memory/MemorySignature.h"
 //#include "Memory/AmsiBypassDetector.h"
@@ -16,9 +16,9 @@
 //#include "ThreatScoring/ThreatScoring.h"
 //#include "Common/Exempts/Exempts.h"
 //#include "Process/ProcessPairContext.h"
-//#include "FileSystem/Filter.h"   /* 步骤2：minifilter + YARA FLT 端口（DEC-02=X1） */
-//#include "FileSystem/FileBackupEngine.h"   /* FBE：勒索 CoW 备份/回滚（2026-08 迁移） */
-//#include "FileSystem/NamedPipeMonitor.h"   /* 命名管道 C2/横向移动检测（2026-08 迁移） */
+#include "Include/FileSystem.h"      /* 文件系统子系统对外公共头（编排器 FsInitialize/FsCleanup + 备份服务，
+                                        2026-09-13 重构：外部一律走 Include\FileSystem.h，
+                                        禁止直接包含 FileSystem\FileSystem.h 内部私有头） */
 #include <ntifs.h>
 
 /* ==================================================================
@@ -39,22 +39,23 @@
 #include "ThreatScoring/ThreatScoring.h"
 #include "Common/Exempts/Exempts.h"
 #include "Process/ProcessMonitor.h"
-#include "Callbacks/ProcessNotify.h"
-#include "Callbacks/ImageNotify.h"
-#include "Callbacks/ThreadNotify.h"
-#include "Callbacks/ObjectNotify.h"   /* 恢复：对象回调（OB PreOperation 剥离/监控），2026-09-03 */
-#include "Callbacks/RegistryCallback.h" /* 恢复：注册表回调节点（CM），2026-09-03 */
-#include "SelfProtection/SelfProtectionEngine.h"   /* 自防护引擎（编排 CP/AU/AD/IM/RG） */
+#include "Callbacks/ProcessNotification.h"
+#include "Callbacks/ImageNotification.h"
+#include "Callbacks/ThreadNotification.h"
+#include "Callbacks/ObjectNotification.h"   /* 恢复：对象回调（OB PreOperation 剥离/监控），2026-09-03 */
+#include "Callbacks/RegistryNotification.h" /* 恢复：注册表回调节点（CM），2026-09-03 */
+#include "AccessControl/SelfProtectionEngine.h"   /* 自防护引擎（编排 CP/AU/AD/IM/RG） */
 #include "Process/ProcessAccessProtection.h"       /* Pap 进程访问保护引擎（受保护进程剥离，2026-09-05） */
 #include "Process/ThreadAccessProtection.h"        /* Tap 线程访问保护引擎（线程级剥离，2026-09-05） */
 #include "ETW/ETWProvider.h"                       /* ETW Provider（ETW 迁移 2026-09-07，独立子系统） */
+#include "Memory/MemoryRegionVerify.h"             /* 内存区域定时一致性校验（2026-09-10） */
 
 /* 子系统初始化标记 — 用于 DriverEntry 统一回退清理 */
 #define INIT_NTF        0x00000001  /* NtfInitializeService */
 #define INIT_AE         0x00000002  /* AeInitialize */
 #define INIT_TS         0x00000004  /* TsInitialize */
 #define INIT_EXEMPT     0x00000008  /* CoInitializeExempts */
-#define INIT_FS         0x00000010  /* FsInitialize */
+#define INIT_FS         0x00000010  /* FsInitialize（文件系统子系统编排器：能力模块 + 薄层注册） */
 #define INIT_PM         0x00000020  /* PmInitialize */
 #define INIT_CB_PROCESS 0x00000040  /* CbProcessNotifyInitialize */
 #define INIT_CB_THREAD  0x00000080  /* CbThreadNotifyInitialize */
@@ -64,20 +65,19 @@
 #define INIT_SCM        0x00000800  /* SmInitialize */
 #define INIT_ABD        0x00001000  /* AbdInitialize */
 #define INIT_AC         0x00002000  /* IocAppControlInitialize */
-#define INIT_FBE        0x00004000  /* FbeInitialize（勒索备份/回滚引擎） */
-#define INIT_NPM        0x00008000  /* WkdNpmInitialize（命名管道 C2/冒充检测） */
 #define INIT_MT         0x00010000  /* MtInitialize（全局镜像对象表） */
 #define INIT_SP         0x00020000  /* SpCreateSelfProtectionEngine */
-#define INIT_CB_REG     0x00040000  /* CbRegistryInitialize */
+#define INIT_CB_REG     0x00040000  /* CbInitializeRegistryNotify */
 #define INIT_PAP        0x00080000  /* PapInitialize（进程访问保护引擎） */
 #define INIT_TAP        0x00100000  /* TapInitialize（线程访问保护引擎） */
 #define INIT_ETW        0x00200000  /* EtwProviderInitialize（ETW Provider 独立子系统） */
+#define INIT_MVP        0x00400000  /* MvpInitialize（内存区域定时一致性校验器） */
 
 //
 // 自防护引擎句柄（已从编译排除，2026-09-03）：见 WkdEntry.c DriverEntry 中
 // SpInitializeSelfProtectionEngine 调用被注释。
 //
-PWKD_SELF_PROTECTION_ENGINE g_SpEngine = NULL;
+PWKD_ACCESS_CONTROL_ENGINE g_SpEngine = NULL;
 
 //
 // 需要保护的内核回调函数地址通过各回调模块的 getter 获取
@@ -89,6 +89,10 @@ VOID DriverUnload(PDRIVER_OBJECT DriverObject)
     UNREFERENCED_PARAMETER(DriverObject);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
         "[WkDefender] Driver unload ...\n");
+
+    /* 清理定时器一致性校验器（最先执行：其回调持有进程引用并遍历进程表，
+     * 必须最先排空回调线程；之后回调不可能再进入，后续清理无并发竞态） */
+    MvpShutdown();
 
     /* 按初始化的逆序清理 */
     //TsShutdown(WkdTsEngine);
@@ -104,10 +108,9 @@ VOID DriverUnload(PDRIVER_OBJECT DriverObject)
     //PmCleanup();
     //NmCleanup();
     //ImgNotifyCleanup();         /* 步骤3：镜像加载回调逆序清理 */
-    //WkdNpmShutdown();           /* NamedPipeMonitor：命名管道检测逆序清理（先于 FsCleanup，回调仍引用状态） */
-    //FbeShutdown();              /* FBE：勒索备份/回滚引擎逆序清理（先于 FsCleanup，
-    //                                回调仍引用 FBE 状态） */
-    //FsCleanup(DriverObject);   /* 步骤2：minifilter + YARA FLT 端口逆序清理 */
+    /* 文件系统子系统逆序清理（2026-09-13 重构：编排器统一 NPM → FBE → Pas
+     * → Pwc → Poc → Pfcp → Udc → FileScan → 薄层反注册；回调状态门控已就位） */
+    FsCleanup(DriverObject);
 
     /* 清理对象回调。须先于 SpEngineShutdown 注销，
      * 保证 SpEngineShutdown 的 rundown 排空能一致收敛。
@@ -117,12 +120,12 @@ VOID DriverUnload(PDRIVER_OBJECT DriverObject)
     CbObjectNotifyCleanup();
 
     /* 清理 Pap 进程访问防护运行时（2026-09-05 判定逻辑上移机制层后，
-     * 运行时随 Callbacks/ObjectNotify.c 托管；须在 OB 回调注销之后：
+     * 运行时随 Callbacks/ObjectNotification.c 托管；须在 OB 回调注销之后：
      * 回调内判定入口已不可能再进入，运行时状态一致收敛）。 */
     PapShutdown();
 
     /* 清理 Tap 线程访问防护运行时（2026-09-05 判定逻辑上移机制层后，
-     * 运行时随 Callbacks/ObjectNotify.c 托管；须在 OB 回调注销之后：
+     * 运行时随 Callbacks/ObjectNotification.c 托管；须在 OB 回调注销之后：
      * 回调内判定入口已不可能再进入，运行时状态一致收敛）。 */
     TapShutdown();
 
@@ -130,7 +133,7 @@ VOID DriverUnload(PDRIVER_OBJECT DriverObject)
      * 使不再有 CM 回调进入 SpEngineShouldBlockRegistryAccess（获取引擎 rundown），
      * 保证 RG 关闭前无并发判定。
      * （2026-09-03 恢复：RegistryCallback 重新参与编译） */
-    CbRegistryCleanup();
+    CbShutdownRegistryNotify();
 
     /* 清理自防护引擎（2026-09-03 恢复）：统一逆序关闭 CP/AU/AD/IM/RG */
     SpShutdownSelfProtectionEngine(g_SpEngine);
@@ -249,42 +252,20 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegPath)
         initFlags |= INIT_EXEMPT;
     }
 
-    /* 1.1 文件系统 minifilter + YARA 专用 FLT 端口（步骤2，DEC-02=X1）
-     *     与 ALPC 主通道并存互不污染。失败不阻断加载（minifilter 非核心路径，
-     *     文件扫描 fail-open，不影响其他检测能力）。 */
-    //status = FsInitialize(DriverObject);
-    //if (!NT_SUCCESS(status)) {
-    //    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-    //        "[WkDefender] FsInitialize failed (non-fatal): 0x%X\n", status);
-    //} else {
-    //    initFlags |= INIT_FS;
-
-    //    /* 1.1.1 勒索 CoW 备份/回滚引擎（FBE 迁移 2026-08）。
-    //     *     依赖 FsInitialize 创建的 FilterHandle（FltCreateFileEx 需非 NULL）。
-    //     *     StartFiltering 生效后回调可能先于 FbeInitialize 触发——FBE
-    //     *     State!=2 时 FbepEnterOperation 返回 FALSE 安全跳过，无窗口期风险。
-    //     *     初始化失败非致命（仅失去备份/回滚能力）。 */
-    //    status = FbeInitialize();
-    //    if (!NT_SUCCESS(status)) {
-    //        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-    //            "[WkDefender] FbeInitialize failed (non-fatal): 0x%X\n", status);
-    //    } else {
-    //        initFlags |= INIT_FBE;
-    //    }
-
-    //    /* 1.1.2 命名管道监控（NamedPipeMonitor 迁移 2026-08）。
-    //     *     依赖 FsInitialize 注册的 IRP_MJ_CREATE_NAMED_PIPE 回调。
-    //     *     WkdNpmIsActive() 状态门控覆盖初始化窗口（回调先于 Initialize
-    //     *     触发时安全跳过，对齐 FBE State 门控）。阻断默认关（Audit）。
-    //     *     初始化失败非致命（仅失去命名管道 C2/冒充检测能力）。 */
-    //    status = WkdNpmInitialize();
-    //    if (!NT_SUCCESS(status)) {
-    //        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-    //            "[WkDefender] WkdNpmInitialize failed (non-fatal): 0x%X\n", status);
-    //    } else {
-    //        initFlags |= INIT_NPM;
-    //    }
-    //}
+    /* 1.1 文件系统子系统统一初始化（编排器入口）。
+     *     内部顺序：FileScan → UDC（注释禁用）→ Pfcp（注释禁用）→ Poc → Pwc
+     *     → 薄层注册（minifilter + YARA 专用 FLT 端口 + StartFiltering，与
+     *     ALPC 主通道并存互不污染）→ Pas（代码执行映射检测）→ FBE（勒索
+     *     CoW 备份/回滚）→ NPM（命名管道 C2/冒充检测）。
+     *     失败不阻断加载（各能力模块失败非致命，fail-open；仅薄层注册失败
+     *     视为子系统级失败，内部已逆序回退，不置 INIT_FS）。 */
+    status = FsInitialize(DriverObject);
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+            "[WkDefender] FsInitialize failed (non-fatal): 0x%X\n", status);
+    } else {
+        initFlags |= INIT_FS;
+    }
 
     /* 2. 进程监控器（进程追踪基础设施） */
     status = PmInitialize();
@@ -357,15 +338,15 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegPath)
     /* 3.4 注册表回调节点（独立 CM 回调节点，注册表自保护消费方）。
      *     在自防护引擎（含 RG 注册表自保护初始化）之后注册，保证消费方已
      *     就绪；失败非致命，仅丧失注册表写保护，不阻断加载。 */
-    //status = CbRegistryInitialize(DriverObject);
+    //status = CbInitializeRegistryNotify(DriverObject);
     //if (!NT_SUCCESS(status)) {
     //    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-    //        "[WkDefender] CbRegistryInitialize failed (non-fatal): 0x%08X\n", status);
+    //        "[WkDefender] CbInitializeRegistryNotify failed (non-fatal): 0x%08X\n", status);
     //} else {
     //    initFlags |= INIT_CB_REG;
     //}
 
-    /* 3.5 Pap 进程访问防护运行时（判定逻辑随 Callbacks/ObjectNotify.c 托管；
+    /* 3.5 Pap 进程访问防护运行时（判定逻辑随 Callbacks/ObjectNotification.c 托管；
      *     此处仅完成运行时/速率状态初始化）。
      *     必须在 CbInitializeObjectNotify 之前初始化（OB 回调依赖就绪）。
      *     失败非致命：仅丧失受保护进程剥离能力，不阻断加载。 */
@@ -420,6 +401,19 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegPath)
     //    initFlags |= INIT_ABD;
     //}
 
+    /* 5.2 内存区域定时一致性校验器（2026-09-10）。
+     * 依赖进程表（PmInitialize/PmEnumerateProcesses/CbProcessNotifyInitialize
+     * 均已就绪）与进程创建回调基线（Phase 0.1）；周期枚举当前 VAD 与
+     * RegionList 对账，接续 PASSIVE_LEVEL 定时线程。
+     * 失败非致命：仅失去一致性兜底，事件轨/基线仍可增量工作。 */
+    status = MvpInitialize();
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+            "[WkDefender] MvpInitialize failed (non-fatal): 0x%X\n", status);
+    } else {
+        initFlags |= INIT_MVP;
+    }
+
     /* 6. Syscall ETW 监控 */
     //status = SmInitialize();
     //if (!NT_SUCCESS(status)) {
@@ -441,16 +435,15 @@ Cleanup:
     //if (initFlags & INIT_CB_THREAD) CbThreadNotifyCleanup();
     //if (initFlags & INIT_CB_PROCESS) CbProcessNotifyCleanup();
     //if (initFlags & INIT_PM)       PmCleanup();
-    //if (initFlags & INIT_FBE)      FbeShutdown();
-    //if (initFlags & INIT_NPM)      WkdNpmShutdown();
-    //if (initFlags & INIT_FS)       FsCleanup(DriverObject);
+    if (initFlags & INIT_FS)       FsCleanup(DriverObject);   /* 编排器统一逆序：NPM→FBE→Pas→Pwc→Poc→Pfcp→Udc→Scan→薄层反注册 */
     //if (initFlags & INIT_CB_IMAGE) ImgNotifyCleanup();
+    if (initFlags & INIT_MVP)      MvpShutdown();
     if (initFlags & INIT_EXEMPT)   ExemptsCleanup();
     if (initFlags & INIT_MT)       MtCleanup();
     if (initFlags & INIT_CB_OBJECT) CbObjectNotifyCleanup();
     if (initFlags & INIT_PAP)      PapShutdown();
     if (initFlags & INIT_TAP)      TapShutdown();
-    if (initFlags & INIT_CB_REG)   CbRegistryCleanup();
+    if (initFlags & INIT_CB_REG)   CbShutdownRegistryNotify();
     if (initFlags & INIT_SP) {
         SpShutdownSelfProtectionEngine(g_SpEngine);
         g_SpEngine = NULL;

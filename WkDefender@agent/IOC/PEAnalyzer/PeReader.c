@@ -361,7 +361,7 @@ IocpReaderReadArray(
     )
 /*++
 Routine Description:
-    读 Count×ElemSize 字节到 Out, SafeMul 防乘法溢出 (对齐 SS ReadArray)。
+    读 Count×ElemSize 字节到 Out, SafeMul 防乘法溢出 (ReadArray)。
     数据经 _IocpReaderCopy 真正拷入 Out (支持跨段)。
 
 Arguments:
@@ -395,7 +395,7 @@ IocpReaderReadString(
 Routine Description:
     读 NUL 终止字符串。在 [Offset, Offset+MaxLen) 内找 NUL,
     拷贝(不含 NUL)到 Out 并补终止符。找不到 NUL 返回 FALSE
-    (对齐 SS ReadString 语义)。OutCap 应 >= MaxLen+1。
+    (ReadString 语义)。OutCap 应 >= MaxLen+1。
     数据经 _IocpReaderCopy 真正拷入 Out (支持跨段)。
 
 Arguments:

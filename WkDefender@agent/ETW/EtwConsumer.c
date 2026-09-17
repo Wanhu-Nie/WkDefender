@@ -7,7 +7,7 @@
  *         EnableETWProcessTracing / DisableETWProcessTracing / 消费者线程。
  * 迁移日期：2026-09-07
  *
- * 会话生命周期（对齐 SS 框架，C 化）：
+ * 会话生命周期（框架，C 化）：
  *   Start   : StartTraceW → EnableTraceEx2 → OpenTraceW → CreateThread(ProcessTrace)
  *   Shutdown: CloseTrace（解阻塞）→ 等待线程 → ControlTraceW(STOP)
  *
@@ -271,7 +271,7 @@ Routine Description:
 
     启动 WkDefender ETW 实时消费会话。
 
-    流程（对齐 SS EnableETWProcessTracing，C 化）：
+    流程（EnableETWProcessTracing，C 化）：
       1. StartTraceW（ERROR_ALREADY_EXISTS 时先停旧会话再重建）
       2. EnableTraceEx2（全关键字 + TRACE_LEVEL_VERBOSE）
       3. OpenTraceW（REAL_TIME | EVENT_RECORD，EventRecordCallback）
@@ -412,7 +412,7 @@ Routine Description:
 
     停止 ETW 实时消费会话。
 
-    停止序列（对齐 SS DisableETWProcessTracing）：
+    停止序列（DisableETWProcessTracing）：
       1. CloseTrace(consumerHandle) → 解阻塞 ProcessTrace
       2. 等待消费者线程退出（有界等待）
       3. ControlTraceW(EVENT_TRACE_CONTROL_STOP)

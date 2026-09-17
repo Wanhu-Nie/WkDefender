@@ -103,11 +103,11 @@ typedef enum _TS_INDICATOR_TYPE {
     TsIndicator_CmdLine_DownloadCradle      = 0x0204,
     TsIndicator_CmdLine_ReflectionLoad      = 0x0205,
     TsIndicator_CmdLine_ClipboardAbuse      = 0x0206,
-    TsIndicator_CmdLine_Obfuscation         = 0x0207,  // 混淆检测（^/%/` 计数，迁移自 SS CommandLineParser）
-    TsIndicator_CmdLine_HiddenWindow        = 0x0208,  // 隐藏窗口执行（迁移自 SS CommandLineParser）
-    TsIndicator_CmdLine_RemoteExecution     = 0x0209,  // 远程执行（迁移自 SS CommandLineParser）
-    TsIndicator_CmdLine_SuspiciousPath      = 0x020A,  // 可疑路径执行（迁移自 SS CommandLineParser）
-    TsIndicator_CmdLine_ScriptExecution     = 0x020B,  // 脚本文件执行（迁移自 SS CommandLineParser）
+    TsIndicator_CmdLine_Obfuscation         = 0x0207,  // 混淆检测（^/%/` 计数，CommandLineParser）
+    TsIndicator_CmdLine_HiddenWindow        = 0x0208,  // 隐藏窗口执行（CommandLineParser）
+    TsIndicator_CmdLine_RemoteExecution     = 0x0209,  // 远程执行（CommandLineParser）
+    TsIndicator_CmdLine_SuspiciousPath      = 0x020A,  // 可疑路径执行（CommandLineParser）
+    TsIndicator_CmdLine_ScriptExecution     = 0x020B,  // 脚本文件执行（CommandLineParser）
 
     // ── 注入检测（0x03xx） ──
     TsIndicator_Injection_RemoteThread      = 0x0301,
@@ -173,10 +173,10 @@ typedef enum _TS_INDICATOR_TYPE {
     // ── 注册表（0x0Bxx） ──
     TsIndicator_Registry_SuspiciousMod      = 0x0B01,
 
-    // ── WSL/容器逃逸（0x0Cxx，迁移自 SS WSLMonitor 2026-08） ──
-    TsIndicator_Wsl_EscapeToHost            = 0x0C01,  // WSL 父 spawn 原生进程（T1611，对齐 SS 80 分）
-    TsIndicator_Wsl_CredentialAccess        = 0x0C02,  // WSL 读宿主凭据文件（T1003，对齐 SS 85 分）
-    TsIndicator_Wsl_DriverAccess            = 0x0C03,  // WSL 访问 \drivers\（T1611，对齐 SS 60 分）
+    // ── WSL/容器逃逸（0x0Cxx，WSLMonitor 2026-08） ──
+    TsIndicator_Wsl_EscapeToHost            = 0x0C01,  // WSL 父 spawn 原生进程（T1611，80 分）
+    TsIndicator_Wsl_CredentialAccess        = 0x0C02,  // WSL 读宿主凭据文件（T1003，85 分）
+    TsIndicator_Wsl_DriverAccess            = 0x0C03,  // WSL 访问 \drivers\（T1611，60 分）
     TsIndicator_Wsl_System32Access          = 0x0C04,  // WSL 访问 \System32\（T1611，SS 无分仅记录）
 
     // ── IOA 行为类型（0x0Dxx，对应 WKD_ASSEMBLY_TYPE，34 项） ──
@@ -227,7 +227,7 @@ typedef enum _TS_INDICATOR_TYPE {
     TsIndicator_Ioa_UnmapViewSection       = 0x0D2B,  // 跨进程 Unmap（镂空，syscall 轨 0x1010）
 
     // ── Section 创建检测（0x0D2C 起，SectionTracker 迁移 2026-08） ──
-    // 权重对齐 SS SecpUpdateSuspicionScore（Transacted 300/Deleted 250/
+    // 权重SecpUpdateSuspicionScore（Transacted 300/Deleted 250/
     // NoBackingFile 180/ExecuteAnonymous 200/LargeAnonymous 80）:
     //   ≥250 → Critical / ≥180 → High / ≥80 → Medium
     TsIndicator_Ioa_SectionExecuteAnonymous = 0x0D2C, // 匿名可执行 Section（SS 200 → Critical，反射加载信号）
@@ -244,8 +244,8 @@ typedef enum _TS_INDICATOR_TYPE {
     TsIndicator_File_HighEntropy           = 0x0E05,  // 高熵写入（加密检测 T1486）
     TsIndicator_File_RansomNote            = 0x0E06,  // 勒索信（T1486）
     TsIndicator_File_MassModify            = 0x0E07,  // 大量文件修改（勒索行为）
-    TsIndicator_File_ShadowDelete          = 0x0E08,  // 卷影副本删除（T1490，对齐 WkdMessage_FileShadowCopyDelete 0x1306，已接线 FspPreSetInformation）
-    TsIndicator_File_HardLink              = 0x0E09,  // 凭据硬链接（T1003.003，PreSetInfo 迁移 2026-08，对齐 FileLinkInformation，已接线 FspPreSetInformation）
+    TsIndicator_File_ShadowDelete          = 0x0E08,  // 卷影副本删除（T1490，对齐 WkdMessage_FileShadowCopyDelete 0x1306，已接线 FsPreSetInformationNotifyCallback）
+    TsIndicator_File_HardLink              = 0x0E09,  // 凭据硬链接（T1003.003，PreSetInfo 迁移 2026-08，对齐 FileLinkInformation，已接线 FsPreSetInformationNotifyCallback）
     TsIndicator_File_AttributeChange       = 0x0E0A,  // 属性/时间戳/短名变更（T1070.006/T1564.001，PreSetInfo 迁移 2026-08）
     TsIndicator_File_DataDestruction       = 0x0E0B,  // 数据销毁（大量删除 T1485，PreSetInfo 迁移 2026-08，死代码：聚合评分未接入）
 

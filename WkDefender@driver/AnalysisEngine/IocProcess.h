@@ -36,3 +36,37 @@ BOOLEAN
 WkdIsSystemProcess(
     _In_ HANDLE Pid
     );
+
+//
+// 剪贴板追踪表（T1115，IocProcess.c §8；2026-10 激活接线）
+// 生命周期：IocInitializeParentChildRules 内 IocpClipboardInitialize 初始化；
+// §3.2 IocpDetectClipboardAbuse 命中后 IocpClipboardTrackProcess 入表；
+// 进程终止回调 IocpClipboardRemoveProcess 清理；minifilter IRP_MJ_WRITE
+// 前置回调（FsPreWriteNotifyCallback）经 IocpClipboardCheckFileWrite 查询
+// temp 快速写入模式。前向声明（定义在调用点之后，防 C4013）。
+//
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+IocpClipboardTrackProcess(
+    _In_ HANDLE ProcessId,
+    _In_ ULONG Indicators
+    );
+
+_IRQL_requires_max_(APC_LEVEL)
+BOOLEAN
+IocpClipboardCheckFileWrite(
+    _In_ HANDLE ProcessId,
+    _In_ PUNICODE_STRING FileName
+    );
+
+_IRQL_requires_(PASSIVE_LEVEL)
+VOID
+IocpClipboardRemoveProcess(
+    _In_ HANDLE ProcessId
+    );
+
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+IocpClipboardInitialize(
+    VOID
+    );

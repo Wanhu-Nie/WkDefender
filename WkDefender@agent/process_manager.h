@@ -278,7 +278,7 @@ typedef enum _WKD_WATCHDOG_TYPE {
 #define WK_CRITICAL_PROCESS_COUNT       7
 #define WK_SYSTEM_PROCESS_COUNT         8
 
-/* 保护签名者类型（对齐 SS PROTECTION_*，用于 ProtectionInfo.SignerType；※死代码） */
+/* 保护签名者类型（PROTECTION_*，用于 ProtectionInfo.SignerType；※死代码） */
 #define WK_PROTECTION_NONE              0
 #define WK_PROTECTION_PPL_AUTHENTICODE  1
 #define WK_PROTECTION_PPL_CODEGEN       2
@@ -299,7 +299,7 @@ typedef struct _WKD_PROCESS_PROTECTION_INFO {
     WCHAR ProtectionDescription[128];
 } WKD_PROCESS_PROTECTION_INFO, *PWKD_PROCESS_PROTECTION_INFO;
 
-/* 终止选项(对齐 SS KillOptions;4 个工厂见 WkKillOptions_*) */
+/* 终止选项(KillOptions;4 个工厂见 WkKillOptions_*) */
 typedef struct _WKD_KILL_OPTIONS {
     WKD_KILL_METHOD PreferredMethod;         /* 默认 Auto */
     ULONG TimeoutMs;                         /* 默认 WK_KILL_TIMEOUT_MS_DEFAULT */
@@ -315,7 +315,7 @@ typedef struct _WKD_KILL_OPTIONS {
     ULONG ExitCode;                          /* 默认 WK_EXIT_CODE_KILLED */
 } WKD_KILL_OPTIONS, *PWKD_KILL_OPTIONS;
 
-/* 挂起选项（对齐 SS SuspendOptions；当前 SuspendProcess 为简化签名，※死代码类型） */
+/* 挂起选项（SuspendOptions；当前 SuspendProcess 为简化签名，※死代码类型） */
 typedef struct _WKD_SUSPEND_OPTIONS {
     ULONG TimeoutMs;                 /* 默认 WK_SUSPEND_TIMEOUT_MS */
     BOOLEAN SuspendAllThreads;       /* 默认 TRUE */
@@ -341,7 +341,7 @@ typedef struct _WKD_PROCESS_KILL_INFO {
     WCHAR ErrorMessage[256];
 } WKD_PROCESS_KILL_INFO, *PWKD_PROCESS_KILL_INFO;
 
-/* 线程级终止信息（对齐 SS ThreadKillInfo；SS 未实际填充该列表，※死代码类型） */
+/* 线程级终止信息（ThreadKillInfo；SS 未实际填充该列表，※死代码类型） */
 typedef struct _WKD_THREAD_KILL_INFO {
     ULONG ThreadId;
     BOOLEAN WasSuspended;
@@ -466,7 +466,7 @@ WKD_PROCESS_CRITICALITY ProcessManager_GetCriticality(DWORD Pid);
 BOOLEAN ProcessManager_IsCriticalProcess(DWORD Pid);
 BOOLEAN ProcessManager_CanTerminate(DWORD Pid);
 BOOLEAN ProcessManager_RemoveProtection(DWORD Pid);   /* ※死代码: PPL 剥离需驱动 */
-/* 驱动 PPL 剥离请求（对齐 SS RequestKernelProtectionRemoval，※死代码: 依赖驱动 IPC） */
+/* 驱动 PPL 剥离请求（RequestKernelProtectionRemoval，※死代码: 依赖驱动 IPC） */
 BOOLEAN WkRequestKernelProtectionRemoval(DWORD Pid);
 
 /* ── Watchdog ── */
@@ -488,7 +488,7 @@ ULONG ProcessManager_CheckResurrection(PCWSTR Name, PCWSTR Path, LARGE_INTEGER S
 /* ── 统计(※死代码: 当前无消费方) ── */
 NTSTATUS ProcessManager_GetKillStatistics(_Out_ PWKD_KILLER_STATISTICS Out);
 VOID ProcessManager_ResetKillStatistics(VOID);
-/* 成功率（对齐 SS KillerStatistics::GetSuccessRate，※死代码） */
+/* 成功率（KillerStatistics::GetSuccessRate，※死代码） */
 double WkKillStatistics_GetSuccessRate(VOID);
 
 /* ── 回调注册(※死代码) ── */
@@ -498,11 +498,11 @@ UINT64 ProcessManager_RegisterTreeProgressCallback(WKD_TREE_PROGRESS_CALLBACK Cb
 UINT64 ProcessManager_RegisterWatchdogCallback(WKD_WATCHDOG_CALLBACK Cb);
 VOID ProcessManager_UnregisterCallback(UINT64 CallbackId);
 
-/* 结果/方法 → 字符串（展示/日志用，※死代码：对齐 SS ResultToString/MethodToString） */
+/* 结果/方法 → 字符串（展示/日志用，※死代码：ResultToString/MethodToString） */
 PCWSTR WkKillResultToString(WKD_KILL_RESULT Result);
 PCWSTR WkKillMethodToString(WKD_KILL_METHOD Method);
 
-/* ── 批量/按名/按路径终止（※死代码：对齐 SS TerminateMultiple/ByName/ByPath） ── */
+/* ── 批量/按名/按路径终止（※死代码：TerminateMultiple/ByName/ByPath） ── */
 NTSTATUS ProcessManager_TerminateMultiple(_In_ const ULONG* Pids, ULONG PidCount,
                                           _In_opt_ PCWKD_KILL_OPTIONS Options);
 NTSTATUS ProcessManager_TerminateByName(_In_ PCWSTR ProcessName,
@@ -510,12 +510,12 @@ NTSTATUS ProcessManager_TerminateByName(_In_ PCWSTR ProcessName,
 NTSTATUS ProcessManager_TerminateByPath(_In_ PCWSTR ProcessPath,
                                         _In_opt_ PCWKD_KILL_OPTIONS Options);
 
-/* ── 树挂起/恢复（※死代码：对齐 SS SuspendTree/ResumeTree） ── */
+/* ── 树挂起/恢复（※死代码：SuspendTree/ResumeTree） ── */
 BOOLEAN ProcessManager_SuspendTree(_In_ DWORD RootPid);
 BOOLEAN ProcessManager_ResumeTree(_In_ DWORD RootPid);
 
-/* ── 内核模式可用性（对齐 SS IsKernelModeAvailable；WkD 当前无驱动通道，恒 FALSE） ── */
+/* ── 内核模式可用性（IsKernelModeAvailable；WkD 当前无驱动通道，恒 FALSE） ── */
 BOOLEAN ProcessManager_IsKernelModeAvailable(VOID);
 
-/* ── 处置引擎版本（对齐 SS GetVersion） ── */
+/* ── 处置引擎版本（GetVersion） ── */
 PCWSTR WkKillGetVersion(VOID);

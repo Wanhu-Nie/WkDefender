@@ -26,7 +26,7 @@ IoaC2_IsHighEntropyHost(
     )
 /*++
 Routine Description:
-    DGA 判定: 域名字符唯一率 >0.7 视为高熵 (对齐 SS L1491-1504)。
+    DGA 判定: 域名字符唯一率 >0.7 视为高熵 (L1491-1504)。
 
 Arguments:
     Host — 远程域名。
@@ -119,7 +119,7 @@ IoaC2_IsBeaconing(
 /*++
 Routine Description:
     信标间隔规律性判定: 间隔变异系数 (CV=标准差/均值) <0.3
-    视为规律信标 (对齐 SS L1465-1481)。
+    视为规律信标 (L1465-1481)。
 
 Arguments:
     IntervalsMs — 相邻连接间隔数组 (毫秒)。

@@ -243,7 +243,7 @@ FORCEINLINE BOOLEAN WpeSafeCastU64ToU32(ULONG64 V, PULONG Out)
     return TRUE;
 }
 
-/* SIZE_T 安全加/乘 (防溢出, 对齐 SS SafeMath 语义) */
+/* SIZE_T 安全加/乘 (防溢出, SafeMath 语义) */
 FORCEINLINE BOOLEAN IocpAddSizeSafe(SIZE_T A, SIZE_T B, SIZE_T* Out)
 {
     if (A > (SIZE_T)-1 - B) return FALSE;

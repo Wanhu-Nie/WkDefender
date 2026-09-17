@@ -21,7 +21,7 @@
 /*     前置: 依赖 ioc_certs 表已填充证书黑名单数据    */
 /*                                                  */
 /*  ★ 来源澄清（2026-08 ProcessAnalyzer 迁移）★      */
-/*  本文件的 WkdPd* 函数对齐 SS 子子系统              */
+/*  本文件的 WkdPd* 函数子子系统              */
 /*  (HandleTracker/CommandLineParser/ParentChain-    */
 /*  Tracker/TokenAnalyzer/PrivilegeMonitor/          */
 /*  EnvironmentMonitor)，注释中的 PS (PhantomCore)    */

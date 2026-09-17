@@ -302,8 +302,8 @@ Policy_WildcardMatch(
 /*  兜底未编译时仅字符串条件可现算。                  */
 /**************************************************/
 
-/* 字符串条件匹配 (对齐 SS RepMatchUnicodeString L2209-2325;
- * CaseInsensitive 恒 TRUE, 对齐 SS 编译 L1749)。 */
+/* 字符串条件匹配 (RepMatchUnicodeString L2209-2325;
+ * CaseInsensitive 恒 TRUE, 编译 L1749)。 */
 static BOOLEAN
 Policy_MatchString(
     _In_ PCWSTR        Pattern,
@@ -347,7 +347,7 @@ Policy_MatchString(
         return Policy_WildcardMatch(Pattern, Value);
 
     case WkdOp_InList:
-        /* ※死代码: 编译期拒绝 (对齐 SS RepCompileRule L1755-1757) */
+        /* ※死代码: 编译期拒绝 (RepCompileRule L1755-1757) */
         return FALSE;
 
     default:
@@ -355,7 +355,7 @@ Policy_MatchString(
     }
 }
 
-/* 哈希条件编译 (对齐 SS RepCompileHashCondition L1858-1906: 64 hex→32 bytes) */
+/* 哈希条件编译 (RepCompileHashCondition L1858-1906: 64 hex→32 bytes) */
 static BOOLEAN
 Policy_CompileHashCondition(
     _In_ PCWSTR HexString,
@@ -384,7 +384,7 @@ Policy_CompileHashCondition(
     return TRUE;
 }
 
-/* 时间段条件编译 (对齐 SS RepCompileTimeCondition L1931-1983: "HH:MM-HH:MM") */
+/* 时间段条件编译 (RepCompileTimeCondition L1931-1983: "HH:MM-HH:MM") */
 static BOOLEAN
 Policy_CompileTimeCondition(
     _In_ PCWSTR TimeSpec,
@@ -417,7 +417,7 @@ Policy_CompileTimeCondition(
     return TRUE;
 }
 
-/* 规则编译 (对齐 SS RepCompileRule L1727-1809 + 子编译器; 用户态无 Unicode 转换) */
+/* 规则编译 (RepCompileRule L1727-1809 + 子编译器; 用户态无 Unicode 转换) */
 static NTSTATUS
 Policy_CompileRule(
     _Inout_ PWKD_DETECTION_RULE Rule
@@ -442,7 +442,7 @@ Policy_CompileRule(
 
         RtlZeroMemory(cc, sizeof(*cc));
 
-        /* InList 编译期拒绝 (对齐 SS RepCompileRule L1755-1757) */
+        /* InList 编译期拒绝 (RepCompileRule L1755-1757) */
         if (cond->Operator == WkdOp_InList)
             return STATUS_NOT_SUPPORTED;
 
@@ -458,7 +458,7 @@ Policy_CompileRule(
         case WkdCond_Domain:
         case WkdCond_MitreTechnique:
         case WkdCond_Custom:
-            /* 字符串条件 (对齐 SS RepCompileStringCondition L1811-1856,
+            /* 字符串条件 (RepCompileStringCondition L1811-1856,
              * 用户态 WCHAR 原生免转换, 省略预哈希) */
             if (valueLen == 0 || valueLen > WKD_RULE_MAX_VALUE_LEN)
                 return STATUS_INVALID_PARAMETER;
@@ -474,7 +474,7 @@ Policy_CompileRule(
 
         case WkdCond_ThreatScore:
         case WkdCond_BehaviorFlag:
-            /* 数值条件 (对齐 SS RepCompileNumericCondition L1908-1929;
+            /* 数值条件 (RepCompileNumericCondition L1908-1929;
              * wcstoul base 0 支持 0x 前缀) */
             cc->NumericValue = (ULONG)wcstoul(cond->Value, NULL, 0);
             cc->IsCompiled = TRUE;
@@ -497,9 +497,9 @@ Policy_CompileRule(
     return STATUS_SUCCESS;
 }
 
-/* 单条件求值 (对齐 SS RepEvaluateCondition L1989-2203)。
+/* 单条件求值 (RepEvaluateCondition L1989-2203)。
  * 编译缓存 Cc 有效时用预解析值; 无效时仅字符串条件现算兜底。
- * Negate 由调用方取反 (对齐 SS ReEvaluate L996-998)。 */
+ * Negate 由调用方取反 (ReEvaluate L996-998)。 */
 static BOOLEAN
 Policy_EvaluateCondition(
     _In_ PCWKD_CONDITION          Cond,
@@ -611,7 +611,7 @@ Policy_EvaluateCondition(
         break;
 
     case WkdCond_TimeOfDay:
-        /* 对齐 SS L2155-2186: 系统时间→当日分钟, 环回区间处理 */
+        /* L2155-2186: 系统时间→当日分钟, 环回区间处理 */
         if (compiled) {
             ULONG currentMinute = (ULONG)(Ctx->CurrentTime.wHour * 60 + Ctx->CurrentTime.wMinute);
             if (Cc->TimeStartMinute <= Cc->TimeEndMinute) {
@@ -625,7 +625,7 @@ Policy_EvaluateCondition(
         break;
 
     case WkdCond_Custom:
-        /* ※死代码: 无运行时 handler, 恒 FALSE (对齐 SS L2188-2195) */
+        /* ※死代码: 无运行时 handler, 恒 FALSE (L2188-2195) */
         result = FALSE;
         break;
 
@@ -637,7 +637,7 @@ Policy_EvaluateCondition(
     return result;
 }
 
-/* 单条运行时规则匹配 (对齐 SS DetectionRule 字段语义) */
+/* 单条运行时规则匹配 (DetectionRule 字段语义) */
 static BOOLEAN
 Policy_RuntimeRuleMatch(
     _In_ const WKD_DETECTION_RULE* Rule,
@@ -690,7 +690,7 @@ PolicyEngine_AddRule(
     candidate.IsCompiled = FALSE;
     candidate.CompiledConditionCount = 0;
 
-    /* 编译校验 (锁外; 对齐 SS ReLoadRule 编译在持锁前 L650-692) */
+    /* 编译校验 (锁外; ReLoadRule 编译在持锁前 L650-692) */
     if (candidate.ConditionCount > 0) {
         NTSTATUS status = Policy_CompileRule(&candidate);
         if (!NT_SUCCESS(status)) {
@@ -794,7 +794,7 @@ PolicyEngine_GetRuleCount(
     return n;
 }
 
-/* 返回所有运行时规则 (对齐 SS GetRules cpp L1859-1870) */
+/* 返回所有运行时规则 (GetRules cpp L1859-1870) */
 ULONG
 PolicyEngine_GetRules(
     _Out_ PWKD_DETECTION_RULE Out,
@@ -808,7 +808,7 @@ PolicyEngine_GetRules(
     EnterCriticalSection(&g_PolicyEngine.Lock);
     for (ULONG i = 0; i < g_PolicyEngine.RuntimeRuleCount && n < MaxCount; i++) {
         Out[n] = g_PolicyEngine.RuntimeRules[i];
-        /* 清零内部编译缓存, 不暴露给调用方 (对齐 SS ReGetRule
+        /* 清零内部编译缓存, 不暴露给调用方 (ReGetRule
          * 清 ListEntry, RuleEngine.c L1314-1315) */
         Out[n].CompiledConditionCount = 0;
         Out[n].IsCompiled = FALSE;
@@ -827,7 +827,7 @@ PolicyEngine_GetStats(
     )
 /*++
 Routine Description:
-    引擎级统计快照 (RuleEngine 迁移, 对齐 SS ReGetStatistics
+    引擎级统计快照 (RuleEngine 迁移, ReGetStatistics
     RuleEngine.c L1388-1420; StartTime/Reserved 低价值省略)。
 --*/
 {
@@ -838,7 +838,7 @@ Routine Description:
 
 /**************************************************/
 /*       评估上下文构建 (RuleEngine 迁移)            */
-/*  (对齐 SS RE_EVALUATION_CONTEXT 字段语义;         */
+/*  (RE_EVALUATION_CONTEXT 字段语义;         */
 /*   FileHash/RegistryPath/NetworkAddress/Domain/    */
 /*   MitreTechnique 恒 NULL — 死代码条件)            */
 /**************************************************/
@@ -956,7 +956,7 @@ Policy_AllocAndEnqueueRuleAlert(
 
 /**************************************************/
 /*       规则动作 → VerdictEngine 统一出口          */
-/*  (对齐 SS ReAction Block/Terminate/Quarantine    */
+/*  (ReAction Block/Terminate/Quarantine    */
 /*  语义; 处置走 VerdictEngine_DispatchResponse,     */
 /*  内部 monitor-only 门控 Auto* = FALSE)           */
 /**************************************************/
@@ -1009,7 +1009,7 @@ Policy_BuildVerdictAndDispatch(
 
 /**************************************************/
 /*       规则动作分派                              */
-/*  (对齐 SS ReEvaluate PrimaryAction L1042-1059:   */
+/*  (ReEvaluate PrimaryAction L1042-1059:   */
 /*   Actions[0] 为 PrimaryAction)                  */
 /**************************************************/
 
@@ -1076,7 +1076,7 @@ PolicyEngine_EvaluateRuntime(
     _Inout_opt_ PULONG       Score
     )
 {
-    /* 对齐 SS ReEvaluate L887-1254: 规则按 Priority 排序, 首个命中停止。
+    /* ReEvaluate L887-1254: 规则按 Priority 排序, 首个命中停止。
      * ConditionCount>0 → 多条件 AND 组合; =0 → 便捷字段 (既有路径)。 */
     WKD_EVAL_CONTEXT ctx;
     ULONG bestScore = 0;
@@ -1093,7 +1093,7 @@ PolicyEngine_EvaluateRuntime(
 
         if (!rule->Enabled) continue;
 
-        /* 规则级 + 引擎级评估统计 (对齐 SS L979-980) */
+        /* 规则级 + 引擎级评估统计 (L979-980) */
         InterlockedIncrement64(&rule->EvaluationCount);
         InterlockedIncrement64(&g_PolicyEngine.Evaluations);
 
@@ -1106,7 +1106,7 @@ PolicyEngine_EvaluateRuntime(
                     &rule->Conditions[c],
                     &rule->CompiledConditions[c],
                     &ctx);
-                /* 对齐 SS ReEvaluate L996-998: Negate 取反 */
+                /* ReEvaluate L996-998: Negate 取反 */
                 if (rule->Conditions[c].Negate) condResult = !condResult;
                 if (!condResult) matched = FALSE;
             }
@@ -1121,7 +1121,7 @@ PolicyEngine_EvaluateRuntime(
             InterlockedIncrement64(&rule->MatchCount);
             InterlockedIncrement64(&g_PolicyEngine.Matches);
             if (rule->ActionCount > 0 && rule->Actions[0].Type == WkdRuleAction_Block) {
-                InterlockedIncrement64(&g_PolicyEngine.Blocks);   /* 对齐 SS L1057-1059 */
+                InterlockedIncrement64(&g_PolicyEngine.Blocks);   /* L1057-1059 */
             }
 
             if (ruleScore > bestScore) bestScore = ruleScore;
@@ -1130,7 +1130,7 @@ PolicyEngine_EvaluateRuntime(
             /* 动作分派: Alert→IOA_ALERT; Block/Terminate/Quarantine→VerdictEngine */
             Policy_ApplyActions(rule, Event, Node);
 
-            if (rule->StopProcessing) break;   /* 首个命中停止 (对齐 SS L1076) */
+            if (rule->StopProcessing) break;   /* 首个命中停止 (L1076) */
         }
     }
     LeaveCriticalSection(&g_PolicyEngine.Lock);
@@ -1146,7 +1146,7 @@ PolicyEngine_LoadRulesFromFile(
 /*++
 Routine Description:
     从 JSON/YAML 规则文件加载运行时规则 (※死代码: 序列化未实现。
-    对齐 SS LoadRulesFromFile stub — 声明存在但空转, 注册表 AddRule 为活代码)。
+    LoadRulesFromFile stub — 声明存在但空转, 注册表 AddRule 为活代码)。
 --*/
 {
     UNREFERENCED_PARAMETER(FilePath);
@@ -1159,7 +1159,7 @@ PolicyEngine_SaveRulesToFile(
     )
 /*++
 Routine Description:
-    保存运行时规则到文件 (※死代码: 序列化未实现, 对齐 SS stub)。
+    保存运行时规则到文件 (※死代码: 序列化未实现, stub)。
 --*/
 {
     UNREFERENCED_PARAMETER(FilePath);
@@ -1928,7 +1928,7 @@ VOID
 PolicyEngine_ReleaseSequenceState(
     _In_ PWKD_SEQ_MATCH_STATE State
     )
-/* 释放查询引用 (※死代码: 无调用者, 对齐 SS PmReleaseState) */
+/* 释放查询引用 (※死代码: 无调用者, PmReleaseState) */
 {
     if (!State) return;
     InterlockedDecrement(&State->RefCount);
@@ -2031,7 +2031,7 @@ PolicyEngine_LoadSequenceRulesFromFile(
 /*++
 Routine Description:
     从 JSON/YAML 规则文件加载序列规则 (※死代码: 序列化未实现,
-    对齐 SS stub; 注册表 AddSequenceRule 为活代码)。
+    stub; 注册表 AddSequenceRule 为活代码)。
 --*/
 {
     UNREFERENCED_PARAMETER(FilePath);
@@ -2044,7 +2044,7 @@ PolicyEngine_SaveSequenceRulesToFile(
     )
 /*++
 Routine Description:
-    保存序列规则到文件 (※死代码: 序列化未实现, 对齐 SS stub)。
+    保存序列规则到文件 (※死代码: 序列化未实现, stub)。
 --*/
 {
     UNREFERENCED_PARAMETER(FilePath);

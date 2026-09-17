@@ -1,0 +1,417 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Callbacks">
+      <UniqueIdentifier>{b8a9a3c0-1f4e-4e5a-9d3a-7f2c8e1a4b6d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Process">
+      <UniqueIdentifier>{c9b0b4d1-2a5f-5f6b-0e4b-8a3d9f2b5c7e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Syscall">
+      <UniqueIdentifier>{d0c1c5e2-3b6a-6a7c-1f5c-9b4e0a3c6d8f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Notification">
+      <UniqueIdentifier>{e1d2d6f3-4c7b-7b8d-2a6d-0c5f1b4d7e9a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Memory">
+      <UniqueIdentifier>{f2e3e7a4-5d8c-8c9e-3b7e-1d6a2c5e8f0b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AnalysisEngine">
+      <UniqueIdentifier>{a3f4f8b5-6e9d-9daf-4c8f-2e7b3d6f9a1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThreatScoring">
+      <UniqueIdentifier>{b4a5a9c6-7f0e-0eba-5d9a-3f8c4e7a0b2d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{d6c7c1e8-9b2a-2abd-7f1c-5b0e6a9c2d4f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common\Exempts">
+      <UniqueIdentifier>{e7d8d2f9-0a3b-2bce-8a2d-6c1f2d5e8f4a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AccessControl">
+      <UniqueIdentifier>{a3f4f8b5-7f0e-0eba-4c8f-2e7b3d6f5a1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Object">
+      <UniqueIdentifier>{c5b6b0d7-8a1f-1fac-6e0b-4a9d5f8b1c3e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="FileSystem">
+      <UniqueIdentifier>{927c2cbc-eec4-4cc1-a229-438da42681df}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="WkdEntry.c" />
+    <ClCompile Include="Common\Utils.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\BCryptUtils.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\ExportParser.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\HashMap.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\PeParser.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\PeCallbacks.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\Lookaside.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\PeriodicTimer.c">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\Exempts\Exempts.c">
+      <Filter>Common\Exempts</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\Exempts\ExemptsManager.c">
+      <Filter>Common\Exempts</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\Exempts\ExemptPid.c">
+      <Filter>Common\Exempts</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\Exempts\ExemptPath.c">
+      <Filter>Common\Exempts</Filter>
+    </ClCompile>
+    <!-- ExemptHash.c 已存在于磁盘但未加入 vcxproj 编译（孤儿文件，2026-09-03） -->
+    <!-- <ClCompile Include="Common\Exempts\ExemptHash.c" /> -->
+    <ClCompile Include="Notification\MessageSync.c">
+      <Filter>Notification</Filter>
+    </ClCompile>
+    <ClCompile Include="Notification\NotificationManager.c">
+      <Filter>Notification</Filter>
+    </ClCompile>
+    <ClCompile Include="Notification\NotificationHandler.c">
+      <Filter>Notification</Filter>
+    </ClCompile>
+    <ClCompile Include="Notification\MessageQueue.c">
+      <Filter>Notification</Filter>
+    </ClCompile>
+    <ClCompile Include="Notification\AlpcService.c">
+      <Filter>Notification</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\ProcessMonitor.c">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\ProcessPairContext.c">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\ProcessModuleTracker.c">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\HollowingDetector.c">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Callbacks\ProcessNotification.c">
+      <Filter>Callbacks</Filter>
+    </ClCompile>
+    <ClCompile Include="Callbacks\ThreadNotification.c">
+      <Filter>Callbacks</Filter>
+    </ClCompile>
+    <ClCompile Include="Callbacks\ImageNotification.c">
+      <Filter>Callbacks</Filter>
+    </ClCompile>
+    <ClCompile Include="Memory\AmsiBypassDetector.c">
+      <Filter>Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="Memory\MemoryRegion.c">
+      <Filter>Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="Memory\MemoryRegionVerify.c">
+      <Filter>Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="Syscall\SyscallContextCache.c">
+      <Filter>Syscall</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\AnalysisEngine.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IoaEngine.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocEngine.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocSyscall.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocThread.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocHandle.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocImage.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocProcess.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisEngine\IocAppControl.c">
+      <Filter>AnalysisEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreatScoring\ThreatScoring.c">
+      <Filter>ThreatScoring</Filter>
+    </ClCompile>
+    <!-- ===== 自保护（2026-09-03 完整恢复全部子组件） ===== -->
+    <ClCompile Include="AccessControl\SelfProtectionEngine.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="AccessControl\SelfProtectionCompat.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="AccessControl\CallbackProtection.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="AccessControl\AntiDebug.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="AccessControl\AntiUnload.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="AccessControl\IntegrityMonitor.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="AccessControl\RegistryProtection.c">
+      <Filter>AccessControl</Filter>
+    </ClCompile>
+    <ClCompile Include="Callbacks\RegistryNotification.c">
+      <Filter>Callbacks</Filter>
+    </ClCompile>
+    <ClCompile Include="Callbacks\ObjectNotification.c">
+      <Filter>Callbacks</Filter>
+    </ClCompile>
+    <ClCompile Include="Callbacks\FileSystemNotification.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\FileSystem.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\FileScan.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\ProcessFileContext.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\PostCreateContext.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\PostWriteContext.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\FileBackupEngine.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\NamedPipeMonitor.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\PreAcquireSection.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\PreSetInformation.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem\USBDeviceControl.c">
+      <Filter>FileSystem</Filter>
+    </ClCompile>
+<!-- 暂不参与编译（vcxproj 已注释的遗留/后续阶段文件） -->
+    <!-- <ClCompile Include="Syscall\SyscallHijack.c" />
+    <ClCompile Include="Syscall\SyscallMonitor.c" />
+    <ClCompile Include="Syscall\SyscallService.c" />
+    <ClCompile Include="Syscall\SyscallAggregation.c" />
+    <ClCompile Include="Memory\MemoryScan.c" />
+    <ClCompile Include="Memory\MemorySignature.c" />
+    <ClCompile Include="Object\ObjectManager.c" /> -->
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Callbacks\ProcessNotification.h">
+      <Filter>Callbacks</Filter>
+    </ClInclude>
+    <ClInclude Include="Callbacks\ThreadNotification.h">
+      <Filter>Callbacks</Filter>
+    </ClInclude>
+    <ClInclude Include="Callbacks\ImageNotification.h">
+      <Filter>Callbacks</Filter>
+    </ClInclude>
+    <ClInclude Include="Callbacks\ObjectNotification.h">
+      <Filter>Callbacks</Filter>
+    </ClInclude>
+    <ClInclude Include="Callbacks\RegistryNotification.h">
+      <Filter>Callbacks</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\ProcessMonitor.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\ProcessAccessProtection.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\ThreadAccessProtection.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\ProcessPairContext.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\ProcessModuleTracker.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\HollowingDetector.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Notification\NotificationManager.h">
+      <Filter>Notification</Filter>
+    </ClInclude>
+    <ClInclude Include="Notification\NotificationHandler.h">
+      <Filter>Notification</Filter>
+    </ClInclude>
+    <ClInclude Include="Notification\MessageQueue.h">
+      <Filter>Notification</Filter>
+    </ClInclude>
+    <ClInclude Include="Notification\AlpcService.h">
+      <Filter>Notification</Filter>
+    </ClInclude>
+    <ClInclude Include="Memory\AmsiBypassDetector.h">
+      <Filter>Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Memory\MemoryRegion.h">
+      <Filter>Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Memory\MemoryRegionVerify.h">
+      <Filter>Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Syscall\SyscallContextCache.h">
+      <Filter>Syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="Syscall\SyscallHijack.h">
+      <Filter>Syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="Syscall\SyscallMonitor.h">
+      <Filter>Syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="Syscall\SyscallService.h">
+      <Filter>Syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="Syscall\SyscallAggregation.h">
+      <Filter>Syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\AnalysisEngine.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IoaEngine.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocEngine.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocSyscall.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocThread.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocHandle.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocImage.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocProcess.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="AnalysisEngine\IocAppControl.h">
+      <Filter>AnalysisEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreatScoring\ThreatScoring.h">
+      <Filter>ThreatScoring</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\Constants.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\DynamicArray.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\Utils.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\BCryptUtils.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\ExportParser.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\HashMap.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\HashSet.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\PeParser.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\PeCallbacks.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\Lookaside.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\PeriodicTimer.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\Exempts\Exempts.h">
+      <Filter>Common\Exempts</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\Exempts\ExemptsInternal.h">
+      <Filter>Common\Exempts</Filter>
+    </ClInclude>
+    <!-- ===== 自保护（2026-09-01） ===== -->
+    <ClInclude Include="AccessControl\RegistryProtection.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="AccessControl\CallbackProtection.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="AccessControl\SelfProtectionCompat.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="AccessControl\AntiUnload.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="AccessControl\AntiDebug.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="AccessControl\IntegrityMonitor.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="AccessControl\SelfProtectionEngine.h">
+      <Filter>AccessControl</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\FileSystem.h">
+      <Filter>FileSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="FileSystem\FileSystem.h">
+      <Filter>FileSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\HandleScanner.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Memory\MemoryPoolTag.h">
+      <Filter>Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Memory\MemoryScan.h">
+      <Filter>Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Memory\MemorySignature.h">
+      <Filter>Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Object\ObjectManager.h">
+      <Filter>Object</Filter>
+    </ClInclude>
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="Notification/MessageSync.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="WkDefender.inf" />
+  </ItemGroup>
+</Project>

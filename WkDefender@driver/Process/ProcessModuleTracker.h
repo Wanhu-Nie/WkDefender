@@ -94,6 +94,7 @@ typedef struct _WKD_MODULE_SECTION {
     ULONG VirtualSize;            // Misc.VirtualSize
     ULONG VirtualAddress;         // VirtualAddress（RVA，内存偏移）
     ULONG SizeOfRawData;          // SizeOfRawData
+    ULONG PointerToRawData;       // PointerToRawData（文件偏移；2026-09-13 增：文件比对/取证消费）
     ULONG Characteristics;        // 节属性位
 } WKD_MODULE_SECTION, *PWKD_MODULE_SECTION;
 
@@ -112,7 +113,7 @@ typedef union _WKD_IMAGE_PROPERTIES {
 
 //
 // 镜像类型细分（驱动内消费，不上送线格式）
-// 对齐 PS IMG_TYPE。2026-08-08 迁自 Callbacks/ImageNotify.h（消除循环依赖）。
+// 对齐 PS IMG_TYPE。2026-08-08 迁自 Callbacks/ImageNotification.h（消除循环依赖）。
 // 2026-08-12 前移：WKD_MODULE::ImageType 使用本枚举，定义必须先于结构体。
 //
 typedef enum _WKD_IMAGE_TYPE {
@@ -178,6 +179,8 @@ typedef struct _WKD_MODULE_INSTANCE {
     LIST_ENTRY          ListEntry;
     PVOID               ImageBase;
     LARGE_INTEGER       LoadTime;
+    BOOLEAN             MainModule;       /* 主模块标记：模块链空时挂载的首模块即主模块（2026-09-13） */
+    UCHAR               Reserved0[7];     /* 对齐填充（保证 Module 8 字节对齐） */
     PWKD_MODULE         Module;          /* → 全局唯一对象（事实/节/路径/文件级标志） */
 } WKD_MODULE_INSTANCE, *PWKD_MODULE_INSTANCE;
 
@@ -303,7 +306,7 @@ PsLookupModuleInstanceByImageBaseLocked(
     );
 
 //
-// 地址包含查询（新增，对齐 SS TnpFindModuleForAddress，改用 WKD_MODULE 全局表替代 PEB 遍历）。
+// 地址包含查询（新增，TnpFindModuleForAddress，改用 WKD_MODULE 全局表替代 PEB 遍历）。
 // 遍历目标进程 ModuleContext->ModuleList，判定 Address 是否落在某模块 [ImageBase, +ImageSize) 内。
 // 全程内核数据结构，无用户态地址访问、无 ProbeForRead/SEH（本质优于 PEB 版）。
 // 约定：调用方须已持有 ModuleContext 共享锁（EX_PUSH_LOCK，≤APC_LEVEL），

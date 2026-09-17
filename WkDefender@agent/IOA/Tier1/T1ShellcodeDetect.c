@@ -161,7 +161,7 @@ T1scContains(
 }
 
 /* 连续 NOP 等价指令最大长度（单元 = 一条 NOP 指令，含多字节变体） */
-/* 对齐 SS ShellcodeDetector.c SdpDetectNopSledInternal L2303-2355:
+/* ShellcodeDetector.c SdpDetectNopSledInternal L2303-2355:
  *   - 0x90          标准单字节 NOP
  *   - 0x66 0x90     XCHG AX,AX 双字节 NOP
  *   - 0x0F 0x1F /0  长 NOP (ModR/M + 可选 SIB/disp, 按 SS 长度解码) */

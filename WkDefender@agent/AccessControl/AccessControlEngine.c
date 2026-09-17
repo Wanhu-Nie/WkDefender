@@ -62,6 +62,10 @@ SpSubTypeToName(
     case SP_EVENT_SUBTYPE_HYPERVISOR:          return L"Hypervisor";
     case SP_EVENT_SUBTYPE_DRIVER_VERIFIER:     return L"DriverVerifier";
     case SP_EVENT_SUBTYPE_MEMORY_DUMP:         return L"FullMemoryDump";
+    case SP_EVENT_SUBTYPE_REG_OP_BLOCKED:      return L"RegistryOperationBlocked";
+    case SP_EVENT_SUBTYPE_REG_INTEGRITY:       return L"RegistryIntegrityViolation";
+    case SP_EVENT_SUBTYPE_REG_VALUE_CHANGED:   return L"RegistryValueChanged";
+    case SP_EVENT_SUBTYPE_REG_KERNEL_BLOCK:    return L"RegistryKernelBlock";
     default:
         /* IM/RG/PP 等其它子类型段：给出通用命名 */
         if (EventSubType >= SP_EVENT_SUBTYPE_IM_BASE && EventSubType < 0x5030) return L"IntegrityMonitorEvent";
@@ -829,7 +833,7 @@ AcStartAccessControlEngine(
 
     LeaveCriticalSection(&engine->Lock);
 
-    /* 内存保护完整性监视线程（对齐 SS startIntegrityMonitoring） */
+    /* 内存保护完整性监视线程（startIntegrityMonitoring） */
     if (engine->MemoryProtection) {
         AcStartMemoryIntegralityProtection(engine->MemoryProtection);
     }
@@ -1275,7 +1279,7 @@ SdfSelfCheck(
     engine->Stats.TotalSelfChecks++;
     LeaveCriticalSection(&engine->Lock);
 
-    /* 检查 1：本进程须已注册受保护（对齐 SS SelfTest "Current process should be
+    /* 检查 1：本进程须已注册受保护（SelfTest "Current process should be
      * protected"）。由 main.c 启动链 AcRegisterProtectedProcess 建立。 */
     if (engine->ProcessProtection &&
         !PpIsProcessProtected(engine->ProcessProtection, GetCurrentProcessId())) {

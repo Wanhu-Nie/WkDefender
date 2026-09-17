@@ -66,7 +66,7 @@ IoaRansom_IsRansomNote(
     )
 /*++
 Routine Description:
-    判断路径文件名是否命中勒索信模式 (对齐 SS IsRansomNotePattern)。
+    判断路径文件名是否命中勒索信模式 (IsRansomNotePattern)。
 
 Arguments:
     TargetPath — 文件完整路径。
@@ -103,7 +103,7 @@ Return Value:
 }
 
 /*
- * 双扩展名伪装判定（对齐 SS PostWrite PwpCheckDoubleExtension，T1036）：
+ * 双扩展名伪装判定（PostWrite PwpCheckDoubleExtension，T1036）：
  *   路径尾部命中 19 条双扩展名模式（invoice.pdf.exe 经典模式）。
  */
 static
@@ -192,13 +192,13 @@ Return Value:
                 State->DetectionFlags |= DEF_BEHAVIOR_FLAG_RANSOMWARE_ENC;
             }
 
-            /* 双扩展名伪装 (对齐 SS PostWrite g_DoubleExtensions, T1036) */
+            /* 双扩展名伪装 (PostWrite g_DoubleExtensions, T1036) */
             if (IoaRansom_IsDoubleExtension(Evt->TargetPath)) {
                 scoreAdd += WKD_RANSOM_DOUBLEEXT_SCORE;
                 State->DetectionFlags |= DEF_BEHAVIOR_FLAG_MASQUERADE;
             }
 
-            /* 文件修改速率 (对齐 SS RANSOMWARE_RATE_THRESHOLD) */
+            /* 文件修改速率 (RANSOMWARE_RATE_THRESHOLD) */
             if (State->LastFileEventTime.QuadPart != 0) {
                 LARGE_INTEGER now;
                 LONGLONG elapsedMs;

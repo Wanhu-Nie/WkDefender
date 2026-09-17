@@ -408,7 +408,7 @@ NtfpParseThreadCreate(
  *
  * 载荷为 WKD_MESSAGE_BODY_THREAD_CREATE（Flags bit1=Create=0），仅取进程/线程
  * 标识 + 创建时间，供进程表线程计数递减与线程生命周期感知。
- * 数据源状态: 驱动 ThreadNotify.c CbpThreadNotifyCallback 终止分支已恢复上送
+ * 数据源状态: 驱动 ThreadNotification.c CbpThreadNotifyCallback 终止分支已恢复上送
  *   WkdMessage_ThreadExited（2026-08 迁移），修复"ThreadExited 消息被误解析
  *   为 ThreadCreate"的既有缺陷。
  */

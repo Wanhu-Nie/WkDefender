@@ -92,7 +92,7 @@ IoaCarsalGraphLookupEdgeByEventId(
     );
 
 /**************************************************/
-/*       关系查询 API (对齐 SS 进程关系图)            */
+/*       关系查询 API (进程关系图)            */
 /*                                                  */
 /*  [死代码] SS 侧这些查询 API 全项目零消费           */
 /*  (PrGetNodeInfo/PrGetRelationships/PrGetChildren/ */
@@ -116,7 +116,7 @@ typedef struct _IOA_NODE_INFO {
     ULONG   RelationshipCount;  /* 出边+入边 */
     ULONG   OutPairCount;       /* 进程对出度 (不同目标数) */
     ULONG   InPairCount;        /* 进程对入度 (不同源数) */
-    BOOLEAN IsOrphan;           /* 父节点缺失 (对齐 SS PR_NODE_INFO.IsOrphan) */
+    BOOLEAN IsOrphan;           /* 父节点缺失 (PR_NODE_INFO.IsOrphan) */
     ULONG   TreeDepth;          /* 谱系深度 */
 } IOA_NODE_INFO, *PIOA_NODE_INFO;
 
@@ -129,7 +129,7 @@ typedef struct _IOA_GRAPH_STATS_INFO {
     volatile LONG64 TotalEdgesCompacted;
 } IOA_GRAPH_STATS_INFO, *PIOA_GRAPH_STATS_INFO;
 
-/* 进程节点信息查询 (对齐 SS PrGetNodeInfo) */
+/* 进程节点信息查询 (PrGetNodeInfo) */
 NTSTATUS
 IoaGqGetNodeInfo(
     _In_  PIOA_CARSAL_GRAPH Mgr,
@@ -137,7 +137,7 @@ IoaGqGetNodeInfo(
     _Out_ PIOA_NODE_INFO    Out
     );
 
-/* 进程关系列表查询 (对齐 SS PrGetRelationships), EdgeFilter=DefEdge_Unknown 不过滤 */
+/* 进程关系列表查询 (PrGetRelationships), EdgeFilter=DefEdge_Unknown 不过滤 */
 NTSTATUS
 IoaGqGetRelationships(
     _In_  PIOA_CARSAL_GRAPH Mgr,
@@ -148,7 +148,7 @@ IoaGqGetRelationships(
     _Out_ ULONG*            Count
     );
 
-/* 进程子节点查询 (对齐 SS PrGetChildren) */
+/* 进程子节点查询 (PrGetChildren) */
 NTSTATUS
 IoaGqGetProcessChildren(
     _In_  PIOA_CARSAL_GRAPH Mgr,
@@ -158,7 +158,7 @@ IoaGqGetProcessChildren(
     _Out_ ULONG*            Count
     );
 
-/* 因果图统计查询 (对齐 SS PrGetStatistics) */
+/* 因果图统计查询 (PrGetStatistics) */
 NTSTATUS
 IoaGqGetStatistics(
     _In_  PIOA_CARSAL_GRAPH Mgr,

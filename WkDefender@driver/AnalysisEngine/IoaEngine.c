@@ -1346,7 +1346,7 @@ IoaRecordBehavior(
     }
 
     /* ---- MITRE 基础分 severity 上调（L1 前置评分） ----
-     * 对齐 SS g_EventMitreMap 高危技术加权：T1055 系(≥65)→+2、
+     * g_EventMitreMap 高危技术加权：T1055 系(≥65)→+2、
      * T1027/T1055.004 等(40-60)→+1、发现类(<40)不变。仅上调提交评分
      * severity，记录保留原始事件严重度（忠实记录原则）。 */
     {
@@ -1428,7 +1428,7 @@ IoaAnalysisBehavior(
         }
     }
 
-    /* ---- 惯犯计数（对齐 SS BepUpdateProcessContext：可疑事件数） ----
+    /* ---- 惯犯计数（BepUpdateProcessContext：可疑事件数） ----
      * severity≥Medium 递增进程对行为上下文的可疑事件计数，
      * 供结算侧评分乘数（TspGetContextMultiplier 惯犯/高风险档）使用。 */
     if (severity >= AeThreatSeverityMedium) {

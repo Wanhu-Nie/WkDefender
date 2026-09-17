@@ -38,7 +38,7 @@
 /* 私有常量                                                           */
 /* ------------------------------------------------------------------ */
 
-/* NtQueryInformationProcess 信息类（对齐 SS 自用类常量） */
+/* NtQueryInformationProcess 信息类（自用类常量） */
 #define PP_PROCESS_BASIC_INFORMATION      0
 #define PP_PROCESS_DEBUG_PORT             7
 #define PP_PROCESS_DEBUG_FLAGS           31
@@ -61,7 +61,7 @@
 #define PROCESS_WRITE_OWNER    (0x00080000)
 #endif
 
-/* 系统关键进程镜像名清单（对齐 SS kCriticalOsImages，防护硬排除） */
+/* 系统关键进程镜像名清单（kCriticalOsImages，防护硬排除） */
 static const WCHAR* const PpCriticalOsImages[] = {
     L"winlogon.exe",
     L"lsass.exe",
@@ -71,7 +71,7 @@ static const WCHAR* const PpCriticalOsImages[] = {
     L"services.exe",
 };
 
-/* 本产品组件镜像名清单（对齐 SS IsShadowStrikeComponent 语义：
+/* 本产品组件镜像名清单（IsShadowStrikeComponent 语义：
  * 进程自身 + 已知组件镜像名；组件可直接访问受保护进程。） */
 static const WCHAR* const PpComponentImages[] = {
     L"wkdefender@agent.exe",
@@ -81,7 +81,7 @@ static const WCHAR* const PpComponentImages[] = {
     L"wkdefenderui.exe",
 };
 
-/* 威胁动作可响应索引映射表（对齐 SS m_threatResponses 默认表）：
+/* 威胁动作可响应索引映射表（m_threatResponses 默认表）：
  * 索引 = 威胁动作位序号（PpThreatXxx 为 1<<n，n=0..8）。
  * 未列入的威胁动作（MemoryAlloc/TokenSteal/ContextModify 等）
  * 回退默认响应。 */
@@ -347,7 +347,7 @@ PpGetResponseForAction(
 
     if (Action == PpThreatNone) return Engine->Config.DefaultResponse;
 
-    /* 威胁动作是位域；取最低置位位查找表（对齐 SS 单动作 key 语义） */
+    /* 威胁动作是位域；取最低置位位查找表（单动作 key 语义） */
     while ((idx < PP_THREAT_RESPONSE_TABLE_SIZE) &&
            ((Action & (PP_THREAT_ACTION)(1u << idx)) == 0)) {
         idx++;
@@ -492,7 +492,7 @@ PpGetDefaultConfiguration(
     Config->EnableASLR = TRUE;                      /* 2026-09-08 从 MemoryProtection 迁移 */
     Config->EnableDEP = TRUE;
     Config->EnableCFG = TRUE;
-    Config->DefaultResponse = PpResponseActive;     /* 对齐 SS 默认 Active */
+    Config->DefaultResponse = PpResponseActive;     /* 默认 Active */
     Config->BlockedProcessAccess = PP_DANGEROUS_PROCESS_ACCESS;
     Config->BlockedThreadAccess = PP_DANGEROUS_THREAD_ACCESS;
     Config->VerboseLogging = FALSE;
@@ -532,7 +532,7 @@ PpInitialize(
         goto Cleanup;
     }
 
-    /* 默认配置与默认处置表（对齐 SS 构造函数：默认配置 Active、
+    /* 默认配置与默认处置表（构造函数：默认配置 Active、
      * 处置表：ProcessTerminate→Aggressive、ProcessSuspend→Active、
      * ThreadTerminate→Active、ThreadSuspend→Active、MemoryWrite→Aggressive、
      * ThreadCreate→Active、APCQueue→Aggressive、HandleDuplicate→Passive、
@@ -568,7 +568,7 @@ PpInitialize(
     InterlockedExchange(&eng->Initialized, TRUE);
     g_ProcessProtectionEngine = eng;
 
-    /* 附加保护 PID（对齐 SS Initialize 中 additionalProtectedPids；对象级登记） */
+    /* 附加保护 PID（Initialize 中 additionalProtectedPids；对象级登记） */
     for (i = 0; i < eng->Config.AdditionalProtectedPidCount; i++) {
         PpRegisterProtectedPid(eng, eng->Config.AdditionalProtectedPids[i],
                                PP_PROTECT_FLAG_PREVENT_TERMINATION);
@@ -626,7 +626,7 @@ PpGetStatus(
 }
 
 /**************************************************/
-/* 配置（对齐 SS SetConfiguration 系列）           */
+/* 配置（SetConfiguration 系列）           */
 /**************************************************/
 
 _Use_decl_annotations_
@@ -641,7 +641,7 @@ PpSetConfiguration(
 
     if (!Engine || !Config) return STATUS_INVALID_PARAMETER;
 
-    /* 白名单/附加 PID 越界截断（对齐 SS 内部校验） */
+    /* 白名单/附加 PID 越界截断（内部校验） */
     sanitized = *Config;
     if (sanitized.WhitelistedCallerCount > PP_MAX_CONFIG_WHITELIST) {
         sanitized.WhitelistedCallerCount = PP_MAX_CONFIG_WHITELIST;
@@ -654,7 +654,7 @@ PpSetConfiguration(
     Engine->Config = sanitized;
     LeaveCriticalSection(&Engine->Lock);
 
-    /* 配置内附加保护 PID 自动纳入保护（对齐 SS Initialize 后配置生效；对象级登记） */
+    /* 配置内附加保护 PID 自动纳入保护（Initialize 后配置生效；对象级登记） */
     for (i = 0; i < sanitized.AdditionalProtectedPidCount; i++) {
         PpRegisterProtectedPid(Engine, sanitized.AdditionalProtectedPids[i],
                                PP_PROTECT_FLAG_PREVENT_TERMINATION);
@@ -703,7 +703,7 @@ PpSetThreatResponse(
 
     if (!Engine || Action == PpThreatNone) return;
 
-    /* 最低置位位对应处置表槽（对齐 SS m_threatResponses[action]） */
+    /* 最低置位位对应处置表槽（m_threatResponses[action]） */
     for (idx = 0; idx < PP_THREAT_RESPONSE_TABLE_SIZE; idx++) {
         if ((Action & (PP_THREAT_ACTION)(1u << idx)) != 0) {
             EnterCriticalSection(&Engine->Lock);
@@ -948,7 +948,7 @@ AcApplyProcessHardening(
             AcpEnableDEP(Engine, WkdProcess);
         }
 
-        /* 缓解策略（对齐 SS applyMitigationPolicies）：
+        /* 缓解策略（applyMitigationPolicies）：
          * - 动态代码：显式置 0（不禁用，兼容托管代码）
          * - 严格句柄检查：永久启用 */
         ZeroMemory(&dcPolicy, sizeof(dcPolicy));
@@ -1216,7 +1216,7 @@ AcRegisterProtectedProcessInternal(
         PpApplyRestrictiveSecurityDescriptor(Engine, WkdProcess->ProcessId);
     }
 
-    /* 关键进程标志（对齐 SS ProtectProcess 中 setCritical 分支） */
+    /* 关键进程标志（ProtectProcess 中 setCritical 分支） */
     if (Engine->Config.SetCriticalProcess) {
         if (NT_SUCCESS(PpSetCriticalProcess(Engine, WkdProcess->ProcessId, TRUE))) {
             ctx->IsCritical = TRUE;
@@ -1474,7 +1474,7 @@ PpIsCriticalProcess(
 }
 
 /**************************************************/
-/* 访问控制（核心判定链，对齐 SS FilterAccessRequest）*/
+/* 访问控制（核心判定链，FilterAccessRequest）*/
 /**************************************************/
 
 _Use_decl_annotations_
@@ -1506,7 +1506,7 @@ PpIsAccessAllowed(
             result.Decision == PpAccessDecisionAllowReduced);
 }
 
-/* 核心判定链（对齐 SS FilterAccessRequest 顺序）：
+/* 核心判定链（FilterAccessRequest 顺序）：
  *  1) 自访问 → Allow
  *  2) 目标未受保护 → Allow
  *  3) 调用方白名单 → Allow
@@ -1583,7 +1583,7 @@ PpFilterAccessRequest(
         goto done;
     }
 
-    /* 4) 本产品组件（对齐 SS IsShadowStrikeComponent） */
+    /* 4) 本产品组件（IsShadowStrikeComponent） */
     if (PpIsWkdComponent(Request->CallerProcessId)) {
         res.Decision = PpAccessDecisionAllow;
         wcscpy_s(res.Reason, PP_MAX_DESCRIPTION, L"wkd component");
@@ -1688,7 +1688,7 @@ PpFilterAccessRequest(
     }
 
 done:
-    /* 9) 覆盖回调（最后一个返回 TRUE 者生效；对齐 SS 注册回调尾部处理） */
+    /* 9) 覆盖回调（最后一个返回 TRUE 者生效；注册回调尾部处理） */
     EnterCriticalSection(&Engine->CallbackLock);
     for (i = 0; i < PP_MAX_CALLBACKS; i++) {
         if (Engine->AccessCallbacks[i].InUse && Engine->AccessCallbacks[i].Callback) {
@@ -1707,7 +1707,7 @@ done:
     return STATUS_SUCCESS;
 }
 
-/* 威胁分类（对齐 SS ClassifyAccessRequest：进程被保护才分类）。
+/* 威胁分类（ClassifyAccessRequest：进程被保护才分类）。
  * 返回位域组合。 */
 _Use_decl_annotations_
 PP_THREAT_ACTION
@@ -1923,7 +1923,7 @@ PpGetProtectionLevel(
     return level;
 }
 
-/* 应用限制性安全描述符（对齐 SS ApplyRestrictiveSecurityDescriptor）：
+/* 应用限制性安全描述符（ApplyRestrictiveSecurityDescriptor）：
  * 拒绝 Everyone 的全部访问（DENY 优先），放开 SYSTEM/管理员/当前用户，
  * 并把手动覆盖的后代禁用（PROTECTED DACL）。仅作用于被保护进程，且
  * 仅成功时返回成功（不改动关键系统进程——由调用方先做硬排除）。 */
@@ -2032,7 +2032,7 @@ PpGetProcessSecurityDescriptor(
     return status;
 }
 
-/* 设置进程完整性级别（对齐 SS SetProcessIntegrityLevel：仅当前进程）。 */
+/* 设置进程完整性级别（SetProcessIntegrityLevel：仅当前进程）。 */
 _Use_decl_annotations_
 NTSTATUS
 PpSetProcessIntegrityLevel(
@@ -2074,7 +2074,7 @@ PpSetProcessIntegrityLevel(
 }
 
 /**************************************************/
-/* 白名单管理（对齐 SS AddToWhitelist 系列）       */
+/* 白名单管理（AddToWhitelist 系列）       */
 /**************************************************/
 
 _Use_decl_annotations_
@@ -2240,7 +2240,7 @@ PpIsWhitelistedName(
 }
 
 /**************************************************/
-/* 回调管理（对齐 SS Register/Unregister 系列）  */
+/* 回调管理（Register/Unregister 系列）  */
 /**************************************************/
 
 _Use_decl_annotations_
@@ -2642,7 +2642,7 @@ PpExportReport(
     return STATUS_SUCCESS;
 }
 
-/* 自检（对齐 SS SelfTest：4 项） */
+/* 自检（SelfTest：4 项） */
 _Use_decl_annotations_
 BOOLEAN
 PpSelfTest(
@@ -2704,7 +2704,7 @@ PpGetVersionString(
 }
 
 /**************************************************/
-/* 内核桥（驱动投递点待接通，Agent 侧已对齐 SS      */
+/* 内核桥（驱动投递点待接通，Agent 侧已     */
 /* OnKernelHandleAlert 实体语义：日志 + 受保护判定  */
 /* + 高分告警事件 → 安全事件桥接）                  */
 /**************************************************/
@@ -2732,7 +2732,7 @@ PpOnKernelHandleAlert(
     InterlockedIncrement64(&Engine->Stats.KernelHandleOperations);
     GetSystemTimeAsFileTime((LPFILETIME)&Engine->Stats.LastEventTime);
 
-    /* 内核句柄告警日志（对齐 SS OnKernelHandleAlert 日志行：
+    /* 内核句柄告警日志（OnKernelHandleAlert 日志行：
      * src/tgt/req/granted/score/flags） */
     swprintf_s(desc, PP_MAX_DESCRIPTION,
         L"[ProcessProtection] Kernel handle alert: src=%lu tgt=%lu "
@@ -2754,7 +2754,7 @@ PpOnKernelHandleAlert(
         SuspicionScore >= PP_KERNEL_ALERT_SUSPICION_THRESHOLD &&
         result.Decision != PpAccessDecisionAllow) {
         /* 高度可疑且用户态判定非放行：告警上报
-         * （对齐 SS 高分告警线：ReportBlockedAccessAlert）。 */
+         * （高分告警线：ReportBlockedAccessAlert）。 */
         InterlockedIncrement64(&Engine->Stats.AlertsRaised);
 
         threat = PpClassifyAccessRequest(&request);
@@ -2775,7 +2775,7 @@ PpOnKernelHandleAlert(
         PpFireThreat(Engine, threat, &request);
 
         if (Engine->Config.SendTelemetry) {
-            (VOID)0;   /* 遥测出口：未来接 ETW/管道（占位，对齐 SS TelemetryCollector 语义） */
+            (VOID)0;   /* 遥测出口：未来接 ETW/管道（占位，TelemetryCollector 语义） */
         }
     }
 }
@@ -2807,7 +2807,7 @@ PpRequestKernelProcessBlock(
 }
 
 /**************************************************/
-/* 名称工具（对齐 SS Get*Name 系列）               */
+/* 名称工具（Get*Name 系列）               */
 /**************************************************/
 
 _Use_decl_annotations_

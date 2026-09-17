@@ -11,7 +11,7 @@
 /*                  签名者静态表                    */
 /**************************************************/
 
-/* 微软签名者精确全串表 (对齐 SS MICROSOFT_PUBLISHERS L147-152, 大小写不敏感全串) */
+/* 微软签名者精确全串表 (MICROSOFT_PUBLISHERS L147-152, 大小写不敏感全串) */
 static const WCHAR* g_IocMsSigners[4] = {
     L"Microsoft Corporation",
     L"Microsoft Windows",
@@ -19,7 +19,7 @@ static const WCHAR* g_IocMsSigners[4] = {
     L"Microsoft Windows Hardware Compatibility Publisher"
 };
 
-/* 可信发行商精确全串表 (对齐 SS TRUSTED_PUBLISHERS L155-164) */
+/* 可信发行商精确全串表 (TRUSTED_PUBLISHERS L155-164) */
 static const WCHAR* g_IocTrustedPublishers[8] = {
     L"Adobe Systems Incorporated",
     L"Google LLC",
@@ -31,7 +31,7 @@ static const WCHAR* g_IocTrustedPublishers[8] = {
     L"VMware, Inc."
 };
 
-/* 微软签名者证书 SHA1 指纹表 (对齐 SS DriverAnalyzer MICROSOFT_CERT_THUMBPRINTS
+/* 微软签名者证书 SHA1 指纹表 (DriverAnalyzer MICROSOFT_CERT_THUMBPRINTS
  * L306-309, 2026-08 指纹双通道)。
  * 指纹命中 = 强微软信号, 优先于名称匹配 — 名称可被 CA 冒名 (CN=Microsoft),
  * 证书指纹不可伪造。注意: 微软 PCA 会轮换, 此表需随 SS/微软维护更新;
@@ -94,7 +94,7 @@ IocScan_BlockSigner(
     )
 /*++
 Routine Description:
-    阻断签名者证书 (SHA1 thumbprint hex)。对齐 SS CertificateValidator
+    阻断签名者证书 (SHA1 thumbprint hex)。CertificateValidator
     的 BlockCertificate L2048-2069: 上限防无界 (kMaxBlockedCerts), 已存在
     条目重复 block 更新原因, 满时拒绝新条目。
 
@@ -128,7 +128,7 @@ Return Value:
         }
     }
     if (g_IocBlockedCount >= WKD_BLOCKED_SIGNER_MAX) {
-        ReleaseSRWLockExclusive(&g_IocBlockedLock);   /* 上限 (对齐 SS cap 语义) */
+        ReleaseSRWLockExclusive(&g_IocBlockedLock);   /* 上限 (cap 语义) */
         return FALSE;
     }
     freeSlot = g_IocBlockedCount;
@@ -144,7 +144,7 @@ IocScan_UnblockSigner(
     )
 /*++
 Routine Description:
-    解除签名者阻断。对齐 SS UnblockCertificate L2071-2074 (erase)。
+    解除签名者阻断。UnblockCertificate L2071-2074 (erase)。
 
 Return Value:
     TRUE = 原来处于阻断态并已移除, FALSE = 未命中/参数非法。
@@ -176,7 +176,7 @@ IocScan_IsSignerBlocked(
     )
 /*++
 Routine Description:
-    查询签名者是否处于阻断态。对齐 SS IsBlocked (L2076-2078)。
+    查询签名者是否处于阻断态。IsBlocked (L2076-2078)。
 
 Return Value:
     TRUE = 阻断命中。
@@ -221,7 +221,7 @@ IocScan_GetBlockedSigners(
     )
 /*++
 Routine Description:
-    黑名单快照 (对齐 SS GetBlockedCertificates L2080-2093)。
+    黑名单快照 (GetBlockedCertificates L2080-2093)。
 
 Return Value:
     STATUS_SUCCESS; Count 恒返回表中条目数 (超过 MaxEntries 时截断)。
@@ -268,7 +268,7 @@ IocScan_ClassifySigner(
     )
 /*++
 Routine Description:
-    证书签名者分类 (对齐 SS FileReputation IsMicrosoftSigner/IsTrustedPublisher,
+    证书签名者分类 (FileReputation IsMicrosoftSigner/IsTrustedPublisher,
     精确全串大小写不敏感匹配 + 微软证书指纹强信号 + 坏签名者黑名单)。
     签名有效 (CertTrusted) 且 SignerName 非空才分类。
 
@@ -298,7 +298,7 @@ Return Value:
         return STATUS_SUCCESS;
     }
 
-    /* 微软签名者证书 SHA1 指纹 (强信号, 优先于名称, 对齐 SS DriverAnalyzer
+    /* 微软签名者证书 SHA1 指纹 (强信号, 优先于名称, DriverAnalyzer
      * IsMicrosoftSigned 指纹表 L1270): 指纹不可伪造, 命中直接判微软。 */
     for (i = 0; i < RTL_NUMBER_OF(g_IocMsThumbprints); i++) {
         if (Result->Thumbprint[0] != '\0' &&
@@ -309,7 +309,7 @@ Return Value:
         }
     }
 
-    /* 微软签名者精确全串 (对齐 SS MICROSOFT_PUBLISHERS)。
+    /* 微软签名者精确全串 (MICROSOFT_PUBLISHERS)。
      * 名称命中但叶证书指纹不在微软 PCA 库 → 降级 VALID (弱微软, 需路径等佐证),
      * 防 CA 冒名 CN=Microsoft 的伪造证书 (2026-08 指纹双通道)。 */
     for (i = 0; i < RTL_NUMBER_OF(g_IocMsSigners); i++) {
@@ -320,7 +320,7 @@ Return Value:
         }
     }
 
-    /* 可信发行商精确全串 (对齐 SS TRUSTED_PUBLISHERS) */
+    /* 可信发行商精确全串 (TRUSTED_PUBLISHERS) */
     for (i = 0; i < RTL_NUMBER_OF(g_IocTrustedPublishers); i++) {
         if (_wcsicmp(Result->SignerName, g_IocTrustedPublishers[i]) == 0) {
             if (Reputation) *Reputation = WKD_REP_WEIGHT_TRUSTED_CERT;
@@ -335,7 +335,7 @@ Return Value:
     return STATUS_SUCCESS;
 }
 
-/* 等级判定 (对齐 SS CalculateFinalScore L2056-2087 + 阈值 L2442-2447)。
+/* 等级判定 (CalculateFinalScore L2056-2087 + 阈值 L2442-2447)。
  * 微软签名者覆盖为最高等级, 但被强恶意信号 (score<0) 否决时降级。 */
 static WKD_REPUTATION_LEVEL
 IocScan_LevelFromScore(
@@ -354,7 +354,7 @@ IocScan_LevelFromScore(
     return WkdRep_KnownMalware;
 }
 
-/* 置信度映射 (对齐 SS CalculateFinalScore: Trusted 0.9/KnownSafe 0.75/Unknown 0.5/
+/* 置信度映射 (CalculateFinalScore: Trusted 0.9/KnownSafe 0.75/Unknown 0.5/
  * Suspicious 0.65/HighlyMalicious 0.85/KnownMalware 0.95, ×1000 整数化) */
 static ULONG
 IocScan_ConfidenceFromLevel(
@@ -388,14 +388,14 @@ IocScan_CalcWeightedScore(
 {
     LONG score = 0;
 
-    /* 哈希黑名单 (对齐 SS LocalBlacklist -100 + HashStore Critical -100) */
+    /* 哈希黑名单 (LocalBlacklist -100 + HashStore Critical -100) */
     if (Result->HashChecked && Result->HashVerdict == DefIocVerdict_Malicious) {
         score += WKD_REP_WEIGHT_BLACKLIST;
         *Sources |= (1u << DefDetSrc_IOC);
         IocScan_AppendReason(Rep, L"Hash match in malicious database");
     }
 
-    /* 证书信号 (对齐 SS AnalyzeCertificate L1639-1691) */
+    /* 证书信号 (AnalyzeCertificate L1639-1691) */
     switch (Result->CertStatus) {
     case DefCertStatus_Valid:
     case DefCertStatus_ValidCatalog:
@@ -446,7 +446,7 @@ IocScan_CalcWeightedScore(
         *Sources |= (1u << DefDetSrc_IOC);
         break;
     default:
-        break;   /* Invalid/UntrustedRoot/Unknown: 无评分 (对齐 SS 默认不叠加) */
+        break;   /* Invalid/UntrustedRoot/Unknown: 无评分 (默认不叠加) */
     }
 
     /* cert_reputation 表接线 (SS GetCertificateTrust 迁移, 2026-08, 门控
@@ -459,14 +459,14 @@ IocScan_CalcWeightedScore(
                                   : L"Certificate trust override (untrusted)");
     }
 
-    /* LOLBin 使用 (对齐 SS 行为 createsExecutables -10 语义降权映射) */
+    /* LOLBin 使用 (行为 createsExecutables -10 语义降权映射) */
     if (Result->IsLolbin) {
         score += WKD_REP_WEIGHT_LOLLBIN;
         IocScan_AppendReason(Rep, L"LOLBin binary usage");
         *Sources |= (1u << DefDetSrc_IOC);
     }
 
-    /* 命令行高危模式 (对齐 SS 行为 C2 -40 语义映射) */
+    /* 命令行高危模式 (行为 C2 -40 语义映射) */
     if (Result->CmdlineFlags & (IOC_CMD_FLAG_PS_ENCODED | IOC_CMD_FLAG_DOWNLOADER |
                                 IOC_CMD_FLAG_REFLECTIVE | IOC_CMD_FLAG_CREDENTIAL_DUMP |
                                 IOC_CMD_FLAG_OBFUSCATED)) {
@@ -475,7 +475,7 @@ IocScan_CalcWeightedScore(
         *Sources |= (1u << DefDetSrc_IOC);
     }
 
-    /* 启发式静态分析 (对齐 SS ThreatIntel Medium/High 权重语义映射) */
+    /* 启发式静态分析 (ThreatIntel Medium/High 权重语义映射) */
     if (Result->HeuristicRan) {
         if (Result->HeuristicConfidence >= 700) {
             score += WKD_REP_WEIGHT_HEUR_HIGH;
@@ -504,7 +504,7 @@ IocScan_ReputationScore(
 Routine Description:
     计算文件信誉评分。从 IOC_SCAN_RESULT 各检测源汇总为
     [-100,100] 信誉分 + 9 级信誉等级 + 置信度 + 来源归因。
-    (对齐 SS FileReputation QueryInternal→CalculateFinalScore)
+    (FileReputation QueryInternal→CalculateFinalScore)
     仅填充 Reputation/SignerReputation/... 字段, 不改 FinalVerdict。
     统一证书验证入口 (SignatureVerifier) 内部调用。
 
@@ -554,12 +554,12 @@ IocScan_EvaluateTrustLevel(
     )
 /*++
 Routine Description:
-    统一证书信任层级评估 (对齐 SS CertificateValidator::GetTrustLevel
+    统一证书信任层级评估 (CertificateValidator::GetTrustLevel
     L1938-1940 / GetTrustLevelInternal L2934)。
     按 WKD 信任判定能力诚实映射: WKD 链信任为 WinVerifyTrust
     二元结果, 无自定义根/企业根 store 区分, CustomRoot/EnterpriseRoot/
     SystemRoot 归并为 WkdTrust_Validated; EV 由 CERT_EV_PROP_ID
-    提升为独立顶级 (对齐 SS TrustLevel::EVValidated 最高级)。
+    提升为独立顶级 (TrustLevel::EVValidated 最高级)。
 
 Arguments:
     Result - 扫描结果 (须含 CertStatus/CertTrusted/IsTrustedStrict/
@@ -583,7 +583,7 @@ Return Value:
         break;
     }
 
-    /* 未签名/无法判定 → Unknown (对齐 SS TrustLevel::Unknown) */
+    /* 未签名/无法判定 → Unknown (TrustLevel::Unknown) */
     if (Result->CertStatus == DefCertStatus_Unsigned ||
         Result->CertStatus == DefCertStatus_Unknown) {
         return WkdTrust_Unknown;
@@ -592,10 +592,10 @@ Return Value:
     /* Valid/ValidCatalog: 有效签名始得信任评估 */
     if (!Result->CertValid || !Result->CertTrusted) return WkdTrust_Unknown;
 
-    /* EV 顶级 (对齐 SS TrustLevel::EVValidated, 隐含链受信) */
+    /* EV 顶级 (TrustLevel::EVValidated, 隐含链受信) */
     if (Result->IsEvCert) return WkdTrust_EvValidated;
 
-    /* 有效自签名 (对齐 SS TrustLevel::SelfSigned; 自签无链, 仅叶自证) */
+    /* 有效自签名 (TrustLevel::SelfSigned; 自签无链, 仅叶自证) */
     if (Result->IsSelfSigned) return WkdTrust_SelfSigned;
 
     /* 链验证通过 → Validated (系统/企业根归并) */
@@ -639,7 +639,7 @@ IocScan_MapCertDetail(
 /*++
 Routine Description:
     文件级 DEF_CERT_STATUS 8 态 → 证书级细分映射。
-    对齐 SS ValidationResult 16 态语义 (SS 为证书级, WKD 为文件级
+    ValidationResult 16 态语义 (SS 为证书级, WKD 为文件级
     Authenticode 判定), 用深度校验字段 (IsWeakSignature/IsCodeSigningEku)
     做 8 态无法表达处的细分:
       - Valid + IsWeakSignature → WeakAlgorithm (SS IsWeakAlgorithm 同判)
@@ -660,7 +660,7 @@ Return Value:
 
     detail = IocScan_CertDetailFromStatus(Result->CertStatus);
 
-    /* 有效签名 + 弱算法 → WeakAlgorithm (对齐 SS L1356
+    /* 有效签名 + 弱算法 → WeakAlgorithm (L1356
      * IsWeakAlgorithm(signatureAlgorithm) 判定语义) */
     if (detail == WkdCertDetail_Valid && Result->IsWeakSignature) {
         return WkdCertDetail_WeakAlgorithm;
@@ -674,7 +674,7 @@ IocScan_CertDetailName(
     )
 /*++
 Routine Description:
-    细分结果 → 名称 (对齐 SS GetValidationResultName)。
+    细分结果 → 名称 (GetValidationResultName)。
 
 Return Value:
     名称串 (恒非 NULL)。

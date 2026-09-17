@@ -1228,7 +1228,7 @@ Return Value:
 /**************************************************/
 
 /*
- * 内建 NTFS 元文件排除（对齐 SS LoadDefaultExclusions L1278-1335）：
+ * 内建 NTFS 元文件排除（LoadDefaultExclusions L1278-1335）：
  * 这些元文件产生巨大 I/O 且不含用户态可执行代码，Engine|Recursive
  * 保证跨卷以组件后缀匹配。
  */

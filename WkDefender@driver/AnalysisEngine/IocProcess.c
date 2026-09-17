@@ -8,7 +8,7 @@
 #include "IocProcess.h"
 #include "AnalysisEngine.h"
 #include "../Common/ExportParser.h"
-#include "../Callbacks/ProcessNotify.h"
+#include "../Callbacks/ProcessNotification.h"
 #include "../Process/ProcessPairContext.h"
 #include "../Process/ProcessAccessProtection.h"   /* PapClassifyProcess: §2.5 安全画像采集 */
 #include "../Common/PeParser.h"
@@ -57,7 +57,7 @@ extern PTS_ENGINE WkdTsEngine;
 #endif
 
 //
-// DllCharacteristics 缓解位（对齐 SS PA_IMAGE_DLLCHAR_*，防御旧 SDK 缺宏）
+// DllCharacteristics 缓解位（PA_IMAGE_DLLCHAR_*，防御旧 SDK 缺宏）
 //
 #ifndef IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE
 #define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE   0x0040   /* ASLR */
@@ -192,7 +192,7 @@ WkdIsSystemProcess(
 
 //
 // 创建时序合法性：声称父创建时间晚于子进程 → 时序异常（PID 复用 / 伪造父身份，
-// 对齐 SS PctDetectSpoofing 创建时间序校验）。
+// PctDetectSpoofing 创建时间序校验）。
 // 从 EPROCESS 直取父创建时间（PsGetProcessCreateTimeQuadPart），不依赖 WKD_PROCESS
 // 表——创建回调内父进程必然存活，但父可能未被 wkd 跟踪（boot-grace / Agent 未连接
 // 快速路径不建条目）。查找失败静默跳过（不误报）。
@@ -410,7 +410,7 @@ IocpCapturePrivilegeInfo(
                  * “备份文件和目录”特权（SE_BACKUP_PRIVILEGE）。
                  * 允许进程绕过 ACL 读取任意文件（含 SAM/SYSTEM 注册表配置单元），
                  * 是凭据转储（Credential Dumping）的常见前置特权。
-                 * 对齐 SS PapAnalyzeProcessToken L2325-2326（仅置字段，不单独上报指示器）。
+                 * PapAnalyzeProcessToken L2325-2326（仅置字段，不单独上报指示器）。
                  */
                 tempLuid = RtlConvertLongToLuid(SE_BACKUP_PRIVILEGE);
                 if (RtlEqualLuid(&laa->Luid, &tempLuid)) {
@@ -422,7 +422,7 @@ IocpCapturePrivilegeInfo(
                  * “还原文件和目录”特权（SE_RESTORE_PRIVILEGE）。
                  * 允许进程绕过 ACL 写入任意文件（含覆盖受保护系统文件），
                  * 常与 SeBackupPrivilege 成对出现，用于系统文件替换（SFC 绕过）。
-                 * 对齐 SS PapAnalyzeProcessToken L2329-2330（仅置字段，不单独上报指示器）。
+                 * PapAnalyzeProcessToken L2329-2330（仅置字段，不单独上报指示器）。
                  */
                 tempLuid = RtlConvertLongToLuid(SE_RESTORE_PRIVILEGE);
                 if (RtlEqualLuid(&laa->Luid, &tempLuid)) {
@@ -523,7 +523,7 @@ IocpCapturePrivilegeInfo(
         }
     }
 
-    /* ---- Phase 6: 运行时 DEP 策略（迁移自 SS PapAnalyzeSecurityMitigations L2205-2266） ----
+    /* ---- Phase 6: 运行时 DEP 策略（PapAnalyzeSecurityMitigations L2205-2266） ----
      * 查询 ProcessExecuteFlags（class 34）获取进程实际 DEP 策略，可能与 PE 头静态
      * DllCharacteristics 声明不一致（例如系统级强制 DEP / 策略组覆盖）。
      * MEM_EXECUTE_OPTION_DISABLE(0x1) 表示 DEP 已启用。
@@ -608,7 +608,7 @@ IocpDetectCommandLine(
     cmdLenBytes = Process->CommandLine->Length;
     cmdLenChars = cmdLenBytes / sizeof(WCHAR);
 
-    /* 0) PowerShell 上下文判定（-e/-ec 短参数门控，对齐 SS ClppDetectEncodedCommand L1690） */
+    /* 0) PowerShell 上下文判定（-e/-ec 短参数门控，ClppDetectEncodedCommand L1690） */
     if (Process->Core.ImagePath &&
         IocpExtractFileName(Process->Core.ImagePath, &fileName)) {
         static const PCWSTR psPatterns[] = { L"powershell", L"pwsh" };
@@ -622,7 +622,7 @@ IocpDetectCommandLine(
         }
     }
 
-    /* PS 上下文全命令行回退（对齐 SS ClppDetectEncodedCommand L1699-1704：
+    /* PS 上下文全命令行回退（ClppDetectEncodedCommand L1699-1704：
      * ImagePath 无 PS 名时，命令行含 powershell/pwsh 也算 PS 上下文） */
     if (!isPowerShell) {
         static const PCWSTR clPatterns[] = { L"powershell", L"pwsh" };
@@ -639,11 +639,11 @@ IocpDetectCommandLine(
     /* 1) PowerShell 编码命令
      * 长参数 (-enc/-encodedcommand/-enco/-encod/-encode/-encoded) 无条件匹配；
      * 短参数 (-e/-ec) 仅 PS 上下文命中，防 "grep -e" 等正常参数误报
-     * （对齐 SS L1718-1745）。 */
+     * （L1718-1745）。 */
     {
         static const PCWSTR longPatterns[] = {
             L"-enc", L"-encodedcommand", L"-enco", L"-encod", L"-encode", L"-encoded",
-            L"frombase64",   /* 对齐 SS PapDetectBehaviorFlags L2837 */
+            L"frombase64",   /* PapDetectBehaviorFlags L2837 */
         };
         static const PCWSTR shortPatterns[] = { L"-e ", L"-ec " };
         BOOLEAN encodedHit = FALSE;
@@ -674,7 +674,7 @@ IocpDetectCommandLine(
     }
 
     /* 2) PowerShell 绕过标志（-w hidden/-windowstyle hidden 已拆分到隐藏窗口组）
-     * 对齐 SS ClppDetectExecutionBypass：执行策略绕过 + AMSI + CLM + SBL +
+     * ClppDetectExecutionBypass：执行策略绕过 + AMSI + CLM + SBL +
      * Defender 排除组合。 */
     {
         static const PCWSTR patterns[] = {
@@ -715,7 +715,7 @@ IocpDetectCommandLine(
         }
     }
 
-    /* 3) 下载器（对齐 SS ClppDetectDownloadCradle：PS 下载方法 + certutil/bitsadmin/
+    /* 3) 下载器（ClppDetectDownloadCradle：PS 下载方法 + certutil/bitsadmin/
      * curl/wget/wmic 组合 + URL 管道组合） */
     {
         static const PCWSTR patterns[] = {
@@ -888,7 +888,7 @@ IocpDetectCommandLine(
         Process->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_LONG_CMDLINE;
     }
 
-    /* 7) 混淆检测（对齐 SS ClppDetectObfuscation L1760）
+    /* 7) 混淆检测（ClppDetectObfuscation L1760）
      * ^ 插入 / 环境变量滥用 / PS 反引号 / [char] 拼接 / iex 变体。 */
     {
         static const UNICODE_STRING c_obfTilde  = RTL_CONSTANT_STRING(L"~");
@@ -946,7 +946,7 @@ IocpDetectCommandLine(
         }
     }
 
-    /* 8) 隐藏窗口执行（对齐 SS ClppDetectHiddenWindow L2005） */
+    /* 8) 隐藏窗口执行（ClppDetectHiddenWindow L2005） */
     {
         static const UNICODE_STRING c_hw1   = RTL_CONSTANT_STRING(L"-w hidden");
         static const UNICODE_STRING c_hw2   = RTL_CONSTANT_STRING(L"-windowstyle hidden");
@@ -992,7 +992,7 @@ IocpDetectCommandLine(
         }
     }
 
-    /* 9) 远程执行（对齐 SS ClppDetectRemoteExecution L2060） */
+    /* 9) 远程执行（ClppDetectRemoteExecution L2060） */
     {
         static const UNICODE_STRING c_re1     = RTL_CONSTANT_STRING(L"invoke-command");
         static const UNICODE_STRING c_re2     = RTL_CONSTANT_STRING(L"enter-pssession");
@@ -1038,7 +1038,7 @@ IocpDetectCommandLine(
         }
     }
 
-    /* 10) 可疑路径执行（对齐 SS ClppDetectSuspiciousPath L2121） */
+    /* 10) 可疑路径执行（ClppDetectSuspiciousPath L2121） */
     {
         static const UNICODE_STRING c_spTemp    = RTL_CONSTANT_STRING(L"\\temp\\");
         static const UNICODE_STRING c_spTmp     = RTL_CONSTANT_STRING(L"\\tmp\\");
@@ -1055,10 +1055,10 @@ IocpDetectCommandLine(
         static const UNICODE_STRING c_spPData   = RTL_CONSTANT_STRING(L"\\programdata\\");
         static const UNICODE_STRING c_spMsft    = RTL_CONSTANT_STRING(L"\\microsoft\\");
         static const UNICODE_STRING c_spPerf    = RTL_CONSTANT_STRING(L"\\perflogs\\");
-        static const UNICODE_STRING c_spDnld    = RTL_CONSTANT_STRING(L"\\downloads\\");   /* 对齐 SS PapIsSuspiciousPath L2974 */
-        static const UNICODE_STRING c_spExtScr  = RTL_CONSTANT_STRING(L".scr");           /* 对齐 SS L2984 */
-        static const UNICODE_STRING c_spExtPif  = RTL_CONSTANT_STRING(L".pif");           /* 对齐 SS L2985 */
-        static const UNICODE_STRING c_spExtCom  = RTL_CONSTANT_STRING(L".com");           /* 对齐 SS L2986 (子串匹配, 对齐 SS 语义) */
+        static const UNICODE_STRING c_spDnld    = RTL_CONSTANT_STRING(L"\\downloads\\");   /* PapIsSuspiciousPath L2974 */
+        static const UNICODE_STRING c_spExtScr  = RTL_CONSTANT_STRING(L".scr");           /* L2984 */
+        static const UNICODE_STRING c_spExtPif  = RTL_CONSTANT_STRING(L".pif");           /* L2985 */
+        static const UNICODE_STRING c_spExtCom  = RTL_CONSTANT_STRING(L".com");           /* L2986 (子串匹配, 语义) */
         BOOLEAN suspPath = FALSE;
 
         if (IocpFindInUnicodeString(Process->CommandLine, &c_spTemp) ||
@@ -1080,7 +1080,7 @@ IocpDetectCommandLine(
             suspPath = TRUE;
         }
 
-        /* 镜像路径可疑目录 + 扩展名（对齐 SS PapIsSuspiciousPath L2958-2991，
+        /* 镜像路径可疑目录 + 扩展名（PapIsSuspiciousPath L2958-2991，
          * 补 SS 独有的 \downloads\ 与 .scr/.pif/.com 扩展名子串） */
         if (Process->Core.ImagePath) {
             if (IocpFindInUnicodeString(Process->Core.ImagePath, &c_spTemp) ||
@@ -1105,7 +1105,7 @@ IocpDetectCommandLine(
         }
     }
 
-    /* 11) 脚本文件执行（对齐 SS ClppDetectScriptExecution L2181）
+    /* 11) 脚本文件执行（ClppDetectScriptExecution L2181）
      * 脚本宿主 + 脚本扩展名参数，或内联 javascript:/vbscript:。 */
     {
         static const UNICODE_STRING c_sfVbs    = RTL_CONSTANT_STRING(L".vbs");
@@ -1143,17 +1143,17 @@ IocpDetectCommandLine(
 /**************************************************/
 /*       §3.2 剪贴板窃取检测（T1115）              */
 /*                                                 */
-/*   迁移自 SS ClipboardMonitor.c CbMonCheckProcessCreate */
+/*   ClipboardMonitor.c CbMonCheckProcessCreate */
 /*   双检测面: 命令行剪贴板关键词 + 已知窃取器镜像名。 */
 /*   命中置 WKD_BEHAVIOR_CLIPBOARD + 提交            */
 /*   TsIndicator_CmdLine_ClipboardAbuse(0x0206).     */
 /*   镜像名命中 severity=High, 命令行命中=Medium      */
-/*   （对齐 SS 调用方 ProcessNotify: base 15 +         */
+/*   （调用方 ProcessNotify: base 15 +         */
 /*    KnownStealerImage +25 加分语义）.               */
 /**************************************************/
 
 //
-// 剪贴板窃取命令行关键词（对齐 SS g_ClipboardCmdPatterns 13 条；
+// 剪贴板窃取命令行关键词（g_ClipboardCmdPatterns 13 条；
 // xclip/xsel/pbcopy 为 Unix/WSL 工具，Windows 本地价值≈0，裁剪为注释预留）
 //
 static const PCWSTR g_IocClipboardCmdPatterns[] = {
@@ -1171,7 +1171,7 @@ static const PCWSTR g_IocClipboardCmdPatterns[] = {
     (sizeof(g_IocClipboardCmdPatterns) / sizeof(g_IocClipboardCmdPatterns[0]))
 
 //
-// 已知剪贴板窃取器镜像名（对齐 SS g_ClipboardStealerNames 6 条，文件名包含匹配）
+// 已知剪贴板窃取器镜像名（g_ClipboardStealerNames 6 条，文件名包含匹配）
 //
 static const PCWSTR g_IocClipboardStealerNames[] = {
     L"cliplogger",
@@ -1257,13 +1257,21 @@ IocpDetectClipboardAbuse(
      *      → wkD 由本提交（IOC 评分 0x0206）+ AeOrchestratorDispatch Phase 3 通用
      *        进程创建行为记录(IoaAnalysisBehavior) 叠加覆盖，不新增剪贴板专属行为类型；
      *   ② CbMonpLookupProcess(ProcessId, TRUE) 入追踪表供 CbMonCheckFileWrite 查询
-     *      → wkD §8 追踪表死代码未接线，激活时在此补调
-     *        IocpClipboardTrackProcess(ProcessId, indicators)。 */
+     *      → wkD §8 追踪表（2026-10 激活接线）在此补调
+     *        IocpClipboardTrackProcess 入表，供文件写回调
+     *        (FsPreWriteNotifyCallback → IocpClipboardCheckFileWrite) 查询。 */
     AeReportIndicatorEx(
         Pair,
         TsSourceIOC,
         TsIndicator_CmdLine_ClipboardAbuse,
         stealerHit ? AeThreatSeverityHigh : AeThreatSeverityMedium);
+
+    /* [2026-10 T1115 接线] 命中即入剪贴板追踪表（cmdline/镜像名双路位区分）；
+     * 未命中路径已在上方 return，此处 cmdLineHit || stealerHit 必为 TRUE。 */
+    (void)IocpClipboardTrackProcess(
+        Pair->TargetProcessId,
+        cmdLineHit ? IOC_INDICATOR_CLIPBOARD_CMDLINE
+                   : IOC_INDICATOR_KNOWN_STEALER_IMAGE);
 }
 
 /**************************************************/
@@ -1429,7 +1437,7 @@ IocpInitializeParentChildRules(
         { L"explorer.exe", L"cscript.exe" },
         { L"explorer.exe", L"cmd.exe" },
         { L"explorer.exe", L"regsvr32.exe" },
-        /* 以下对齐 SS PapInitializeParentChildRules L3147-3181（30 条），
+        /* 以下PapInitializeParentChildRules L3147-3181（30 条），
          * 2026-08 ProcessAnalyzer 迁移：补 winword/excel wscript·cscript·mshta、
          * powerpnt/notepad/iexplore/msedge/spoolsv/wmiprvse 全链 */
         { L"winword.exe", L"cmd.exe" },
@@ -1605,7 +1613,7 @@ IocpIsScriptHost(
         return FALSE;
     }
 
-    /* 脚本宿主列表：wkd 原有 + 对齐 SS BepIsScriptHost 补 pythonw/java/javaw */
+    /* 脚本宿主列表：wkd 原有 + BepIsScriptHost 补 pythonw/java/javaw */
     static const PCWSTR ScriptHosts[] = {
         L"powershell", L"pwsh", L"cmd.exe", L"wscript",
         L"cscript", L"mshta", L"wmic", L"bash",
@@ -1625,11 +1633,11 @@ IocpIsScriptHost(
 }
 
 /**************************************************/
-/*       §3.3 WSL/容器逃逸检测（迁移自 SS WSLMonitor）*/
+/*       §3.3 WSL/容器逃逸检测（WSLMonitor）*/
 /**************************************************/
 
 //
-// WSL 进程镜像名（对齐 SS WSLMonitor.c g_WslLauncher/Host/Service/Relay L99-102）。
+// WSL 进程镜像名（WSLMonitor.c g_WslLauncher/Host/Service/Relay L99-102）。
 // bash.exe 不在此表直接分类（SS WSL-11：Git Bash/Cygwin/MSYS2 同镜像名，
 // 仅通过父链判定，杜绝误报）。
 //
@@ -1641,7 +1649,7 @@ static const PCWSTR g_WslProcessNames[] = {
 };
 
 //
-// WSL 上下文 spawn 的原生逃逸目标（对齐 SS WSLMonitor.c g_NativeEscapeTargets
+// WSL 上下文 spawn 的原生逃逸目标（WSLMonitor.c g_NativeEscapeTargets
 // L108-124，T1611 Escape to Host）。WSL 父进程拉起这些 native 进程即为逃逸。
 //
 static const PCWSTR g_WslNativeEscapeTargets[] = {
@@ -1677,7 +1685,7 @@ IocpDetectWsl(
     )
 /*++
 Routine Description:
-    进程创建 WSL/容器逃逸检测（对齐 SS WslMonCheckProcessCreate L300-502）。
+    进程创建 WSL/容器逃逸检测（WslMonCheckProcessCreate L300-502）。
     1) 镜像名分类（wsl.exe/wslhost.exe/wslservice.exe/wslrelay.exe）；
     2) 未命中则查父进程 WSL 标志 → 本进程标记 WSL 子进程（bash.exe 误报消除）；
     3) WSL 父 + native 逃逸目标 → TsIndicator_Wsl_EscapeToHost（T1611）。
@@ -1699,7 +1707,7 @@ Return Value:
     BOOLEAN isWsl = FALSE;
     BOOLEAN isWslParent = FALSE;
 
-    /* Step 1: 提取镜像文件名（对齐 SS WslpExtractImageName，复用 IocpExtractFileName） */
+    /* Step 1: 提取镜像文件名（WslpExtractImageName，复用 IocpExtractFileName） */
     if (ImageFileName != NULL &&
         ImageFileName->Buffer != NULL &&
         ImageFileName->Length > 0) {
@@ -1721,7 +1729,7 @@ Return Value:
         }
     }
 
-    /* Step 3: 仅当镜像未分类时查父链（对齐 SS Step 2）
+    /* Step 3: 仅当镜像未分类时查父链（Step 2）
      *   wslrelay.exe 虽在 Step 2 命中，但走分类分支，不进入父链逃逸判定。 */
     if (!isWsl && Pair->SourceProcessId != NULL) {
         PWKD_PROCESS parent = PsLookupWkdProcessByProcessId(Pair->SourceProcessId);
@@ -1735,7 +1743,7 @@ Return Value:
         }
 
         if (isWslParent) {
-            /* WSL 父 + native 逃逸目标 → 逃逸（T1611，对齐 SS L364-386，80 分） */
+            /* WSL 父 + native 逃逸目标 → 逃逸（T1611，L364-386，80 分） */
             if (hasImageName && IocpWslIsNativeEscapeTarget(&imageName)) {
                 AeReportIndicatorEx(Pair, TsSourceIOC,
                     TsIndicator_Wsl_EscapeToHost, AeThreatSeverityCritical);
@@ -1747,12 +1755,12 @@ Return Value:
                     HandleToULong(Pair->SourceProcessId),
                     ImageFileName);
             }
-            /* WSL 父 spawn 任意子进程（对齐 SS L357 SuspiciousSpawns++） */
+            /* WSL 父 spawn 任意子进程（L357 SuspiciousSpawns++） */
             InterlockedIncrement(&g_WkdProcessMonitor.Statistics.WslSuspiciousSpawns);
         }
     }
 
-    /* Step 4: WSL 进程打标志 + 计数（对齐 SS 入表段 + WslProcessesDetected++） */
+    /* Step 4: WSL 进程打标志 + 计数（入表段 + WslProcessesDetected++） */
     if (isWsl) {
         if (Proc->SecurityContext != NULL) {
             Proc->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_WSL_PROCESS;
@@ -1767,7 +1775,7 @@ Return Value:
 /**************************************************/
 /*       §8 缓解缺失检测（T1055 前置信号）          */
 /*                                                 */
-/*   迁移自 SS ProcessAnalyzer.c:                  */
+/*   ProcessAnalyzer.c:                  */
 /*     PapAnalyzePEHeaders L2129-2139              */
 /*       (DllCharacteristics → DEP/ASLR/CFG)       */
 /*     PapAnalyzeSecurityMitigations L2205-2266    */
@@ -1859,13 +1867,13 @@ IocpCheckMitigations(
         ctx.MaxSections = WKD_PE_MAX_SECTIONS_DEFAULT;
         WkdPeCbMitigationsInit(&ctx, &mit);
 
-        /* 统一解析核心（File 模式 + 缓解映射回调，对齐 SS PapAnalyzePEHeaders） */
+        /* 统一解析核心（File 模式 + 缓解映射回调，PapAnalyzePEHeaders） */
         if (NT_SUCCESS(CoParsePe(&ctx)) && mit.IsPe) {
-            /* 无 ASLR（对齐 SS PA_IMAGE_DLLCHAR_DYNAMIC_BASE） */
+            /* 无 ASLR（PA_IMAGE_DLLCHAR_DYNAMIC_BASE） */
             if (!mit.HasAslr) {
                 staticMissing = TRUE;
             }
-            /* 无 DEP（对齐 SS PA_IMAGE_DLLCHAR_NX_COMPAT） */
+            /* 无 DEP（PA_IMAGE_DLLCHAR_NX_COMPAT） */
             if (!mit.HasDep) {
                 staticMissing = TRUE;
             }
@@ -1939,44 +1947,45 @@ IocAnalysisProcess(
         }
     }
 
-    /* §3 命令行深度分析（2026-08 激活，迁移自 SS BehaviorEngine 事件流） */
+    /* §3 命令行深度分析（2026-08 激活，BehaviorEngine 事件流） */
     // IocpDetectCommandLine(Pair, targetWkdProcess);
 
-    /* §3.1 LOLBin 识别（对齐 SS BepIsLolBin，迁移自 BehaviorEngine） */
+    /* §3.1 LOLBin 识别（BepIsLolBin，迁移自 BehaviorEngine） */
     //if (targetWkdProcess->Core.ImagePath &&
     //    IocCheckLolbin(targetWkdProcess->Core.ImagePath)) {
     //    targetWkdProcess->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_LOLBIN;
     //    AeReportIndicator(Pair, TsSourceIOC, TsIndicator_CmdLine_LOLBin);
     //}
 
-    /* §3.2 剪贴板窃取检测（T1115，迁移自 SS ClipboardMonitor） */
-    // IocpDetectClipboardAbuse(Pair, targetWkdProcess);
+    /* §3.2 剪贴板窃取检测（T1115，ClipboardMonitor，2026-10 激活）
+     * 命中后内部入剪贴板追踪表，供文件写回调（PreWrite）查询。 */
+    IocpDetectClipboardAbuse(Pair, targetWkdProcess);
 
-    /* §3.3 WSL/容器逃逸检测（T1611/T1059.004，迁移自 SS WSLMonitor）
+    /* §3.3 WSL/容器逃逸检测（T1611/T1059.004，WSLMonitor）
      *   镜像分类 + 父链判定 + WSL 父 spawn native 逃逸目标 */
     // IocpDetectWsl(Pair, targetWkdProcess, CreateInfo->ImageFileName);
 
     /* §4 签名验证 */
     // IocpVerifySignature(Pair, targetWkdProcess);
 
-    /* §5 进程 Ghosting 检测（T1055.013，对齐 SS PhAnalyzeAtCreation 门控：
+    /* §5 进程 Ghosting 检测（T1055.013，PsAnalyzeProcessHollowingAtCreation 门控：
      *   !IsSystem 才做——系统进程跳过比对，控制创建热路径成本） */
     //if (!targetWkdProcess->SecurityContext->IsSystem) {
     //    IocpDetectGhosting(Pair, targetWkdProcess);
     //}
 
-    /* §6 父进程谱系分析（迁移自 SS PapAnalyzeParentProcess/PapDetectBehaviorFlags
-     * 已知父名单(19) + 组合失配规则(对齐 SS 30 条)；父非已知→SuspiciousAncestry，
+    /* §6 父进程谱系分析（PapAnalyzeParentProcess/PapDetectBehaviorFlags
+     * 已知父名单(19) + 组合失配规则(30 条)；父非已知→SuspiciousAncestry，
      * 组合失配→SuspiciousAncestry（谱系异常，不再归入 PPID 指示器）） */
     // IocpAnalyzeParentProcess(Pair, targetWkdProcess);
 
-    /* §7 脚本宿主标记（对齐 SS BepIsScriptHost，迁移自 BehaviorEngine） */
+    /* §7 脚本宿主标记（BepIsScriptHost，迁移自 BehaviorEngine） */
     //if (targetWkdProcess->Core.ImagePath &&
     //    IocpIsScriptHost(targetWkdProcess->Core.ImagePath)) {
     //    targetWkdProcess->SecurityContext->BehaviorFlags |= WKD_BEHAVIOR_SCRIPT_HOST;
     //}
 
-    /* §8 缓解缺失检测（迁移自 SS PapAnalyzePEHeaders + PapAnalyzeSecurityMitigations，
+    /* §8 缓解缺失检测（PapAnalyzePEHeaders + PapAnalyzeSecurityMitigations，
      * 门控 !IsSystem 对齐 §5 Ghosting；运行时 DEP 由 Phase 6 填充 DepEnabled） */
     //if (!targetWkdProcess->SecurityContext->IsSystem) {
     //    IocpCheckMitigations(Pair, targetWkdProcess);
@@ -1996,19 +2005,24 @@ IocInitializeParentChildRules(
 {
 
     IocpInitializeParentChildRules();
+
+    /* [2026-10 T1115 接线] 剪贴板追踪表初始化（IocProcess.c §8）——
+     * 随进程创建分析入口同期初始化（早于 minifilter 注册），
+     * 供 §3.2 命中入表与 PreWrite 写回调查询。 */
+    IocpClipboardInitialize();
 }
 
 /**************************************************/
 /*       §8 剪贴板追踪表（死代码预留）             */
 /*                                                 */
-/*   迁移自 SS ClipboardMonitor.c per-PID 追踪表    */
+/*   ClipboardMonitor.c per-PID 追踪表    */
 /*   (CBMON_PROCESS_ENTRY 哈希表 + temp 快速写入    */
 /*    速率窗口检测, T1115)                          */
 /*                                                 */
 /*   ★ 不接入原因:                                  */
 /*     1. wkd 驱动文件系统 minifilter 未激活        */
-/*        (WkdEntry.c FsInitialize 注释; Filter.c   */
-/*        FspPreWrite 为空骨架), 无文件写入事件源;   */
+/*        (编排器 FsInitialize 内未启用本追踪表; 薄层  */
+/*         FspPreWrite 为空骨架), 无文件写入事件源;   */
 /*     2. per-PID 追踪表与 WKD_PROCESS/进程对状态   */
 /*        语义重叠, 进程创建信号已由 §3.2 活代码     */
 /*        IocpDetectClipboardAbuse 直接提交评分.     */
@@ -2018,7 +2032,7 @@ IocInitializeParentChildRules(
 /*                                                 */
 /*   功能面: 对已标记剪贴板指标的进程, 检测 temp 路径 */
 /*   快速写入 (≥10 次/5s), 命中置 RapidTempWrites.   */
-/*   对齐 SS CbMonCheckFileWrite L459-554.          */
+/*   CbMonCheckFileWrite L459-554.          */
 /*                                                 */
 /*   说明: 死代码函数为非 static (无外部调用者不触发  */
 /*   C4505), 未来接线时在 IocProcess.h 补声明.      */
@@ -2031,7 +2045,7 @@ IocInitializeParentChildRules(
 #define IOC_CLIPBOARD_MAX_BUCKET_WALK 64      // 抗损坏遍历上限
 
 //
-// 剪贴板指示器位（对齐 SS CBMON_INDICATOR；仅命令/镜像名/编码已由
+// 剪贴板指示器位（CBMON_INDICATOR；仅命令/镜像名/编码已由
 // §3.2 活代码覆盖，RapidTempWrites 为写回调专用）
 //
 #define IOC_INDICATOR_CLIPBOARD_CMDLINE     0x00000001
@@ -2040,7 +2054,7 @@ IocInitializeParentChildRules(
 #define IOC_INDICATOR_ENCODED_CLIPBOARD_CMD 0x00000040
 
 //
-// §8 追踪条目（对齐 SS CBMON_PROCESS_ENTRY L122-137）
+// §8 追踪条目（CBMON_PROCESS_ENTRY L122-137）
 //
 typedef struct _IOC_CLIPBOARD_PROCESS_ENTRY {
     LIST_ENTRY Link;
@@ -2053,7 +2067,7 @@ typedef struct _IOC_CLIPBOARD_PROCESS_ENTRY {
 } IOC_CLIPBOARD_PROCESS_ENTRY, *PIOC_CLIPBOARD_PROCESS_ENTRY;
 
 //
-// §8 全局状态（对齐 SS CBMON_STATE L139-150，裁剪 InitState/Rundown/Lookaside：
+// §8 全局状态（CBMON_STATE L139-150，裁剪 InitState/Rundown/Lookaside：
 // 死代码未接线，lookaside 用 ExAllocatePoolWithTag 替代）
 //
 static struct {
@@ -2061,7 +2075,7 @@ static struct {
     LIST_ENTRY ProcessBuckets[IOC_CLIPBOARD_BUCKETS];
     EX_PUSH_LOCK BucketLocks[IOC_CLIPBOARD_BUCKETS];
     volatile LONG TrackedCount;
-    volatile LONG64 FileWriteMatches;   // 快速 temp 写入命中数（对齐 SS Stats.FileWriteMatches）
+    volatile LONG64 FileWriteMatches;   // 快速 temp 写入命中数（Stats.FileWriteMatches）
 } g_IocClipboardTrack;
 
 static
@@ -2095,7 +2109,7 @@ IocpClipboardReleaseEntry(
 }
 
 //
-// 查/建追踪条目（对齐 SS CbMonpLookupProcess L597-691）
+// 查/建追踪条目（CbMonpLookupProcess L597-691）
 // 命中在桶共享锁内加 caller 引用返回；CreateIfMissing 在锁外分配、
 // 独占锁内 TOCTOU 复查，避免并发重复插入。
 //
@@ -2181,7 +2195,7 @@ IocpClipboardIsTempPath(
     _In_ PUNICODE_STRING FileName
     )
 {
-    /* 剪贴板倾倒目标路径（对齐 SS CbMonpIsTempPath L757-784） */
+    /* 剪贴板倾倒目标路径（CbMonpIsTempPath L757-784） */
     static const WCHAR* tempPatterns[] = {
         L"\\Temp\\",
         L"\\AppData\\Local\\Temp\\",
@@ -2202,7 +2216,7 @@ IocpClipboardIsTempPath(
 }
 
 //
-// 进程创建标记入表（对齐 SS CbMonCheckProcessCreate 入表段 L427-453）
+// 进程创建标记入表（CbMonCheckProcessCreate 入表段 L427-453）
 // §3.2 命中剪贴板指标后调用，供未来文件写入检测查询。
 //
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -2230,7 +2244,7 @@ IocpClipboardTrackProcess(
 }
 
 //
-// 文件写入回调判定（对齐 SS CbMonCheckFileWrite L459-554）
+// 文件写入回调判定（CbMonCheckFileWrite L459-554）
 // 由 minifilter IRP_MJ_WRITE PreOperation 调用（待 Filter.c 激活接线）。
 // 返回 TRUE = 命中剪贴板倾倒的快速 temp 写入模式。
 //
@@ -2299,7 +2313,7 @@ IocpClipboardCheckFileWrite(
 }
 
 //
-// 进程退出清理（对齐 SS CbMonRemoveProcess L829-898）
+// 进程退出清理（CbMonRemoveProcess L829-898）
 // 由进程终止回调调用，防追踪表填满后永久失聪。
 //
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -2345,7 +2359,7 @@ IocpClipboardRemoveProcess(
 }
 
 //
-// §8 初始化/清理（对齐 SS CbMonInitialize/Shutdown L224-314）
+// §8 初始化/清理（CbMonInitialize/Shutdown L224-314）
 // 死代码未接线，由未来文件回调激活方显式调用。
 //
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -2398,28 +2412,29 @@ IocpClipboardShutdown(
 /**************************************************/
 /*       §9 WSL 文件访问检测（死代码预留）           */
 /*                                                   */
-/*   迁移自 SS WSLMonitor.c WslMonCheckFileAccess     */
+/*   WSLMonitor.c WslMonCheckFileAccess     */
 /*   (L558-686)：WSL 进程访问宿主凭据文件(T1003)/     */
 /*   驱动目录·System32(T1611) 逃逸检测。              */
 /*                                                   */
 /*   ★ 不接入原因:                                    */
 /*     1. wkd 驱动文件系统 minifilter 未激活          */
-/*        (WkdEntry.c FsInitialize 注释; Filter.c     */
-/*        FspPreCreate 仅为 YARA 扫描回路), 无文件     */
-/*        访问事件源;                                 */
+/*        (编排器 FsInitialize 内未启用本追踪表; 能力   */
+/*        模块 FsPreCreateNotifyCallback 仅为 YARA 扫描  */
+/*        回路), 无文件访问事件源;                     */
 /*     2. 依赖进程侧 WKD_BEHAVIOR_WSL_PROCESS 标志     */
 /*        (§3.3 活代码已设置), 激活后即可短路查询。    */
-/*   ★ 激活条件: 待 Filter.c FspPreCreate 激活后,      */
-/*     在 FltGetFileNameInformation 之后、扩展名过滤    */
+/*   ★ 激活条件: 待 FsPreCreateNotifyCallback          */
+/*     (FileSystem\PreCreate.c) 补齐后, 在                */
+/*     FltGetFileNameInformation 之后、扩展名过滤        */
 /*     之前调用（凭据文件无扩展名/非可扫扩展名, 必须    */
-/*     在扩展名过滤前检查, 对齐 SS PreCreate.c L1088）。*/
+/*     在扩展名过滤前检查, SS PreCreate.c L1088）。*/
 /*                                                   */
 /*   说明: 死代码函数为非 static（无外部调用者不触发    */
 /*   C4505), 未来接线时在 IocProcess.h 补声明.         */
 /**************************************************/
 
 //
-// 宿主凭据文件路径（对齐 SS WSLMonitor.c g_CredentialPaths L132-138）
+// 宿主凭据文件路径（WSLMonitor.c g_CredentialPaths L132-138）
 //
 static const PCWSTR g_WslCredentialPaths[] = {
     L"\\Windows\\System32\\config\\SAM",
@@ -2430,7 +2445,7 @@ static const PCWSTR g_WslCredentialPaths[] = {
 };
 
 //
-// 凭据路径后缀匹配（对齐 SS WslpIsCredentialPath L848-871，
+// 凭据路径后缀匹配（WslpIsCredentialPath L848-871，
 // 处理 \Device\HarddiskVolumeN 等卷前缀变化）
 //
 static
@@ -2468,13 +2483,13 @@ IocpCheckWslFileAccess(
     )
 /*++
 Routine Description:
-    WSL 进程文件访问逃逸检测（对齐 SS WslMonCheckFileAccess L558-686）。
+    WSL 进程文件访问逃逸检测（WslMonCheckFileAccess L558-686）。
     WSL 进程访问宿主凭据文件 → TsIndicator_Wsl_CredentialAccess（T1003）；
     访问 \drivers\ → TsIndicator_Wsl_DriverAccess（T1611）；访问 \System32\
     → TsIndicator_Wsl_System32Access（T1611）。非 WSL 进程短路返回。
 
 Arguments:
-    ProcessId  - 请求进程 PID（对齐 SS RequestorPid）。
+    ProcessId  - 请求进程 PID（RequestorPid）。
     FileName   - 目标文件路径（FltGetFileNameInformation 归一化路径）。
 
 Return Value:
@@ -2483,7 +2498,7 @@ Return Value:
 {
     PWKD_PROCESS proc;
 
-    /* 防御校验（对齐 SS WSL-14：FileName 可 NULL Buffer） */
+    /* 防御校验（WSL-14：FileName 可 NULL Buffer） */
     if (FileName == NULL || FileName->Buffer == NULL || FileName->Length == 0) {
         return STATUS_SUCCESS;
     }
@@ -2500,11 +2515,11 @@ Return Value:
     }
     PsDereferenceWkdProcess(proc);
 
-    /* WSL 进程每次文件访问计数（对齐 SS L601-602 FileAccessCount/FileSystemCrossings，
+    /* WSL 进程每次文件访问计数（L601-602 FileAccessCount/FileSystemCrossings，
      * FileAccessCount 为 per-process 字段已废弃，仅保留全局 FileSystemCrossings） */
     InterlockedIncrement(&g_WkdProcessMonitor.Statistics.WslFileSystemCrossings);
 
-    /* Priority 1: 凭据文件访问（T1003，对齐 SS L609-631，85 分） */
+    /* Priority 1: 凭据文件访问（T1003，L609-631，85 分） */
     if (IocpWslIsCredentialPath(FileName)) {
         AeReportIndicatorPair(ProcessId, ProcessId, TsSourceIOC,
             TsIndicator_Wsl_CredentialAccess, AeThreatSeverityCritical);
@@ -2516,7 +2531,7 @@ Return Value:
         return STATUS_SUCCESS;
     }
 
-    /* Priority 2: 驱动目录访问（T1611，对齐 SS L639-662，60 分） */
+    /* Priority 2: 驱动目录访问（T1611，L639-662，60 分） */
     {
         UNICODE_STRING driversDir;
         RtlInitUnicodeString(&driversDir, L"\\drivers\\");
@@ -2531,7 +2546,7 @@ Return Value:
         }
     }
 
-    /* Priority 3: System32 访问（T1611，对齐 SS L670-680，仅记录低分） */
+    /* Priority 3: System32 访问（T1611，L670-680，仅记录低分） */
     {
         UNICODE_STRING system32Dir;
         RtlInitUnicodeString(&system32Dir, L"\\System32\\");
@@ -2549,11 +2564,11 @@ Return Value:
 }
 
 /**************************************************/
-/*       死代码迁移区（对齐 SS ProcessNotify.c）     */
+/*       死代码迁移区（ProcessNotify.c）     */
 /**************************************************/
 //
 // 以下为 ShadowStrike ProcessNotify.c 创建路径分析链功能面迁移（重功能实现
-// 非复制），当前不接入流水线。每个函数标注：对齐 SS 行号 / 不接入原因 /
+// 非复制），当前不接入流水线。每个函数标注：行号 / 不接入原因 /
 // 激活条件。死代码 static 函数未引用，包裹 #pragma warning(4505) 抑制告警。
 //
 // 已覆盖无需迁移（本文件既有对等物）：
@@ -2573,7 +2588,7 @@ Return Value:
 #pragma warning(disable:4505)
 
 //
-// [死代码] 创建时进程空洞/幽灵比对（对齐 SS PhAnalyzeAtCreation L2109-2156
+// [死代码] 创建时进程空洞/幽灵比对（PsAnalyzeProcessHollowingAtCreation L2109-2156
 //   调用段 + HollowingDetector.c 实现）
 // 功能：进程创建回调内（进程未执行前）比对 PEB 内存镜像 vs 磁盘文件，
 //   检测进程镂空（T1055.012）/ 幽灵（T1055.013）。
@@ -2595,14 +2610,14 @@ PnpAnalyzeAtCreation(
     UNREFERENCED_PARAMETER(ProcessId);
     UNREFERENCED_PARAMETER(WkdProcess);
 
-    /* 对齐 SS PhAnalyzeAtCreation：读 PEB → 取内存镜像首节 → 读磁盘文件 →
+    /* PsAnalyzeProcessHollowingAtCreation：读 PEB → 取内存镜像首节 → 读磁盘文件 →
      * 比对 MZ/节表/熵。wkd 无驱动内存读取能力（ReadProcessMemory 用户态，
      * 驱动侧需 MmCopyVirtualMemory + 手工解析），依赖缺口见上。 */
     return STATUS_NOT_IMPLEMENTED;
 }
 
 //
-// [死代码] 环境变量分析（对齐 SS EmCaptureEnvironment L3314-3390 调用段 +
+// [死代码] 环境变量分析（EmCaptureEnvironment L3314-3390 调用段 +
 //   EnvironmentMonitor.c 实现）
 // 功能：读进程 PEB 环境块，检测 PATH 劫持（T1574.007）/ DLL 搜索序劫持
 //   （T1574.008）/ 代理操纵（T1090.001）/ TEMP 覆盖 / 编码载荷（T1027）。
@@ -2621,7 +2636,7 @@ PnpCaptureEnvironment(
 {
     UNREFERENCED_PARAMETER(Process);
 
-    /* 对齐 SS EmCaptureEnvironment：ProcessBasicInformation → PEB →
+    /* EmCaptureEnvironment：ProcessBasicInformation → PEB →
      * ProcessParameters.Environment 偏移（x64 0x80/x86 0x48）→ 逐 4KB 页
      * ReadProcessMemory + 双 null 终止扫描（cap 64KB）→ 宽串解析 PATH/
      * 代理/TEMP/熵判定。agent IpeAnalyzeEnvironment 为完整实现。 */

@@ -37,7 +37,7 @@ IocPoly_Entropy(
 
 /**************************************************/
 /*               XOR 解密循环检测                   */
-/*  对齐 SS DetectXORLoop:                         */
+/*  DetectXORLoop:                         */
 /*   XOR byte ptr [reg+off], imm8  (80 /6)         */
 /*   XOR dword ptr [reg+off], imm32 (81 /6)        */
 /*   XOR [reg], reg                (30/31)         */
@@ -84,7 +84,7 @@ IocPoly_DetectXorLoop(
 
 /**************************************************/
 /*               引擎签名检测                       */
-/*  对齐 SS DetectEngineInternal (部分)            */
+/*  DetectEngineInternal (部分)            */
 /**************************************************/
 
 static WKD_POLY_ENGINE

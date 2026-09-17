@@ -132,7 +132,7 @@ IocSandbox_GetVerdict(
 
 /*++
 Routine Description:
-    计算威胁级别 (对齐 SS CalculateThreatLevel)。
+    计算威胁级别 (CalculateThreatLevel)。
 
 Arguments:
     Score - 0-100 分。

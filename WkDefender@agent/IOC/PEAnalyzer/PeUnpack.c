@@ -31,7 +31,7 @@ WpeUnpackComputeSha256(
     )
 /*++
 Routine Description:
-    SHA-256 计算 (BCrypt, 对齐 SS UnpackLayer::sha256)。
+    SHA-256 计算 (BCrypt, UnpackLayer::sha256)。
 
 Arguments:
     Data   - 输入缓冲。
@@ -65,7 +65,7 @@ WpeUnpackDetectOepInPayload(
     )
 /*++
 Routine Description:
-    在解压载荷内扫描 OEP 特征 (对齐 SS FindOEPInternal 的 .text 模式:
+    在解压载荷内扫描 OEP 特征 (FindOEPInternal 的 .text 模式:
     PUSH EBP; MOV EBP,ESP / MOV EDI,EDI; PUSH EBP; MOV EBP,ESP / REX.W SUB RSP,imm8)。
     静态 UPX 路径无 .text 节, 直接对解压代码扫描, 命中返回 RVA。
 
@@ -122,9 +122,9 @@ WpeNrV2bDecompress(
     )
 /*++
 Routine Description:
-    NRV2B 解压 (UCL 公有领域, 对齐 SS Nrv2bDecompress 的 C 重实现)。
+    NRV2B 解压 (UCL 公有领域, Nrv2bDecompress 的 C 重实现)。
 
-    加固 (对齐 SS Hardening notes):
+    加固 (Hardening notes):
       - 迭代上限 kMaxLoopIters = min(DstSize*16, 2^28), 防畸形流 CPU 耗尽;
       - 位解码循环上限 kMaxBitDecodeIters = 33, 防无限零流;
       - mOff/mLen 中间值显式上限, 防 uint32 静默回绕;
@@ -269,7 +269,7 @@ WpeUnpackBuildImage(
     )
 /*++
 Routine Description:
-    将解压载荷重建为完整 PE 镜像 (对齐 SS FixPEHeadersInternal 语义:
+    将解压载荷重建为完整 PE 镜像 (FixPEHeadersInternal 语义:
     改入口点 + 删壳节 + 重对齐 + 重算 SizeOfImage/校验和)。借鉴
     WpeReconstructPeFromMemory 按节表摆位的思路, C 写侧重实现。
 
@@ -490,9 +490,9 @@ WpeUnpackUpxInternal(
     )
 /*++
 Routine Description:
-    UPX 静态解包 (对齐 SS UnpackUPX): UPX0=目的 / UPX1=压缩载荷,
+    UPX 静态解包 (UnpackUPX): UPX0=目的 / UPX1=压缩载荷,
     NRV2B 解压 → 尝试完整重建 (WpeUnpackBuildImage), 失败回退
-    "原始头区 + 解压数据" (对齐 SS rebuilt 语义)。
+    "原始头区 + 解压数据" (rebuilt 语义)。
 
 Arguments:
     Ctx           - 已 IocpAnalyzeBufferEx 解析的上下文。
@@ -603,7 +603,7 @@ WpeUnpackIdentifyPacker(
     )
 /*++
 Routine Description:
-    按节名识别加壳器类型 (对齐 SS UnpackFileInternal 的分派判定)。
+    按节名识别加壳器类型 (UnpackFileInternal 的分派判定)。
 
 Return Value:
     识别到的类型; WpePacker_None = 未识别。
@@ -1158,7 +1158,7 @@ WpeResolveApiByAddress(
 
 /* -- WpeResolveApiByOrdinal (SS PackerUnpacker::ResolveAPIByOrdinal, 死代码)
  * 功能: 按序号反查指定 DLL 导出表还原 "dll!func" 名; 找不到返回 "dll!OrdinalN"
- *       (对齐 SS fallback 语义)。
+ *       (fallback 语义)。
  * 不接入原因: 同 IAT 重建 — 仅运行期/内存 dump 场景; 随 IAT 三件套死代码。 */
 static
 NTSTATUS
@@ -1259,7 +1259,7 @@ WpeScanIatRange(
     entries = (IAT_ENTRY*)calloc(512, sizeof(IAT_ENTRY));
     if (entries == NULL) return STATUS_INSUFFICIENT_RESOURCES;
 
-    /* 第一趟: 扫描解析 (cap 512 槽, 对齐 SS kMaxSlots) */
+    /* 第一趟: 扫描解析 (cap 512 槽, kMaxSlots) */
     for (i = 0; i < 16384 && entryCount < 512; i++) {
         ULONG64 value = 0;
         SIZE_T off = fileOff + (SIZE_T)i * sizeof(ULONG64);
@@ -1410,7 +1410,7 @@ WpeUnpackIsLikelyOep(
 
 /* -- WpeFindOepViaEmulation (SS PackerUnpacker::FindOEPViaEmulation, 死代码)
  * 功能: 经 EmulationEngine 模拟执行定位 OEP — 从模拟解包层末层取
- *       unpackedEntryPoint (对齐 SS FindOEPViaEmulation)。
+ *       unpackedEntryPoint (FindOEPViaEmulation)。
  * 不接入原因: 依赖独立 CPU 模拟器 (SS PhantomEmulator) 立项, 同 WpeEmulatePe
  *       骨架仅留档接口; 模拟器接入后从此函数返回末层入口点。 */
 static
@@ -1442,7 +1442,7 @@ WpeEmulatePe(
 /*++
 Routine Description:
     动态解包骨架 (SS EmulationEngine 接口留档)。wkd 无 CPU 模拟器基础设施,
-    依赖独立立项 (对齐 SS PhantomEmulator/Unicorn 类后端)。
+    依赖独立立项 (PhantomEmulator/Unicorn 类后端)。
 
 Arguments:
     FileData - 待解包 PE 缓冲 (SS EmulatePE 输入)。

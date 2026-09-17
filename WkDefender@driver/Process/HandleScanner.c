@@ -228,13 +228,13 @@ HspIsSensitiveProcessName(
         L"lsm.exe",
         L"conhost.exe",
         L"dwm.exe",
-        /* ---- 补全（对齐 SS HtpInitializeSensitiveProcessList 16 条，2026-08）---- */
+        /* ---- 补全（HtpInitializeSensitiveProcessList 16 条，2026-08）---- */
         L"svchost.exe",             /* 高误报：svchost 是系统高频进程，跨进程持有其句柄需结合上下文，标注可配置 */
         L"taskmgr.exe",
         L"SecurityHealthService.exe",
         L"MsMpEng.exe",
         L"MsSense.exe",
-        L"WkDefender@agent.exe",    /* wkd 自身 agent（对齐 SS PhantomSensor.exe，按实际发布镜像名调整） */
+        L"WkDefender@agent.exe",    /* wkd 自身 agent（PhantomSensor.exe，按实际发布镜像名调整） */
     };
 
     UNICODE_STRING fileName;
@@ -324,7 +324,7 @@ HspCalculateScore(
 
     if (Flags & HsSuspicion_CrossProcess)     score += 15;
     if (Flags & HsSuspicion_HighPrivilege)    score += 20;
-    if (Flags & HsSuspicion_DuplicatedIn)     score += 15;   /* 对齐 SS HtpCalculateSuspicionScore（SS 枚举未置位，死逻辑标注） */
+    if (Flags & HsSuspicion_DuplicatedIn)     score += 15;   /* HtpCalculateSuspicionScore（SS 枚举未置位，死逻辑标注） */
     if (Flags & HsSuspicion_SensitiveTarget)  score += 35;
     if (Flags & HsSuspicion_ManyHandles)      score += 10;
     if (Flags & HsSuspicion_InjectionCapable) score += 25;
@@ -465,7 +465,7 @@ HspAnalyzeHandleSuspicion(
         flags |= HsSuspicion_SystemProcess;
     }
 
-    /* 复制流入句柄（对齐 SS HtpAnalyzeHandleSuspicion；SS 枚举路径未置 IsDuplicated，死逻辑标注） */
+    /* 复制流入句柄（HtpAnalyzeHandleSuspicion；SS 枚举路径未置 IsDuplicated，死逻辑标注） */
     if (Entry->IsDuplicated) {
         flags |= HsSuspicion_DuplicatedIn;
     }
@@ -487,7 +487,7 @@ HspGetDefaultConfig(
     Config->EnableCrossProcessDetection = TRUE;
     Config->EnableTokenStealDetection = TRUE;
     Config->EnableSensitiveProcessDetection = TRUE;
-    /* ---- 补充字段默认值（对齐 SS HT_CONFIG，2026-08）---- */
+    /* ---- 补充字段默认值（HT_CONFIG，2026-08）---- */
     Config->EnableDuplicationTracking = TRUE;
     Config->SuspicionThreshold = 50;
     Config->MaxDuplications = HS_MAX_DUPLICATIONS;
@@ -620,7 +620,7 @@ HsScanProcessHandles(
         entry->Type = HsTypeUnknown;
         entry->SuspicionFlags = HsSuspicion_None;
         entry->SuspicionScore = 0;
-        /* ---- 补充字段初始化（对齐 SS HT_HANDLE_ENTRY，2026-08）---- */
+        /* ---- 补充字段初始化（HT_HANDLE_ENTRY，2026-08）---- */
         entry->IsDuplicated = FALSE;
         entry->DuplicatedFromProcess = NULL;
         entry->ObjectNameLength = 0;
@@ -1023,7 +1023,7 @@ HsIsSensitiveProcess(
 /*  死代码分区：复制追踪 / 缓存层 / 统计 / 查询 /   */
 /*  创建时快照分析                                  */
 /*                                                   */
-/*  对齐 SS Callbacks/Process/HandleTracker.{c,h}    */
+/*  Callbacks/Process/HandleTracker.{c,h}    */
 /*  迁移 2026-08。功能面覆盖但未接入流水线，各函数    */
 /*  注释给出接入点与不接入原因。                     */
 /**************************************************/
@@ -1033,7 +1033,7 @@ HsIsSensitiveProcess(
 
 //
 // 缓存条目：活代码扫描输出结构 + 链表链接（缓存层专用）
-// 对齐 SS HT_HANDLE_ENTRY（内含 ListEntry）；wkd 活代码 HS_HANDLE_ENTRY
+// HT_HANDLE_ENTRY（内含 ListEntry）；wkd 活代码 HS_HANDLE_ENTRY
 // 为扫描输出结构，链表化由本包裹结构完成（重功能实现非复制）。
 //
 typedef struct _HS_CACHED_HANDLE {
@@ -1042,7 +1042,7 @@ typedef struct _HS_CACHED_HANDLE {
 } HS_CACHED_HANDLE, *PHS_CACHED_HANDLE;
 
 /* 死代码分区前向声明：HspDereferenceProcessHandles 定义在 HspFreeAllHandleEntries 之前，
- * 需前向声明避免 C4013 隐含函数声明（对齐 SS HandleTracker.c 的前向声明块风格）。 */
+ * 需前向声明避免 C4013 隐含函数声明（HandleTracker.c 的前向声明块风格）。 */
 static
 VOID
 HspFreeAllHandleEntries(
@@ -1051,7 +1051,7 @@ HspFreeAllHandleEntries(
     );
 
 /*++
-    PID 哈希 — MurmurHash3 finalizer（对齐 SS HtpHashProcessId L1638）
+    PID 哈希 — MurmurHash3 finalizer（HtpHashProcessId L1638）
     死代码库函数：缓存层未接入（HspInsert/RemoveProcessHandles 无调用者），
     非 static 规避 C4505。
 --*/
@@ -1073,7 +1073,7 @@ HspHashProcessId(
 }
 
 /*++
-    从 lookaside 分配缓存句柄条目（对齐 SS HtpAllocateHandleEntry L1682）
+    从 lookaside 分配缓存句柄条目（HtpAllocateHandleEntry L1682）
     死代码库函数：缓存枚举链未接入（见 HspEnumerateProcessHandles），非 static 规避 C4505。
 --*/
 _Use_decl_annotations_
@@ -1105,7 +1105,7 @@ HspFreeHandleEntry(
 }
 
 /*++
-    分配进程句柄快照（含 PEPROCESS 引用，对齐 SS HtpAllocateProcessHandles L1710）
+    分配进程句柄快照（含 PEPROCESS 引用，HtpAllocateProcessHandles L1710）
     死代码库函数：缓存枚举链未接入（对应 SS HtSnapshotHandles 分配步骤），非 static 规避 C4505。
 --*/
 _Use_decl_annotations_
@@ -1143,7 +1143,7 @@ HspAllocateProcessHandles(
 }
 
 /*++
-    引用计数递减，归零时释放全部句柄条目 + 进程对象引用（对齐 SS HtpDereferenceProcessHandles L1757）
+    引用计数递减，归零时释放全部句柄条目 + 进程对象引用（HtpDereferenceProcessHandles L1757）
     死代码库函数：缓存层未接入，非 static 规避 C4505。
 --*/
 _Use_decl_annotations_
@@ -1173,7 +1173,7 @@ HspDereferenceProcessHandles(
 }
 
 /*++
-    释放快照的全部句柄条目（对齐 SS HtpFreeAllHandleEntries L1794）
+    释放快照的全部句柄条目（HtpFreeAllHandleEntries L1794）
 --*/
 static
 VOID
@@ -1204,7 +1204,7 @@ HspFreeAllHandleEntries(
 }
 
 /*++
-    枚举并缓存指定进程的全部句柄（对齐 SS HtpEnumerateProcessHandles L2001-2274）
+    枚举并缓存指定进程的全部句柄（HtpEnumerateProcessHandles L2001-2274）
     死代码：缓存层未接入，无调用者（创建时快照走活代码 HsScanProcessHandles，
     见 HspAnalyzeNewProcessHandles）。非 static 规避 C4505。
 --*/
@@ -1227,7 +1227,7 @@ HspEnumerateProcessHandles(
 
     PAGED_CODE();
 
-    /* 验证目标进程存在并打开句柄（对齐 SS L2023-2046） */
+    /* 验证目标进程存在并打开句柄（L2023-2046） */
     status = PsLookupProcessByProcessId(ProcessId, &targetProcess);
     if (!NT_SUCCESS(status)) {
         return STATUS_NOT_FOUND;
@@ -1250,7 +1250,7 @@ HspEnumerateProcessHandles(
         return status;
     }
 
-    /* 枚举缓冲区循环增长（对齐 SS L2051-2090） */
+    /* 枚举缓冲区循环增长（L2051-2090） */
     do {
         if (buffer != NULL) {
             ExFreePoolWithTag(buffer, HS_POOL_TAG_BUFFER);
@@ -1306,7 +1306,7 @@ HspEnumerateProcessHandles(
         }
         entry = &cached->Entry;
 
-        /* 填充基础信息（不访问 Object 指针——安全问题，对齐 SS L2120-2126） */
+        /* 填充基础信息（不访问 Object 指针——安全问题，L2120-2126） */
         entry->HandleValue = (HANDLE)sysEntry->HandleValue;
         entry->GrantedAccess = sysEntry->GrantedAccess;
         entry->OwnerProcessId = ProcessId;
@@ -1316,7 +1316,7 @@ HspEnumerateProcessHandles(
         entry->ObjectNameLength = 0;
         RtlZeroMemory(entry->ObjectName, sizeof(entry->ObjectName));
 
-        /* 安全复制句柄后查询类型/目标 PID（对齐 SS L2128-2190） */
+        /* 安全复制句柄后查询类型/目标 PID（L2128-2190） */
         status = ZwDuplicateObject(
             targetProcessHandle,
             (HANDLE)sysEntry->HandleValue,
@@ -1372,12 +1372,12 @@ HspEnumerateProcessHandles(
             Handles->CrossProcessHandleCount++;
         }
 
-        /* 怀疑分析 + 评分（对齐 SS L2203-2204） */
+        /* 怀疑分析 + 评分（L2203-2204） */
         entry->SuspicionFlags = HspAnalyzeHandleSuspicion(
             ProcessId, entry, Tracker->Config.EnableSensitiveProcessDetection);
         entry->SuspicionScore = HspCalculateScore(entry->SuspicionFlags);
 
-        /* 类型统计（对齐 SS L2209-2238） */
+        /* 类型统计（L2209-2238） */
         switch (entry->Type) {
         case HsTypeProcess:  Handles->ProcessHandleCount++; break;
         case HsTypeThread:   Handles->ThreadHandleCount++; break;
@@ -1407,7 +1407,7 @@ HspEnumerateProcessHandles(
         KeLeaveCriticalRegion();
     }
 
-    /* 聚合怀疑（对齐 SS L2252-2268） */
+    /* 聚合怀疑（L2252-2268） */
     Handles->AggregatedSuspicion = HsSuspicion_None;
 
     if (Handles->CrossProcessHandleCount > 0) {
@@ -1422,7 +1422,7 @@ HspEnumerateProcessHandles(
 
     Handles->SuspicionScore = HspCalculateScore(Handles->AggregatedSuspicion);
 
-    /* 统计（对齐 SS L1132-1141） */
+    /* 统计（L1132-1141） */
     InterlockedIncrement64(&Tracker->Stats.TotalEnumerations);
     InterlockedAdd64(&Tracker->Stats.HandlesTracked, Handles->HandleCount);
     if (Handles->CrossProcessHandleCount > 0) {
@@ -1439,7 +1439,7 @@ HspEnumerateProcessHandles(
 }
 
 /*++
-    插入快照到 hash 表 + 全局列表（含同 PID 旧快照淘汰，对齐 SS HtpInsertProcessHandles L1852-1949）
+    插入快照到 hash 表 + 全局列表（含同 PID 旧快照淘汰，HtpInsertProcessHandles L1852-1949）
     死代码库函数：缓存层未接入（对应 SS HtSnapshotHandles/HtReleaseHandles 内部），非 static 规避 C4505。
 --*/
 _Use_decl_annotations_
@@ -1462,7 +1462,7 @@ HspInsertProcessHandles(
     ExAcquirePushLockExclusive(&Tracker->HashBuckets[hash].Lock);
 
     if (!Handles->InHashTable) {
-        /* 淘汰同 PID 旧快照（防 NPAGED 池泄漏 + 桶遍历退化 O(n)，对齐 SS L1879-1901） */
+        /* 淘汰同 PID 旧快照（防 NPAGED 池泄漏 + 桶遍历退化 O(n)，L1879-1901） */
         for (scanEntry = Tracker->HashBuckets[hash].ProcessList.Flink;
              scanEntry != &Tracker->HashBuckets[hash].ProcessList;
              /* advanced inside */) {
@@ -1497,7 +1497,7 @@ HspInsertProcessHandles(
         ExReleasePushLockExclusive(&Tracker->ProcessListLock);
         KeLeaveCriticalRegion();
 
-        /* 锁外释放被淘汰快照（对齐 SS L1926-1942） */
+        /* 锁外释放被淘汰快照（L1926-1942） */
         while (!IsListEmpty(&evictedList)) {
             PLIST_ENTRY evicted = RemoveHeadList(&evictedList);
             existing = CONTAINING_RECORD(evicted, HS_PROCESS_HANDLES, HashEntry);
@@ -1524,7 +1524,7 @@ HspInsertProcessHandles(
 }
 
 /*++
-    从 hash 表 + 全局列表移除快照（对齐 SS HtpRemoveProcessHandles L1951-1999）
+    从 hash 表 + 全局列表移除快照（HtpRemoveProcessHandles L1951-1999）
     死代码库函数：缓存层未接入（对应 SS HtReleaseHandles 内部），非 static 规避 C4505。
 --*/
 _Use_decl_annotations_
@@ -1574,7 +1574,7 @@ HspRemoveProcessHandles(
 }
 
 /*++
-    清理超期复制记录（对齐 SS HtpCleanupStaleDuplications L2771-2816）
+    清理超期复制记录（HtpCleanupStaleDuplications L2771-2816）
     死代码：复制追踪未接入（事件源=Ob 回调 DUPLICATE，Ob 回调未激活）。
 --*/
 static
@@ -1614,7 +1614,7 @@ HspCleanupStaleDuplications(
     ExReleasePushLockExclusive(&Tracker->DuplicationLock);
     KeLeaveCriticalRegion();
 
-    /* 锁外释放（对齐 SS L2811-2815） */
+    /* 锁外释放（L2811-2815） */
     while (!IsListEmpty(&staleList)) {
         entry = RemoveHeadList(&staleList);
         record = CONTAINING_RECORD(entry, HS_DUPLICATION_RECORD, ListEntry);
@@ -1623,7 +1623,7 @@ HspCleanupStaleDuplications(
 }
 
 /*++
-    周期清理 worker 线程（对齐 SS HtpWorkerThreadRoutine L2730-2769）
+    周期清理 worker 线程（HtpWorkerThreadRoutine L2730-2769）
     适配：SS 用 TimerManager(TmCreatePeriodic) 设 WorkAvailableEvent；wkd 无
     TimerManager，改为 KeWaitForMultipleObjects 带 CleanupIntervalMs 超时，
     超时即触发周期清理（重功能实现非复制，语义等价：每周期清一次 TTL 过期记录）。
@@ -1673,7 +1673,7 @@ HspWorkerThreadRoutine(
 }
 
 /*++
-    初始化句柄追踪器（缓存层）（对齐 SS HtInitialize L641-917）
+    初始化句柄追踪器（缓存层）（HtInitialize L641-917）
     死代码：缓存层未接入，服务于创建时全量快照，wkd 由 Agent 按需扫描替代。
     适配：SS 用 TimerManager(TmCreatePeriodic)；wkd 无 TimerManager，周期清理由
     worker 线程带超时 KeWaitForMultipleObjects 完成（见 HspWorkerThreadRoutine）。
@@ -1754,7 +1754,7 @@ HsInitialize(
         HspGetDefaultConfig(&tracker->Config);
     }
 
-    /* 校验限制（对齐 SS L774-785） */
+    /* 校验限制（L774-785） */
     if (tracker->Config.MaxHandlesPerProcess == 0) {
         tracker->Config.MaxHandlesPerProcess = HS_MAX_HANDLES_PER_PROCESS;
     }
@@ -1820,7 +1820,7 @@ Cleanup:
 }
 
 /*++
-    安全关闭句柄追踪器（对齐 SS HtShutdown L919-1082）
+    安全关闭句柄追踪器（HtShutdown L919-1082）
     死代码：随 HsInitialize。
 --*/
 _Use_decl_annotations_
@@ -1864,7 +1864,7 @@ HsShutdown(
         tracker->WorkerThreadObject = NULL;
     }
 
-    /* 释放 hash 表全部快照（对齐 SS L987-1036） */
+    /* 释放 hash 表全部快照（L987-1036） */
     for (i = 0; i < tracker->HashBucketCount; i++) {
         KeEnterCriticalRegion();
         ExAcquirePushLockExclusive(&tracker->HashBuckets[i].Lock);
@@ -1903,7 +1903,7 @@ HsShutdown(
         KeLeaveCriticalRegion();
     }
 
-    /* 释放全部复制记录（对齐 SS L1041-1059） */
+    /* 释放全部复制记录（L1041-1059） */
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&tracker->DuplicationLock);
 
@@ -1939,10 +1939,10 @@ HsShutdown(
 }
 
 /*++
-    记录一条句柄复制事件（对齐 SS HtRecordDuplication L1256-1365）
-    死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE（ObjectNotify.c
+    记录一条句柄复制事件（HtRecordDuplication L1256-1365）
+    死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE（ObjectNotification.c
     CbInitializeObjectNotify 被 WkdEntry 注释，未激活）。跨进程复制关联应
-    归 Agent 因果图（IOA_TIER3 跨进程边，对齐 SS PrAddRelationship）。
+    归 Agent 因果图（IOA_TIER3 跨进程边，PrAddRelationship）。
 --*/
 _Use_decl_annotations_
 NTSTATUS
@@ -1971,7 +1971,7 @@ HsRecordDuplication(
         return STATUS_DEVICE_NOT_READY;
     }
 
-    /* CAS 槽位预留：防止并发超限耗尽非分页池（对齐 SS L1286-1304） */
+    /* CAS 槽位预留：防止并发超限耗尽非分页池（L1286-1304） */
     {
         LONG snapshot;
         for (;;) {
@@ -2005,7 +2005,7 @@ HsRecordDuplication(
     record->HandleType = HandleType;
     KeQuerySystemTime(&record->Timestamp);
 
-    /* 怀疑分析（对齐 SS L1330-1342） */
+    /* 怀疑分析（L1330-1342） */
     if (SourceProcess != TargetProcess) {
         suspicion |= HsSuspicion_CrossProcess;
         suspicion |= HsSuspicion_DuplicatedIn;
@@ -2034,7 +2034,7 @@ HsRecordDuplication(
 }
 
 /*++
-    获取追踪器统计（对齐 SS HtGetStatistics L1573-1599）
+    获取追踪器统计（HtGetStatistics L1573-1599）
     死代码：无消费方（对齐 SS，SS 的 HtGetStatistics 亦无调用方）。
 --*/
 _Use_decl_annotations_
@@ -2063,7 +2063,7 @@ HsGetStatistics(
 }
 
 /*++
-    读取快照摘要（对齐 SS HtGetHandlesInfo L1154-1192）
+    读取快照摘要（HtGetHandlesInfo L1154-1192）
     死代码：依赖缓存层（HS_PROCESS_HANDLES），未接入。
 --*/
 _Use_decl_annotations_
@@ -2103,7 +2103,7 @@ HsGetHandlesInfo(
 }
 
 /*++
-    按索引读取单条句柄（对齐 SS HtGetHandleByIndex L1194-1252）
+    按索引读取单条句柄（HtGetHandleByIndex L1194-1252）
     死代码：依赖缓存层，未接入。
 --*/
 _Use_decl_annotations_
@@ -2170,7 +2170,7 @@ HsGetHandleByIndex(
 
 /*++
     句柄怀疑标志 → 进程行为标志映射
-    （对齐 SS PnpAnalyzeProcess 的 PN_BEHAVIOR_HANDLE_INJECTION/
+    （PnpAnalyzeProcess 的 PN_BEHAVIOR_HANDLE_INJECTION/
      CRED_ACCESS/TOKEN_STEAL 映射，ProcessNotify.c:3414-3422）
 --*/
 static
@@ -2195,7 +2195,7 @@ HspMapSuspicionToBehaviorFlags(
 }
 
 /*++
-    新进程句柄快照分析（对齐 SS PnpAnalyzeProcess HandleTracker 段，
+    新进程句柄快照分析（PnpAnalyzeProcess HandleTracker 段，
     ProcessNotify.c:3398-3465：HtSnapshotHandles+HtAnalyzeHandles →
     PN_BEHAVIOR_HANDLE_* 映射 → SuspicionScore 累加）。
     适配：wkd 无缓存层，用活代码 HsScanProcessHandles 实时枚举替代缓存快照；
@@ -2226,7 +2226,7 @@ HspAnalyzeNewProcessHandles(
     processId = Process->Core.ProcessId;
     RtlZeroMemory(Info, sizeof(HS_PROCESS_HANDLES_INFO));
 
-    /* 实时枚举（对齐 SS HtSnapshotHandles 功能面） */
+    /* 实时枚举（HtSnapshotHandles 功能面） */
     HspGetDefaultConfig(&config);
     maxEntries = config.MaxHandlesPerProcess;
     entries = (PHS_HANDLE_ENTRY)ExAllocatePool2(
@@ -2245,7 +2245,7 @@ HspAnalyzeNewProcessHandles(
         return status;
     }
 
-    /* 聚合摘要（对齐 SS HtAnalyzeHandles 输出） */
+    /* 聚合摘要（HtAnalyzeHandles 输出） */
     Info->ProcessId = processId;
     Info->HandleCount = (LONG)result.HandleCount;
     Info->AggregatedSuspicion = result.AggregatedFlags;
@@ -2254,12 +2254,12 @@ HspAnalyzeNewProcessHandles(
     Info->HighPrivilegeHandleCount = result.HighPrivilegeCount;
     KeQuerySystemTime(&Info->SnapshotTime);
 
-    /* 行为标志映射（对齐 SS PN_BEHAVIOR_HANDLE_* 映射） */
+    /* 行为标志映射（PN_BEHAVIOR_HANDLE_* 映射） */
     if (BehaviorFlags != NULL) {
         *BehaviorFlags |= HspMapSuspicionToBehaviorFlags(result.AggregatedFlags);
     }
 
-    /* 告警决策 + 建议累计分（对齐 SS BeEngineSubmitEvent + SuspicionScore 累加，
+    /* 告警决策 + 建议累计分（BeEngineSubmitEvent + SuspicionScore 累加，
      * ProcessNotify.c:3427-3449；死代码：接入方决定上报/写回进程评分） */
     (VOID)HspSubmitHandleAlerts(result.AggregatedFlags, NULL);
 
@@ -2268,7 +2268,7 @@ HspAnalyzeNewProcessHandles(
 }
 
 /*++
-    快照并缓存指定进程的全部句柄（对齐 SS HtSnapshotHandles L1084-1152）。
+    快照并缓存指定进程的全部句柄（HtSnapshotHandles L1084-1152）。
     组合 API：分配 → 枚举 → 缓存（hash 表 + 全局列表），统计已在
     HspEnumerateProcessHandles 内更新。返回快照 RefCount=2（hash 1 + 调用者 1），
     调用者用完须 HspReleaseHandles 释放。
@@ -2319,7 +2319,7 @@ HspSnapshotHandles(
 }
 
 /*++
-    对快照做聚合分析（对齐 SS HtAnalyzeHandles L1367-1438）。
+    对快照做聚合分析（HtAnalyzeHandles L1367-1438）。
     遍历聚合 SuspicionFlags + ManyHandles 阈值，独占锁更新缓存聚合字段
     （发布一致对，防 HspGetHandlesInfo 并发 torn read）。
     死代码：缓存层未接入。
@@ -2351,7 +2351,7 @@ HspAnalyzeHandles(
         return STATUS_DEVICE_NOT_READY;
     }
 
-    /* 独占锁：聚合 + 更新缓存聚合字段（对齐 SS L1397-1429） */
+    /* 独占锁：聚合 + 更新缓存聚合字段（L1397-1429） */
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&Handles->Lock);
 
@@ -2382,7 +2382,7 @@ HspAnalyzeHandles(
 }
 
 /*++
-    释放快照（对齐 SS HtReleaseHandles L1551-1571）：移除缓存 + 引用递减。
+    释放快照（HtReleaseHandles L1551-1571）：移除缓存 + 引用递减。
     死代码：缓存层未接入。
 --*/
 _Use_decl_annotations_
@@ -2403,7 +2403,7 @@ HspReleaseHandles(
 
 /*++
     句柄聚合怀疑 → 告警位图 + 建议累计分
-    （对齐 SS PnpAnalyzeProcess 的 BeEngineSubmitEvent 三类告警 + SuspicionScore
+    （PnpAnalyzeProcess 的 BeEngineSubmitEvent 三类告警 + SuspicionScore
      累加，ProcessNotify.c:3427-3449。权重对齐 SS：CredentialDumping=40/
      RemoteThreadCreate=25/LSASSAccess=30，cap 100）。
     死代码：接入点在进程创建路径（AeOrchestratorDispatch ProcessCreated 分支，
@@ -2422,15 +2422,15 @@ HspSubmitHandleAlerts(
 
     if (AggregatedSuspicion & HsSuspicion_CredentialAccess) {
         alerts |= HS_ALERT_CREDENTIAL_DUMP;
-        score += 40;   /* 对齐 SS BehaviorEvent_CredentialDumping 权重 */
+        score += 40;   /* BehaviorEvent_CredentialDumping 权重 */
     }
     if (AggregatedSuspicion & HsSuspicion_InjectionCapable) {
         alerts |= HS_ALERT_INJECTION;
-        score += 25;   /* 对齐 SS BehaviorEvent_RemoteThreadCreate 权重 */
+        score += 25;   /* BehaviorEvent_RemoteThreadCreate 权重 */
     }
     if (AggregatedSuspicion & HsSuspicion_TokenSteal) {
         alerts |= HS_ALERT_TOKEN_STEAL;
-        score += 30;   /* 对齐 SS BehaviorEvent_LSASSAccess 权重 */
+        score += 30;   /* BehaviorEvent_LSASSAccess 权重 */
     }
 
     if (score > 100) {

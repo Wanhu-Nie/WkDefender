@@ -737,6 +737,75 @@ Return Value:
 
 _Use_decl_annotations_
 NTSTATUS
+PsFindModuleByAddress(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _In_ ULONG_PTR Address,
+    _Out_ PWKD_MODULE_INSTANCE* Instance
+    )
+/*++
+Routine Description:
+    按地址区间在进程模块域中定位映射实例（内存域按地址查询接口）。
+    遍历 WKD_MODULE_CONTEXT::ModuleList 的 WKD_MODULE_INSTANCE，
+    判定 ImageBase ≤ Address < ImageBase + 映像大小（SizeOfImage 优先，
+    缺失时回退驱动上送的首见映射大小）；磁盘视图（ImageBase=NULL）
+    视为未命中。
+    支持 StartRoutine 落模块判定、反射加载背衬快速否定等消费方。
+
+Arguments:
+    WkdProcess — 进程节点（模块上下文惰性创建，NULL=无命中）。
+    Address    — 目标地址（目标进程 VA 空间）。
+
+    Instance   — 输出命中实例（命中实例 ImageBase 有效）。
+
+Return Value:
+    STATUS_SUCCESS           命中并输出实例。
+    STATUS_NOT_FOUND         未命中或所有实例均为磁盘视图。
+    STATUS_INVALID_PARAMETER 参数非法。
+--*/
+{
+    PLIST_ENTRY le;
+    BOOLEAN found = FALSE;
+    PWKD_MODULE_CONTEXT ctx;
+    PWKD_MODULE_INSTANCE instance = NULL;
+
+    if (!WkdProcess || !WkdProcess->ModuleContext ||
+        Address == 0 || !Instance) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Instance = NULL;
+
+    ctx = WkdProcess->ModuleContext;
+
+    AcquireSRWLockShared(&ctx->Lock);
+    le = ctx->ModuleList.Flink;
+    while (le != &ctx->ModuleList) {
+        SIZE_T imageSize;
+
+        instance = CONTAINING_RECORD(le, WKD_MODULE_INSTANCE, ListEntry);
+        if (!instance->ImageBase || !instance->Module) {
+            le = le->Flink;
+            continue;
+        }
+        /* 区间上界: PE 对齐映像大小（SizeOfImage）优先,
+         * 缺失时回退驱动上送的首见映射大小（ImageSize）。 */
+        imageSize = instance->Module->SizeOfImage;
+        if (imageSize == 0) imageSize = (SIZE_T)instance->Module->ImageSize;
+        if (imageSize != 0 &&
+            Address >= (ULONG_PTR)instance->ImageBase &&
+            Address <  (ULONG_PTR)instance->ImageBase + imageSize) {
+            found = TRUE;
+            break;
+        }
+        le = le->Flink;
+    }
+    ReleaseSRWLockShared(&ctx->Lock);
+
+    if (found) { *Instance = instance; return STATUS_SUCCESS; }
+    else return STATUS_NOT_FOUND;
+}
+
+_Use_decl_annotations_
+NTSTATUS
 PsGetMainModuleInstance(
     _In_ const PWKD_PROCESS WkdProcess,
     _Out_ PWKD_MODULE_INSTANCE* Instance

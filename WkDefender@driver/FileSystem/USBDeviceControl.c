@@ -1,13 +1,14 @@
 ﻿/**************************************************/
 /*  USBDeviceControl 可移除设备控制（死代码）       */
-/*  迁移自 SS USBDeviceControl（全量功能面对齐）    */
+/*  USBDeviceControl（全量功能面对齐）    */
 /**************************************************/
 
 #include <fltKernel.h>
 #include <ntifs.h>
 #include <ntddstor.h>
 #include <ntstrsafe.h>
-#include "USBDeviceControl.h"
+#include "FileSystem.h"   /* 内部私有头（2026-09-13 重构）：include 公共头 + 内部结构 */
+#include "../Notification/NotificationManager.h"   /* 阻断事件上送：WkdMessage_FileBlocked（2026-10） */
 
 /*++
  * 模块职责（死代码，未接入流水线）：
@@ -32,7 +33,7 @@
  *   2. 阻断上报需接入 wkd 通知链路（SS BeEngineSubmitEvent 在 wkd 无对应，
  *      TODO 标注接入点）。
  *
- * 未迁移项说明（对齐 SS 实际功能面，非遗漏）：
+ * 未迁移项说明（实际功能面，非遗漏）：
  *   1. BadUSB/Rubber Ducky 键盘注入检测（T1200）—— SS 头文件声明，.c 无实现，不迁；
  *   2. UDC_EVENT_POOL_TAG —— SS 定义未使用，不迁；
  *   3. 设备类细分（CDROM/HID/Network/Printer）—— SS 枚举有定义但 UdcpQueryDeviceInfo
@@ -421,6 +422,9 @@ WkdUdcIsWriteBlocked(
     PWKD_UDC_TRACKED_VOLUME volume;
     BOOLEAN blocked = FALSE;
     BOOLEAN submitWriteBlockedEvent = FALSE;
+    NTSTATUS status;
+    PWKD_MESSAGE msg;
+    PWKD_MESSAGE_BODY_FILE_EVENT body;
 
     if (!g_WkdUdcState.Config.Enabled || !g_WkdUdcState.Config.EnableWriteProtection) {
         return FALSE;
@@ -448,9 +452,34 @@ WkdUdcIsWriteBlocked(
     FltReleasePushLock(&g_WkdUdcState.VolumeLock);
 
     if (submitWriteBlockedEvent) {
-        /* TODO(接入): 经 wkd 通知链路上报（SS BeEngineSubmitEvent
-         * BehaviorEvent_USBWriteBlocked/Exfiltration 50 分）——建议消息
-         * WkdMessage_UsbWriteBlocked，可选用 AeReportIndicatorPair 评分。 */
+        /* 阻断事件上送（UDC-1 锁外，消除热路径阻塞与锁序风险）。
+         * BeEngineSubmitEvent（BehaviorEvent_USBWriteBlocked/
+         * Exfiltration 50 分）：WkdMessage_FileBlocked（0x130A 台账首启用，
+         * 2026-10），OperationType 复用 WKD_FLT_OP_WRITE，常规优先级。 */
+        msg = NtfCreateMessage(WkdMessage_FileBlocked, WkdMessage_SourceFile,
+                               WkdMessage_PriorityNormal,
+                               sizeof(WKD_MESSAGE_BODY_FILE_EVENT));
+        if (msg != NULL) {
+            body = (PWKD_MESSAGE_BODY_FILE_EVENT)msg->Body;
+            body->ProcessId = PsGetCurrentProcessId();
+            body->ThreadId = PsGetCurrentThreadId();
+            body->OperationType = WKD_FLT_OP_WRITE;
+            body->FileSize = 0;
+            body->WriteOffset = -1;
+            body->BytesWritten = 0;
+            body->FileId = 0;
+            body->FileEntropy = 0;
+            body->Flags = 0;
+            KeQuerySystemTime(&body->Timestamp);
+            body->FilePath.Buffer = NULL;
+            body->FilePath.Length = 0;
+            body->FilePath.MaximumLength = 0;
+
+            status = NtfSendMessageAsync(msg);
+            if (!NT_SUCCESS(status)) {
+                NmFreeMessage(msg);
+            }
+        }
     }
 
     WkdUdcLeaveOperation();
@@ -486,6 +515,10 @@ WkdUdcCheckAutorun(
     USHORT nameStart;
     PWKD_UDC_TRACKED_VOLUME volume;
     BOOLEAN result = FALSE;
+    NTSTATUS status;
+    PWKD_MESSAGE msg;
+    PWKD_MESSAGE_BODY_FILE_EVENT body;
+    USHORT copyLen;
 
     if (!g_WkdUdcState.Config.Enabled || !g_WkdUdcState.Config.EnableAutorunBlocking) {
         return FALSE;
@@ -542,9 +575,39 @@ WkdUdcCheckAutorun(
 
     /* WKD_UDC-AR1：上报在释放卷锁之后，避免热路径阻塞与锁序冲突 */
     if (result) {
-        /* TODO(接入): 经 wkd 通知链路上报（SS BeEngineSubmitEvent
-         * BehaviorEvent_USBAutorunBlocked/Exfiltration 80 分）——建议消息
-         * WkdMessage_UsbAutorunBlocked，可选用 AeReportIndicatorPair 评分。 */
+        /* 阻断事件上送（UDC-AR1 锁外）。
+         * BeEngineSubmitEvent（BehaviorEvent_USBAutorunBlocked/
+         * Exfiltration 80 分）：WkdMessage_FileBlocked，高优先级（80 分语义），
+         * 路径随消息携带。 */
+        copyLen = (FileName->Length > MAX_PATH * sizeof(WCHAR)) ?
+                  (MAX_PATH * sizeof(WCHAR)) : FileName->Length;
+        msg = NtfCreateMessage(WkdMessage_FileBlocked, WkdMessage_SourceFile,
+                               WkdMessage_PriorityHigh,
+                               sizeof(WKD_MESSAGE_BODY_FILE_EVENT) + copyLen);
+        if (msg != NULL) {
+            body = (PWKD_MESSAGE_BODY_FILE_EVENT)msg->Body;
+            body->ProcessId = PsGetCurrentProcessId();
+            body->ThreadId = PsGetCurrentThreadId();
+            body->OperationType = WKD_FLT_OP_WRITE;
+            body->FileSize = 0;
+            body->WriteOffset = -1;
+            body->BytesWritten = 0;
+            body->FileId = 0;
+            body->FileEntropy = 0;
+            body->Flags = 0;
+            KeQuerySystemTime(&body->Timestamp);
+            body->FilePath.Buffer = (PWSTR)(body + 1);
+            body->FilePath.Length = copyLen;
+            body->FilePath.MaximumLength = copyLen;
+            if (copyLen > 0) {
+                RtlCopyMemory(body->FilePath.Buffer, FileName->Buffer, copyLen);
+            }
+
+            status = NtfSendMessageAsync(msg);
+            if (!NT_SUCCESS(status)) {
+                NmFreeMessage(msg);
+            }
+        }
     }
 
     WkdUdcLeaveOperation();
@@ -1375,7 +1438,7 @@ WkdUdcParseHardwareIdForVidPid(
 /*
  * WkdUdcParseHex4
  *   解析最多 4 位十六进制（大小写不敏感），AvailableChars 约束防越界，
- *   非 hex 字符提前 break（对齐 SS UdcpParseHex4）。
+ *   非 hex 字符提前 break（UdcpParseHex4）。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
 static USHORT

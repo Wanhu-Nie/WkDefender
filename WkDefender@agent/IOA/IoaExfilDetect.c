@@ -25,7 +25,7 @@ IoaExfil_IsArchiveExtension(
     )
 /*++
 Routine Description:
-    判断扩展名是否为归档压缩格式 (对齐 SS L1341-1345:
+    判断扩展名是否为归档压缩格式 (L1341-1345:
     .zip/.rar/.7z/.tar/.gz)。
 
 Arguments:
@@ -69,7 +69,7 @@ IoaExfil_UpdateScore(
 Routine Description:
     数据外渗行为评分。依据事件类型分支累计 State 计数器
     (含 TotalBytesSent), 命中时置位 EXFILTRATION 检测标志。
-    累计传输阈值仅触发一次 (对齐 SS exfilThresholdTriggered)。
+    累计传输阈值仅触发一次 (exfilThresholdTriggered)。
 
 Arguments:
     State — 进程级行为状态 (读写)。

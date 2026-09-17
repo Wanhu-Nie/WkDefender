@@ -14,7 +14,7 @@
 #include <windows.h>
 #include "../DefendTypes.h"   /* WKD_HEAP_SPRAY_TYPE (HeapSpray 迁移 2026-08) */
 
-/* x64 用户态地址上限 (对齐 SS MM_HIGHEST_USER_ADDRESS, 堆喷内容分析用) */
+/* x64 用户态地址上限 (MM_HIGHEST_USER_ADDRESS, 堆喷内容分析用) */
 #define WKD_HS_MAX_USER_ADDRESS     ((ULONG_PTR)0x00007FFFFFFEFFFFULL)
 
 /**************************************************/
@@ -102,7 +102,7 @@ IocZeroDay_IsHeapSprayPattern(
 Routine Description:
     exploit 原语完整分析 (死代码主入口，未接入流水线)。
     NOP sled / GetPC / 解码 stub / 堆喷 / 熵 / 网络签名 / ROP gadget 模式，
-    综合评分 >=50 判定 (对齐 SS DetectShellcodeInternal)。
+    综合评分 >=50 判定 (DetectShellcodeInternal)。
 
 Arguments:
     Buf    - 数据缓冲。
@@ -122,7 +122,7 @@ IocZeroDay_AnalyzeBuffer(
 /*++
 Routine Description:
     堆喷内容分析 — 重复度评分 (0-100)。
-    对齐 SS HspCalculateRepetitionScore (HeapSpray.c L1931-2009):
+    HspCalculateRepetitionScore (HeapSpray.c L1931-2009):
     主字节频率×40 + 最长游程×30 + 低多样性×30, cap 100。
 
 Arguments:
@@ -141,7 +141,7 @@ IocZeroDay_CalculateRepetitionScore(
 /*++
 Routine Description:
     NOP 等价字节连续滑道检测 (0x90/0x0C/0x0D/0x0A, ≥16 连续)。
-    对齐 SS HspContainsNopSled (HeapSpray.c L2466-2503)。
+    HspContainsNopSled (HeapSpray.c L2466-2503)。
 
 Arguments:
     Buf - 内容缓冲。
@@ -160,7 +160,7 @@ IocZeroDay_ContainsNopSled(
 Routine Description:
     已知堆喷模式检测 — 重复 DWORD 值表 (0x0C0C0C0C 等 11 值)
     + 任意单字节 ≥90% 重复。
-    对齐 SS HspIsKnownSprayPattern (HeapSpray.c L2403-2460)。
+    HspIsKnownSprayPattern (HeapSpray.c L2403-2460)。
 
 Arguments:
     Buf - 内容缓冲。
@@ -178,7 +178,7 @@ IocZeroDay_IsKnownSprayPattern(
 /*++
 Routine Description:
     堆喷类型分类 — NopSled / JIT / StringSpray / BSTR / ObjectSpray。
-    对齐 SS HspDetectSprayType (HeapSpray.c L2015-2154)。
+    HspDetectSprayType (HeapSpray.c L2015-2154)。
     HeapFeng/Array/TypedArray/Wasm 类型 SS 分类器本身不产出,
     枚举值保留兼容, 本函数不返回。
 
@@ -200,7 +200,7 @@ Routine Description:
     壳码签名检测 — GetPC / API-hash / 直接 syscall 复用
     IocDetectShellcode; 补 SS 独有 6 模式 (JMP ESP / CALL ESP /
     PUSH ESP RET / FS:[0x30] / GS:[0x60] / x64 syscall stub / ROR-13)。
-    对齐 SS HspContainsShellcodeSignatures (HeapSpray.c L2509-2642)。
+    HspContainsShellcodeSignatures (HeapSpray.c L2509-2642)。
 
 Arguments:
     Buf - 内容缓冲。

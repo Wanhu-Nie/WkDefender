@@ -39,7 +39,7 @@
 #define IOC_STR_ENCODING_ROT     0x04
 
 /**************************************************/
-/*            字符串分类 (对齐 SS StringCategory)    */
+/*            字符串分类 (StringCategory)    */
 /**************************************************/
 typedef enum _IOC_STR_CATEGORY {
     IocStrCat_Unknown = 0,

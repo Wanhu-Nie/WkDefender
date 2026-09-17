@@ -23,7 +23,7 @@
  * ─────────────────────────────────────────────────────────
  * 统计基线异常检测 (ShadowStrike AnomalyDetector 迁移, 2026-08-05)
  *
- * Z-Score + Modified Z-Score(MAD) 统计基线, 对齐 SS AnomalyDetector.c:
+ * Z-Score + Modified Z-Score(MAD) 统计基线, AnomalyDetector.c:
  *   - 每进程按 RA_METRIC_TYPE 维度维护滑动窗口基线
  *     (均值/标准差/Min/Max, 256 样本环形缓冲, 每10样本重算)
  *   - 经典 Z-Score 与 MAD 修正 Z 取保守值; z>4σ 回退纯 Z-Score
@@ -96,7 +96,7 @@ typedef struct _RA_RATE_THRESHOLD {
 
 /**************************************************/
 /*               统计基线指标类型                    */
-/*   对齐 SS AD_METRIC_TYPE (11 → wkd 事件分类)     */
+/*   AD_METRIC_TYPE (11 → wkd 事件分类)     */
 /**************************************************/
 
 typedef enum _RA_METRIC_TYPE {
@@ -121,7 +121,7 @@ typedef enum _RA_METRIC_TYPE {
 
 /**************************************************/
 /*               统计基线 (滑动窗口)                 */
-/*   对齐 SS AD_BASELINE_INTERNAL                  */
+/*   AD_BASELINE_INTERNAL                  */
 /**************************************************/
 
 typedef struct _RA_BASELINE {
@@ -137,7 +137,7 @@ typedef struct _RA_BASELINE {
     LARGE_INTEGER   LastUpdated;
 } RA_BASELINE, *PRA_BASELINE;
 
-/* 基线统计快照 (对齐 SS AD_BASELINE_INFO, 供 RaGetBaseline 查询) */
+/* 基线统计快照 (AD_BASELINE_INFO, 供 RaGetBaseline 查询) */
 typedef struct _RA_BASELINE_INFO {
     RA_METRIC_TYPE  Type;
     DOUBLE          Mean;
@@ -151,7 +151,7 @@ typedef struct _RA_BASELINE_INFO {
 
 /**************************************************/
 /*               进程基线记录                       */
-/*   对齐 SS AD_PROCESS_BASELINE (GUID 替代 PID)   */
+/*   AD_PROCESS_BASELINE (GUID 替代 PID)   */
 /**************************************************/
 
 typedef struct _RA_PROCESS_BASELINE {
@@ -174,7 +174,7 @@ typedef struct _RA_PROCESS_BASELINE {
 
 /**************************************************/
 /*               异常记录                          */
-/*   对齐 SS AD_ANOMALY_INFO                       */
+/*   AD_ANOMALY_INFO                       */
 /**************************************************/
 
 typedef struct _RA_ANOMALY_INFO {
@@ -222,12 +222,12 @@ typedef struct _IOA_RATE_ANALYZER {
     LIST_ENTRY          AnomalyList;            /* 异常环 (LRU) */
     volatile LONG       AnomalyCount;           /* 当前异常数 (上限 RA_MAX_ANOMALIES) */
 
-    /* 统计 (对齐 SS AD_STATISTICS) */
+    /* 统计 (AD_STATISTICS) */
     volatile LONG64     SamplesProcessed;
     volatile LONG64     AnomaliesDetected;
     LARGE_INTEGER       StartTime;
 
-    /* 维护线程 (TTL 淘汰, 对齐 SS AdpCleanupWorkerThread) */
+    /* 维护线程 (TTL 淘汰, AdpCleanupWorkerThread) */
     HANDLE              MaintenanceThread;
     HANDLE              MaintenanceWakeEvent;   /* 自动重置事件, 唤醒维护线程 */
     volatile BOOLEAN    MaintenanceRunning;
@@ -238,7 +238,7 @@ typedef struct _IOA_RATE_ANALYZER {
 /*               函数声明                           */
 /**************************************************/
 
-NTSTATUS RaInitialize(_Out_ PIOA_RATE_ANALYZER* Out);
+NTSTATUS IoaRaInitialize(_Out_ PIOA_RATE_ANALYZER* Out);
 VOID     RaCleanup(_In_ PIOA_RATE_ANALYZER Analyzer);
 
 /* 每收到一个事件时调用，累加对应操作计数 */
@@ -270,11 +270,11 @@ BOOLEAN  RaIsRateAlert(_In_ PIOA_RATE_ANALYZER Analyzer, _In_ GUID ProcessNodeId
  * ─────────────────────────────────────────────────────────
  */
 
-/* 事件类型 → 统计基线指标 (对齐 SS BepProcessSingleEvent 步骤⑦ metric 映射) */
+/* 事件类型 → 统计基线指标 (BepProcessSingleEvent 步骤⑦ metric 映射) */
 RA_METRIC_TYPE RaMapEventTypeToMetric(_In_ WKD_EVENT_TYPE EventType);
 
 /*
- * RaCheckForAnomaly — 检测+记录 (对齐 SS AdCheckForAnomaly)。
+ * RaCheckForAnomaly — 检测+记录 (AdCheckForAnomaly)。
  * 观测值 = 当前 10s 窗口内该指标的事件计数 (RA_PROC_RATE_RECORD::Counts)。
  * 判定异常(≥2σ)的样本不写入基线 (防驯化)。
  * IRQL: PASSIVE (用户态)
@@ -290,13 +290,13 @@ NTSTATUS RaCheckForAnomaly(
 /* 查询进程当前统计异常分 [0,100] (供阶段6 max 提升 / PolicyAnalyze) */
 ULONG    RaGetAnomalyScore(_In_ PIOA_RATE_ANALYZER Analyzer, _In_ GUID ProcessNodeId);
 
-/* 周期维护: 进程基线 TTL 淘汰 + 异常环清理 (对齐 SS AdpCleanupWorkerThread) */
+/* 周期维护: 进程基线 TTL 淘汰 + 异常环清理 (AdpCleanupWorkerThread) */
 VOID     RaMaintenance(_In_ PIOA_RATE_ANALYZER Analyzer);
 
-/* 运行时调整 sigma 阈值 (对齐 SS AdSetThreshold, [1.5, 6.0]) */
+/* 运行时调整 sigma 阈值 (AdSetThreshold, [1.5, 6.0]) */
 VOID     RaSetSigmaThreshold(_In_ PIOA_RATE_ANALYZER Analyzer, _In_ DOUBLE Sigma);
 
-/* 统计快照 (对齐 SS AdGetStatistics, 供调试 printf) */
+/* 统计快照 (AdGetStatistics, 供调试 printf) */
 VOID     RaGetAnomalyStats(
     _In_  PIOA_RATE_ANALYZER Analyzer,
     _Out_opt_ PLONG64        SamplesProcessed,
@@ -305,10 +305,10 @@ VOID     RaGetAnomalyStats(
     _Out_opt_ PLONG          AnomalyCount
     );
 
-/* ── 对齐 SS 公开 API 面补充 (无消费方, 死代码; 供未来调试/画像/UI 查询) ── */
+/* ── 公开 API 面补充 (无消费方, 死代码; 供未来调试/画像/UI 查询) ── */
 
 /*
- * RaRecordSample — 仅记录样本 (对齐 SS AdRecordSample)。
+ * RaRecordSample — 仅记录样本 (AdRecordSample)。
  * ※死代码: 检测+记录已由 RaCheckForAnomaly 合并 (全局+进程基线双写),
  *   本函数供未来"纯学习模式" (新进程静默学习不告警) 接入。
  */
@@ -320,7 +320,7 @@ NTSTATUS RaRecordSample(
     );
 
 /*
- * RaGetRecentAnomalies — 时间窗口查询异常环 (对齐 SS AdGetRecentAnomalies)。
+ * RaGetRecentAnomalies — 时间窗口查询异常环 (AdGetRecentAnomalies)。
  * ※死代码: 无消费方 (VerdictEngine 活跃威胁表已覆盖告警查询),
  *   供未来 UI/调试按时间回溯统计异常历史。
  */
@@ -333,7 +333,7 @@ NTSTATUS RaGetRecentAnomalies(
     );
 
 /*
- * RaGetBaseline — 查询基线统计快照 (对齐 SS AdGetBaseline)。
+ * RaGetBaseline — 查询基线统计快照 (AdGetBaseline)。
  * ※死代码: 无消费方 (SS AdGetBaseline 仅调试 UI 消费), 供未来进程行为画像。
  */
 NTSTATUS RaGetBaseline(

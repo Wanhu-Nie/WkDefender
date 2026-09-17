@@ -130,21 +130,21 @@ typedef VOID (*WKD_SCAN_THREAT_CB)(
 /**************************************************/
 
 typedef struct _WKD_REPUTATION_STATS {
-    volatile LONG64 ReputationChecks;      /* 信誉评分执行次数 (对齐 SS totalQueries) */
-    volatile LONG64 LocalHits;             /* 本地库命中 (对齐 SS localHits, 待接线) */
-    volatile LONG64 CloudQueries;          /* 云查询 (对齐 SS cloudQueries, 死代码无云后端) */
-    volatile LONG64 MaliciousDetected;     /* 恶意判定数 (对齐 SS maliciousDetected) */
-    volatile LONG64 SuspiciousDetected;    /* 可疑判定数 (对齐 SS suspiciousDetected) */
-    volatile LONG64 UnknownFiles;          /* Unknown 等级计数 (对齐 SS unknownFiles) */
-    volatile LONG64 TrustedFiles;          /* 可信等级计数 (对齐 SS trustedFiles) */
-    volatile LONG64 BlacklistHits;         /* 哈希黑名单命中 (对齐 SS localHits 黑名单侧) */
+    volatile LONG64 ReputationChecks;      /* 信誉评分执行次数 (totalQueries) */
+    volatile LONG64 LocalHits;             /* 本地库命中 (localHits, 待接线) */
+    volatile LONG64 CloudQueries;          /* 云查询 (cloudQueries, 死代码无云后端) */
+    volatile LONG64 MaliciousDetected;     /* 恶意判定数 (maliciousDetected) */
+    volatile LONG64 SuspiciousDetected;    /* 可疑判定数 (suspiciousDetected) */
+    volatile LONG64 UnknownFiles;          /* Unknown 等级计数 (unknownFiles) */
+    volatile LONG64 TrustedFiles;          /* 可信等级计数 (trustedFiles) */
+    volatile LONG64 BlacklistHits;         /* 哈希黑名单命中 (localHits 黑名单侧) */
     volatile LONG64 CertReputationHits;    /* 证书信誉判定次数 */
-    volatile LONG64 CacheEvictions;        /* 缓存淘汰 (对齐 SS EvictOldestCacheEntry) */
+    volatile LONG64 CacheEvictions;        /* 缓存淘汰 (EvictOldestCacheEntry) */
     volatile LONG64 PersistenceLoads;      /* file_reputation 读取次数 */
     volatile LONG64 PersistenceSaves;      /* file_reputation 写入次数 */
-    volatile LONG64 AverageLatencyUs;      /* 平均耗时 EMA (对齐 SS averageLatencyUs) */
-    volatile LONG64 MaxLatencyUs;          /* 最大耗时 (对齐 SS maxLatencyUs) */
-    volatile LONG64 CloudFailures;         /* 云失败 (对齐 SS cloudFailures, 死代码) */
+    volatile LONG64 AverageLatencyUs;      /* 平均耗时 EMA (averageLatencyUs) */
+    volatile LONG64 MaxLatencyUs;          /* 最大耗时 (maxLatencyUs) */
+    volatile LONG64 CloudFailures;         /* 云失败 (cloudFailures, 死代码) */
 } WKD_REPUTATION_STATS, *PWKD_REPUTATION_STATS;
 
 /**************************************************/
@@ -352,7 +352,7 @@ ScanManager_SetThreatCallback(
 
 /*++
 Routine Description:
-    文件数组批处理扫描 (对齐 SS ScanBatch)。
+    文件数组批处理扫描 (ScanBatch)。
     顺序扫描每个文件，命中威胁收集到输出数组。
 
 Arguments:
@@ -404,7 +404,7 @@ ScanManager_ResumeScan(
 
 /*++
 Routine Description:
-    内存缓冲快速扫描 (对齐 SS ScanMemory)。
+    内存缓冲快速扫描 (ScanMemory)。
     缓冲 SHA256 → 缓存 → 恶意库预检 → 判定。
 
 Arguments:
@@ -424,7 +424,7 @@ ScanManager_ScanMemoryBuffer(
 
 /*++
 Routine Description:
-    按 PID 扫描进程 (对齐 SS ScanProcess)。
+    按 PID 扫描进程 (ScanProcess)。
     解析进程可执行文件路径 → ScanFileDirect。
 
 Arguments:
@@ -442,7 +442,7 @@ ScanManager_ScanProcess(
 
 /*++
 Routine Description:
-    枚举全部进程扫描 (对齐 SS ScanAllProcesses)。
+    枚举全部进程扫描 (ScanAllProcesses)。
     Toolhelp 快照遍历，忽略系统进程 PID{0,4}。
 
 Arguments:
@@ -461,7 +461,7 @@ ScanManager_ScanAllProcesses(
 
 /*++
 Routine Description:
-    缓存预热 (对齐 SS WarmCache)：预扫描常见路径填充结果缓存。
+    缓存预热 (WarmCache)：预扫描常见路径填充结果缓存。
 
 Arguments:
     Paths - 路径数组。
@@ -475,7 +475,7 @@ ScanManager_WarmCache(
 
 /*++
 Routine Description:
-    引擎自测 (对齐 SS SelfTest)：缓存存取/排除规则/单文件扫描。
+    引擎自测 (SelfTest)：缓存存取/排除规则/单文件扫描。
 
 Return Value:
     TRUE = 全部通过。
@@ -487,7 +487,7 @@ ScanManager_SelfTest(
 
 /*++
 Routine Description:
-    显式清空结果缓存 (对齐 SS FileHasher::ClearCache)。
+    显式清空结果缓存 (FileHasher::ClearCache)。
 --*/
 VOID
 ScanManager_ClearCache(
@@ -496,7 +496,7 @@ ScanManager_ClearCache(
 
 /*++
 Routine Description:
-    当前缓存条目数 (对齐 SS FileHasher::GetCacheSize)。
+    当前缓存条目数 (FileHasher::GetCacheSize)。
 
 Return Value:
     活跃缓存条目数。

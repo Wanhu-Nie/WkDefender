@@ -533,7 +533,7 @@ T3QueryAttackChainIncludedProcess(
 /**************************************************/
 
 /**
- * 饱和加法 (对齐 SS ActpSaturatingAdd L448-457).
+ * 饱和加法 (ActpSaturatingAdd L448-457).
  * 防止 ULONG 溢出, 用于 ComputedScore 累加.
  */
 static
@@ -570,7 +570,7 @@ T3pWStrEq(
 }
 
 /**
- * 将基技术串与 g_IoaTechniqueTable 匹配 (对齐 SS ActpGetPhaseForTechnique L1534-1554).
+ * 将基技术串与 g_IoaTechniqueTable 匹配 (ActpGetPhaseForTechnique L1534-1554).
  * 命中返回表项指针 (StringId 为静态串), 未命中返回 NULL.
  */
 static
@@ -591,7 +591,7 @@ T3pLookupTacticEntry(
 /**
  * 摄入已确认技术: 技术集合去重 + 置战术位 + 累计基础分 + 增量组合检测.
  *
- * 对齐 SS ActSubmitEvent (L947-1230) 内 AddEvent → CheckDangerousCombos →
+ * ActSubmitEvent (L947-1230) 内 AddEvent → CheckDangerousCombos →
  * UpdateScore 顺序; 组合检测对齐 ActpCheckDangerousCombosLocked (L2096-2152),
  * AppliedComboMask 位图防重复计分.
  *
@@ -632,9 +632,9 @@ T3Chain_IngestTechnique(
     entry = T3pLookupTacticEntry(base);
     if (entry == NULL) {
         /* 未映射技术 → fallback 到 Discovery 阶段 + 默认分 10
-         * (对齐 SS ActSubmitEvent L1019-1025: 未知技术 phase=Discovery, baseScore=10).
+         * (ActSubmitEvent L1019-1025: 未知技术 phase=Discovery, baseScore=10).
          * 技术串不入 TechniqueSet (无静态基技术串可安全引用), 不参与组合;
-         * 战术位置 Discovery 对齐 SS phaseCount 语义 (同阶段仅计数一次). */
+         * 战术位置 Discovery phaseCount 语义 (同阶段仅计数一次). */
         Chain->ComputedScore = T3pSaturatingAdd(Chain->ComputedScore, 10);
         if ((Chain->TacticMask & (1UL << IoATactic_Discovery)) == 0) {
             Chain->TacticMask |= (1UL << IoATactic_Discovery);
@@ -700,7 +700,7 @@ T3Chain_IngestTechnique(
 /**
  * 战术覆盖评估: 链覆盖的战术阶段数 → Completeness + MissingGaps.
  *
- * 对齐 SS ActpCountPhasesLocked (L2056-2086) + 攻击链阶段覆盖思想.
+ * ActpCountPhasesLocked (L2056-2086) + 攻击链阶段覆盖思想.
  * 读链上 TacticMask/TacticCount (由 T3Chain_IngestTechnique 维护),
  * 不遍历 StepRefs (规避 PairContext 被 TTL 淘汰的悬垂).
  *
@@ -723,17 +723,17 @@ T3Chain_EvaluateTacticCoverage(
 }
 
 /**
- * 确认攻击判定 (对齐 SS ActSubmitEvent 确认分支 L1137-1189).
+ * 确认攻击判定 (ActSubmitEvent 确认分支 L1137-1189).
  *
  * 确认公式 (阈值 /5 换算到 wkd 0-100 尺度):
  *   TacticCount >= 3 且 ComputedScore >= 60 → IsConfirmedAttack = TRUE
  * (SS: ThreatScore >= 300 且 phaseCount >= 3; 300/5=60, 与 VerdictEngine
  *  High=70/Detection=50 档次对齐).
  *
- * Engine 非空时对 TotalAttacksConfirmed 计数 (对齐 SS L1145
+ * Engine 非空时对 TotalAttacksConfirmed 计数 (L1145
  * InterlockedIncrement64(&Tracker->Stats.AttacksConfirmed)).
  *
- * 确认后链不被 T3ChainPool_EvictExpired 淘汰 (对齐 SS ActpIsChainExpiredLocked
+ * 确认后链不被 T3ChainPool_EvictExpired 淘汰 (ActpIsChainExpiredLocked
  * L1989: 已确认攻击不过期; 但 wkd 池上限 64, 接入时需加确认链保留上限约束).
  *
  * 死代码: 待接入点 = 阶段4 缺口评估后 / 阶段7 叙事.
@@ -763,7 +763,7 @@ T3Chain_ConfirmAttack(
 }
 
 /**
- * 链置信度启发式 (对齐 SS ActpUpdateChainScoreLocked L1968-1971):
+ * 链置信度启发式 (ActpUpdateChainScoreLocked L1968-1971):
  *   confidence = min(100, 技术数*10 + 战术覆盖数*15)
  * 死代码: 供接入时写入告警/叙事. wkd 链完整度由
  * T3Chain_EvaluateTacticCoverage (战术覆盖比例) 近似覆盖, 二者语义不同

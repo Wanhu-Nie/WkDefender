@@ -72,7 +72,7 @@ IocScan_CertCacheLookup(
 /*++
 Routine Description:
     证书验证缓存查找: 按 文件路径 DJB2 哈希 + LastWriteTime (mtime TOCTOU 防护)
-    命中 → 重建 Result 证书+信誉字段。对齐 SS 缓存 mtime 校验 L1785-1790。
+    命中 → 重建 Result 证书+信誉字段。缓存 mtime 校验 L1785-1790。
 
 Arguments:
     FilePath - 文件完整路径。

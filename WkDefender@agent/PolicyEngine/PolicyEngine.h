@@ -41,7 +41,7 @@ typedef struct _POLICY_ENGINE {
     ULONG              RuntimeRuleCount;
     WKD_DETECTION_RULE RuntimeRules[POLICY_RUNTIME_RULES_MAX];
 
-    /* ── 引擎级统计 (RuleEngine 迁移, 对齐 SS RE_ENGINE_STATS
+    /* ── 引擎级统计 (RuleEngine 迁移, RE_ENGINE_STATS
      *   Evaluations/Matches/Blocks, RuleEngine.h L211-218) ── */
     volatile LONG64    Evaluations;
     volatile LONG64    Matches;
@@ -63,7 +63,7 @@ VOID     PolicyEngine_SetRuleEnabled(_In_ PCWSTR RuleId, _In_ BOOLEAN Enabled);
 ULONG    PolicyEngine_GetRuleCount(VOID);
 ULONG    PolicyEngine_GetRules(_Out_ PWKD_DETECTION_RULE Out, _In_ ULONG MaxCount);
 
-/* 评估上下文 (RuleEngine 迁移, 对齐 SS RE_EVALUATION_CONTEXT,
+/* 评估上下文 (RuleEngine 迁移, RE_EVALUATION_CONTEXT,
  * RuleEngine.h L171-187; 用户态, 字段缺省=条件不命中)。
  * 由 PolicyEngine.c 的 Policy_BuildEvalContext 从 Event+Node 填充。 */
 typedef struct _WKD_EVAL_CONTEXT {
@@ -93,7 +93,7 @@ typedef const WKD_EVAL_CONTEXT *PCWKD_EVAL_CONTEXT;
  * 统一出口, monitor-only 门控)。 */
 NTSTATUS PolicyEngine_EvaluateRuntime(_In_ PWKD_EVENT_HEADER Event, _In_opt_ PWKD_PROCESS Node, _Inout_opt_ PULONG Score);
 
-/* 引擎级统计 (RuleEngine 迁移, 对齐 SS ReGetStatistics,
+/* 引擎级统计 (RuleEngine 迁移, ReGetStatistics,
  * RuleEngine.c L1388-1420) */
 VOID PolicyEngine_GetStats(_Out_opt_ PULONG64 Evaluations, _Out_opt_ PULONG64 Matches, _Out_opt_ PULONG64 Blocks);
 
@@ -129,7 +129,7 @@ ULONG    PolicyEngine_GetSequenceRules(_Out_ PWKD_SEQUENCE_RULE Out, _In_ ULONG 
 VOID     PolicyEngine_SetSequenceRulesEnabled(_In_ BOOLEAN Enabled);
 
 /* ── 序列规则评估 (IoaObserve 阶段4.6 调用; 默认开关 FALSE 短路) ──
- * 双阶段对齐 SS PmSubmitEvent: 阶段1 推进已有状态, 阶段2 启动新状态。
+ * 双阶段PmSubmitEvent: 阶段1 推进已有状态, 阶段2 启动新状态。
  * 命中产分写入 MaxScoreOut (供阶段6c2 合并进 finalScore), 并构造
  * IOA_ALERT → IoaPersistQueueEnqueue。 */
 NTSTATUS PolicyEngine_EvaluateSequenceRules(
@@ -153,7 +153,7 @@ VOID     PolicyEngine_ReleaseSequenceState(_In_ PWKD_SEQ_MATCH_STATE State);
 /* ── 进程对淘汰时回收其全部序列状态 (IoaProcessPair 调用) ── */
 VOID     PolicyEngine_RemovePairSequenceStates(_In_ PAE_PROCESS_PAIR PairCtx);
 
-/* ── 超时状态清理 (CgFsmCleanupThread 周期调用, 对齐 SS PmpCleanupStaleStates) ── */
+/* ── 超时状态清理 (CgFsmCleanupThread 周期调用, PmpCleanupStaleStates) ── */
 VOID     PolicyEngine_CleanupSequenceStates(VOID);
 
 /* ── 序列规则持久化 (※死代码: 对齐 LoadRulesFromFile stub) ── */

@@ -16,7 +16,7 @@ UtHeapFree(
 /*        hex / base64 工具 (SS HashUtils/Base64)   */
 /**************************************************/
 
-/* 二进制 → 十六进制串 (小写/大写)。Out 容量需 ≥ Len*2+1 (对齐 SS HashUtils::ToHexLower/Upper) */
+/* 二进制 → 十六进制串 (小写/大写)。Out 容量需 ≥ Len*2+1 (HashUtils::ToHexLower/Upper) */
 BOOLEAN
 UtHexEncode(
     _In_  const BYTE* Data,
@@ -26,7 +26,7 @@ UtHexEncode(
     _In_  BOOLEAN     Upper
     );
 
-/* 十六进制串 → 二进制。要求偶数长度, ≤20MB (对齐 SS MAX_HEX_INPUT_SIZE), 大小写折叠。
+/* 十六进制串 → 二进制。要求偶数长度, ≤20MB (MAX_HEX_INPUT_SIZE), 大小写折叠。
    Out 容量需 ≥ Len/2。 */
 BOOLEAN
 UtHexDecode(
@@ -36,7 +36,7 @@ UtHexDecode(
     _Out_opt_ PULONG Written
     );
 
-/* 二进制 → 标准 Base64 串 (RFC 4648, 对齐 SS Base64Utils)。Out 容量需 ≥ (Len+2)/3*4+1 */
+/* 二进制 → 标准 Base64 串 (RFC 4648, Base64Utils)。Out 容量需 ≥ (Len+2)/3*4+1 */
 BOOLEAN
 UtBase64Encode(
     _In_  const BYTE* Data,

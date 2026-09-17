@@ -7,7 +7,7 @@
 /*  ⚠ 死代码：本阶段功能面覆盖，未接入 ScanManager  */
 /*  流水线 (接线点 ScanManager.c 留 TODO)。         */
 /*                                                  */
-/*  功能面覆盖 (对齐 SS ArchiveExtractor.cpp):      */
+/*  功能面覆盖 (ArchiveExtractor.cpp):      */
 /*   - 格式魔数检测 13 种 + 复合 tar.* + 扩展名      */
 /*   - ZIP 中央目录 (Zip64/重叠/隐藏/CRC/嵌套)       */
 /*   - ZIP 条目提取 (STORED 直拷 + DEFLATE inflate)  */
@@ -28,7 +28,7 @@
 
 /**************************************************/
 /*               归档格式枚举                       */
-/*  对齐 SS ArchiveFormat L181-221 (仅魔数表+       */
+/*  ArchiveFormat L181-221 (仅魔数表+       */
 /*  扩展名兜底覆盖的子集)                           */
 /**************************************************/
 
@@ -68,7 +68,7 @@ typedef enum _WKD_ARCHIVE_FORMAT {
 
 /**************************************************/
 /*               安全标志                           */
-/*  语义对齐 SS SecurityFlag L276-287, 数值保留     */
+/*  语义SecurityFlag L276-287, 数值保留     */
 /*  wkd 既有位以兼容 (DeepNesting/Overlapping 数值   */
 /*  与 SS 不同, 语义一致)                           */
 /**************************************************/
@@ -81,7 +81,7 @@ typedef enum _WKD_ARCHIVE_SEC_FLAG {
     WkdArcFlag_EncryptedContent     = 0x00000008,
     WkdArcFlag_DeepNesting          = 0x00000010,
     WkdArcFlag_OverlappingEntries   = 0x00000020,
-    /* SS 扩展 (对齐 SS L276-287) */
+    /* SS 扩展 (L276-287) */
     WkdArcFlag_SymlinkAttack        = 0x00000040,
     WkdArcFlag_HiddenEntry          = 0x00000080,
     WkdArcFlag_SuspiciousEntry      = 0x00000100,
@@ -100,7 +100,7 @@ typedef enum _WKD_ARCHIVE_SEC_FLAG {
 #define WKD_ARC_ENTRY_PE           0x00000040
 #define WKD_ARC_ENTRY_SCRIPT       0x00000080
 
-/* 压缩方法 (对齐 SS compressionMethod 字符串语义) */
+/* 压缩方法 (compressionMethod 字符串语义) */
 #define WKD_ARC_COMP_STORED        0
 #define WKD_ARC_COMP_DEFLATE       8
 
@@ -155,7 +155,7 @@ typedef struct _WKD_ARCHIVE_SCAN_RESULT {
 /*++
 Routine Description:
     判断文件是否为支持的归档格式 (魔数优先 + 扩展名兜底)。
-    对齐 SS DetectFormat (L866-972)。
+    DetectFormat (L866-972)。
 
 Arguments:
     FilePath  - 文件完整路径。
@@ -175,7 +175,7 @@ Routine Description:
     归档扫描主入口 (活代码, 接线点未接入 ScanManager)。
     ZIP 中央目录 → ZipBomb 预检 → 路径遍历 → 条目安全标志 →
     内容分析 (可提取条目) → 判定。
-    对齐 SS ScanArchive (L2735-2824) + ScanEngine::ScanArchive。
+    ScanArchive (L2735-2824) + ScanEngine::ScanArchive。
 
 Arguments:
     FilePath - 文件完整路径。
@@ -192,7 +192,30 @@ IocArchive_ScanFile(
 
 /*++
 Routine Description:
-    条目路径遍历检测 (对齐 SS IsPathSafe 子集)：
+    归档扫描结果 → IOC_SCAN_RESULT 合并 (对齐 IocDocument_ResultToIocScan
+    先例, 2026-09-11 接线 ImageAnalyzer 非 PE 分支激活)。
+    Verdict 映射: 2 Infected → FinalVerdict=Malicious (覆盖, 对齐黑名单
+    覆盖语义) / 1 Suspicious → 上提 Suspicious + HeuristicConfidence
+    (≥80) / 0 Clean → 不覆盖既有判定。ThreatName 承接归档具体名称
+    (Archive.ZipBomb / Archive.MaliciousEntry / Archive.PathTraversal /
+    Archive.Suspicious)。
+
+Arguments:
+    Arc - 归档扫描结果 (IocArchive_ScanFile 产出)。
+    Ioc - 输入输出 IOC 结果 (合并方向: 归档信号追加, 恶意覆盖)。
+
+Return Value:
+    NTSTATUS。
+--*/
+NTSTATUS
+IocArchive_ResultToIocScan(
+    _In_ PWKD_ARCHIVE_SCAN_RESULT Arc,
+    _Inout_ PIOC_SCAN_RESULT      Ioc
+    );
+
+/*++
+Routine Description:
+    条目路径遍历检测 (IsPathSafe 子集)：
     ../ 相对逃逸 / 绝对路径 / 盘符。
 
 Arguments:
@@ -215,7 +238,7 @@ IocArchive_IsPathTraversal(
 /*++
 Routine Description:
     从内存 buffer 检测归档格式 (魔数表优先)。
-    对齐 SS DetectFormat(span) (L961-972)。
+    DetectFormat(span) (L961-972)。
 
 Arguments:
     Buffer - 头部字节。
@@ -235,7 +258,7 @@ WkdArc_DetectFormatBuffer(
 /*++
 Routine Description:
     从文件路径检测归档格式 (魔数 + 复合 tar.* + 扩展名兜底)。
-    对齐 SS DetectFormat(path) (L866-959)。
+    DetectFormat(path) (L866-959)。
 
 Arguments:
     FilePath - 文件路径。
@@ -252,7 +275,7 @@ WkdArc_DetectFormatPath(
 
 /*++
 Routine Description:
-    格式化归档格式名 (对齐 SS GetFormatName L3737-3769)。
+    格式化归档格式名 (GetFormatName L3737-3769)。
 
 Arguments:
     Format - 格式。
@@ -275,7 +298,7 @@ WkdArc_GetFormatName(
 
 /*++
 Routine Description:
-    条目路径安全全量检查 (对齐 SS IsPathSafe L528-591)：
+    条目路径安全全量检查 (IsPathSafe L528-591)：
     绝对路径/UNC/../尾部点空格/保留设备名/非法字符/
     Unicode 变体/RTL bidi/嵌入 NUL/C0 控制/ADS ::/超长 260。
 
@@ -292,7 +315,7 @@ WkdArc_IsPathSafeW(
 
 /*++
 Routine Description:
-    路径净化 (对齐 SS SanitizePath L593-662)：剥离绝对前缀、
+    路径净化 (SanitizePath L593-662)：剥离绝对前缀、
     跳过 ../ 和 ./、剥离尾部点空格、保留设备名加下划线前缀、
     非法字符替换为 '_'。
 
@@ -317,7 +340,7 @@ WkdArc_SanitizePathW(
 
 /*++
 Routine Description:
-    CRC32 计算 (查表法, 对齐 SS ComputeCrc32 L500-506)。
+    CRC32 计算 (查表法, ComputeCrc32 L500-506)。
 
 Arguments:
     Buffer - 数据。
@@ -364,7 +387,7 @@ WkdArc_Inflate(
 /*++
 Routine Description:
     提取 ZIP 条目内容 (STORED 直拷 / DEFLATE inflate)。
-    对齐 SS ExtractZipEntry (L2647-2729), 加密拒绝。
+    ExtractZipEntry (L2647-2729), 加密拒绝。
 
 Arguments:
     Buffer   - 整个归档 buffer。
@@ -393,7 +416,7 @@ WkdArc_ExtractEntryContent(
 
 /*++
 Routine Description:
-    条目内容分析 (对齐 SS ScanZipArchive L3575-3618 / ScanTar
+    条目内容分析 (ScanZipArchive L3575-3618 / ScanTar
     L1592-1643)：香农熵 + SHA256 + PE(MZ) + 脚本检测。
     复用 wkd IocpCalculateShannonEntropy / IocScanner_ComputeBufferSha256。
 
@@ -418,7 +441,7 @@ WkdArc_AnalyzeEntryContent(
 
 /*++
 Routine Description:
-    ZipBomb 判定 (5 检查, 对齐 SS IsZipBomb L3105-3210)：
+    ZipBomb 判定 (5 检查, IsZipBomb L3105-3210)：
     总压缩比 / 总量超限 / 单条目比×2 / Quine / 重叠条目。
 
 Arguments:
@@ -441,7 +464,7 @@ WkdArc_IsZipBomb(
 /*++
 Routine Description:
     判断净化路径是否安全落在输出根目录内 (canonical 根校验,
-    对齐 SS ExtractAll L2860-2929)。活代码, 供未来隔离区/
+    ExtractAll L2860-2929)。活代码, 供未来隔离区/
     取证导出复用。
 
 Arguments:
@@ -461,7 +484,7 @@ WkdArc_CheckPathInsideRoot(
 
 /**************************************************/
 /*               归档信息结构                       */
-/*  对齐 SS ArchiveInfo L374-416 (精简, 死代码)    */
+/*  ArchiveInfo L374-416 (精简, 死代码)    */
 /**************************************************/
 
 typedef struct _WKD_ARCHIVE_INFO {
@@ -481,7 +504,7 @@ typedef struct _WKD_ARCHIVE_INFO {
 /*               回调类型                           */
 /**************************************************/
 
-/* 逐条目扫描回调: 返回 TRUE=clean (对齐 SS EntryCallback) */
+/* 逐条目扫描回调: 返回 TRUE=clean (EntryCallback) */
 typedef BOOLEAN (*WKD_ARC_ENTRY_CALLBACK)(
     _In_ PWKD_ARCHIVE_ENTRY Entry,
     _In_ const BYTE*         Content,
@@ -489,7 +512,7 @@ typedef BOOLEAN (*WKD_ARC_ENTRY_CALLBACK)(
     _In_opt_ PVOID           Context
     );
 
-/* 流式分块回调: 返回 TRUE=继续 (对齐 SS StreamCallback) */
+/* 流式分块回调: 返回 TRUE=继续 (StreamCallback) */
 typedef BOOLEAN (*WKD_ARC_STREAM_CALLBACK)(
     _In_ PWKD_ARCHIVE_ENTRY Entry,
     _In_ const BYTE*         Chunk,
@@ -499,7 +522,7 @@ typedef BOOLEAN (*WKD_ARC_STREAM_CALLBACK)(
     );
 
 /**************************************************/
-/*   死代码 API 面 (对齐 SS ArchiveExtractor 公开  */
+/*   死代码 API 面 (ArchiveExtractor 公开  */
 /*   接口, 未接入流水线, 功能面占位)               */
 /**************************************************/
 

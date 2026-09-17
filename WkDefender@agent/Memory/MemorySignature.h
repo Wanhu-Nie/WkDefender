@@ -30,7 +30,7 @@
 #include <windows.h>
 #include <stdint.h>
 
-/* 模式编译上限（DoS 防护；对齐 SS MemoryScanner MS_MAX_PATTERN_SIZE=1024。
+/* 模式编译上限（DoS 防护；MemoryScanner MS_MAX_PATTERN_SIZE=1024。
  * 上移至 .h 供 MemoryScan.c overlap 跨边界计算复用（SS MED-1 fix）） */
 #define MS_MAX_PATTERN_BYTES       2048
 
@@ -51,7 +51,7 @@ typedef struct _MS_PATTERN {
     UINT   PatternId;      /* 全局唯一 ID（自增，1-based） */
     CHAR*  RuleName;       /* "RuleName.$var"，可 NULL */
     INT    ThreatLevel;    /* MS_THREAT_LEVEL */
-    BOOLEAN Disabled;      /* 临时禁用（MsPatternIndexSetEnabled, 对齐 SS MsPatternFlag_Disabled, 搜索跳过） */
+    BOOLEAN Disabled;      /* 临时禁用（MsPatternIndexSetEnabled, MsPatternFlag_Disabled, 搜索跳过） */
     BOOLEAN Removed;       /* 逻辑删除（MsPatternIndexRemovePattern, 永久, 搜索跳过 + SetEnabled 拒绝恢复） */
 } MS_PATTERN, *PMS_PATTERN;
 
@@ -138,7 +138,7 @@ BOOL MsPatternIndexSearch(
 
 /*++
  * MsPatternIndexSetEnabled / MsPatternIndexRemovePattern
- *   模式运行时管理（对齐 SS MemoryScanner MsEnablePattern L1296-1338 /
+ *   模式运行时管理（MemoryScanner MsEnablePattern L1296-1338 /
  *   MsRemovePattern L1196-1292）。
  *   ※ 死代码: wkd 以 yara_rules 表为唯一源（MsImportFromYaraRules 一次性构建），
  *     运行时规则更新走 DB + 整体重建；单条 API 供未来运行时规则管理接线。

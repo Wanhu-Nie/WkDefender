@@ -289,7 +289,7 @@ IocpParseSections(
             ULONG k;
             for (k = 0; k < overlapCount; k++) {
                 if (Context->Options.AnalyzeContentAnomalies) {
-                    /* 独立重叠异常 (对齐 SS DetectOverlappingSectionsImpl, severity 75) */
+                    /* 独立重叠异常 (DetectOverlappingSectionsImpl, severity 75) */
                     WpeAddAnomalyToInfo(Context, WpeAnom_OverlappingSections,
                         L"Sections overlap in file — strong malware indicator");
                 } else {
@@ -485,7 +485,7 @@ WpeDetectOverlay(
         if (info->OverlaySize > 0) {
             WpeAddAnomalyToInfo(Context, WpeAnom_OverlayPresent, L"File has overlay data");
 
-            /* overlay 内嵌 PE (dropper) + 大 overlay (>1MB) — 对齐 SS AnalyzeOverlayImpl
+            /* overlay 内嵌 PE (dropper) + 大 overlay (>1MB) — AnalyzeOverlayImpl
              * L3398-3418 / DetectAnomaliesImpl L2341-2350, 门控 AnalyzeContentAnomalies */
             if (Context->Options.AnalyzeContentAnomalies) {
                 USHORT mz;
@@ -658,7 +658,7 @@ WpeDetectAnomalies(
         }
     }
 
-    /* API hashing / shellcode 指示: 无导入 + 高熵 — 对齐 SS DetectAnomaliesImpl L2391-2402
+    /* API hashing / shellcode 指示: 无导入 + 高熵 — DetectAnomaliesImpl L2391-2402
      * (avgEntropy >= 6.8 → APIHashing), 门控 AnalyzeContentAnomalies */
     if (Context->Options.AnalyzeContentAnomalies &&
         !info->DataDirectories[IMAGE_DIRECTORY_ENTRY_IMPORT].Present && !info->IsDll) {
@@ -678,7 +678,7 @@ WpeDetectAnomalies(
         }
     }
 
-    /* TLS 回调异常 (对齐 SS DetectAnomaliesImpl L2352-2363: hasTLSCallbacks → TLSCallbackPresent,
+    /* TLS 回调异常 (DetectAnomaliesImpl L2352-2363: hasTLSCallbacks → TLSCallbackPresent,
      * severity 55 anti-analysis), 门控 AnalyzeContentAnomalies 防改变既有扫描分 */
     if (Context->Options.AnalyzeContentAnomalies &&
         info->DataDirectories[PE_DD_TLS].Present) {
@@ -767,7 +767,7 @@ Return Value:
 
 /*
  * WpeParseDotNetFramework — 读 COR20 MetaData → BSJB 签名 → 目标框架版本串。
- * 对齐 SS ParseDotNetImpl L2044-2067 (corHeader->MetaData, BSJB @0, 版本串 @+16)。
+ * ParseDotNetImpl L2044-2067 (corHeader->MetaData, BSJB @0, 版本串 @+16)。
  */
 static
 VOID
@@ -816,11 +816,11 @@ WpeParseDotNetFramework(
 
 /*
  * WpeDetectResourceContentAnomalies — 遍历资源做内容级异常发射。
- * 对齐 SS ParseResourcesImpl: 内嵌 PE → ResourcesContainPE / 熵>=7.2 → ResourcesHighEntropy /
+ * ParseResourcesImpl: 内嵌 PE → ResourcesContainPE / 熵>=7.2 → ResourcesHighEntropy /
  * 单资源>16MB → ResourceSizeAnomaly (枚举已有, 原零发射)。
  */
 /* WpeDetectResourceContentAnomalies — 遍历资源做内容级异常发射。
- * 对齐 SS ParseResourcesImpl: 内嵌 PE → ResourcesContainPE / 熵>=7.2 → ResourcesHighEntropy /
+ * ParseResourcesImpl: 内嵌 PE → ResourcesContainPE / 熵>=7.2 → ResourcesHighEntropy /
  * 单资源>16MB → ResourceSizeAnomaly (枚举已有, 原零发射)。
  * 非 static (2026-08-19): 供深度分析 IocHeuristicPeAnalysis 接线 —
  * 构建期解析 (IocAnalyzePeFromFilePath, AnalyzeContentAnomalies=FALSE) 不执行本检测，
@@ -952,7 +952,7 @@ IocpParsePe(
         IocpParseDataDirectories32(Context, &opt32);
     }
 
-    /* Step 3.1: 缓解标志派生 (对齐 SS ExtractSecurityMitigationsImpl) */
+    /* Step 3.1: 缓解标志派生 (ExtractSecurityMitigationsImpl) */
     {
         // 强制进行代码完整性检查
         info->HasForceIntegrity = (info->DllCharacteristics & IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY) != 0;
@@ -987,7 +987,7 @@ IocpParsePe(
     //    info->IsDotNet = TRUE;
     //}
 
-    /* Step 7.1: .NET 目标框架 (BSJB 元数据版本串) — 对齐 SS ParseDotNetImpl。
+    /* Step 7.1: .NET 目标框架 (BSJB 元数据版本串) — ParseDotNetImpl。
      * 2026-08-19 启用: 仅 .NET 时读取，供 DotNetAnalyzer 迁移与 Facts.HasDotNet 消费。 */
     //if (info->IsDotNet) {
     //    WpeParseDotNetFramework(Context);
@@ -1006,7 +1006,7 @@ IocpParsePe(
     //    WpeDetectAnomalies(Context);
     //}
 
-    /* Step 11: 资源内容级异常 (门控) — 对齐 SS ParseResourcesImpl, 需 Parsed */
+    /* Step 11: 资源内容级异常 (门控) — ParseResourcesImpl, 需 Parsed */
     //if (Context->Options.AnalyzeContentAnomalies) {
     //    WpeDetectResourceContentAnomalies(Context);
     //}
@@ -1371,7 +1371,7 @@ WpeGetInfo(
     )
 /*++
 Routine Description:
-    取已解析 PE 信息 (对齐 SS GetInfo)。无调用者 (直接经 Context->Info 访问)。
+    取已解析 PE 信息 (GetInfo)。无调用者 (直接经 Context->Info 访问)。
 
 Return Value:
     PE 信息指针; 未解析返回 NULL。
@@ -1386,7 +1386,7 @@ WpeGetReader(
     )
 /*++
 Routine Description:
-    取底层读取器 (对齐 SS GetReader)。无调用者 (慎用, 页缓存为可变状态)。
+    取底层读取器 (GetReader)。无调用者 (慎用, 页缓存为可变状态)。
 
 Return Value:
     读取器指针; 未解析返回 NULL。
@@ -1552,7 +1552,7 @@ WpeValidatePe(
     )
 /*++
 Routine Description:
-    深度验证: 收集节校验问题与重叠 (对齐 SS ValidatePE)。
+    深度验证: 收集节校验问题与重叠 (ValidatePE)。
     ※死代码: SS ValidatePE 为对外公共 API (PEParser.cpp:2408), 收集
       ValidateSectionHeader + CheckSectionOverlaps 的问题列表; WKD 已完整
       对齐但无调用者, 待接线 — 后续磁盘 vs 内存比对 WpeValidateModuleIntegrity

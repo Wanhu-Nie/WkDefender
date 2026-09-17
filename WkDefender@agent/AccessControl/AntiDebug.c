@@ -113,7 +113,7 @@ static BOOLEAN AdSehRaiseAccessViolation(VOID);
 
 /* ------------------------------------------------------------------ */
 /* 已知调试器/插桩框架签名清单                                         */
-/*  对齐 SS DebuggerProcesses/WindowClasses/Drivers/Instrumentation。  */
+/*  DebuggerProcesses/WindowClasses/Drivers/Instrumentation。  */
 /* ------------------------------------------------------------------ */
 
 const WCHAR* const AdDebuggerProcessNames[] = {
@@ -463,7 +463,7 @@ AdRecordEvent(
     }
     Protection->Stats.TotalDetections++;
 
-    /* 按分类累加统计（对齐 SS AntiDebugStatistics） */
+    /* 按分类累加统计（AntiDebugStatistics） */
     switch (Result->Technique) {
         case AdTechniquePebBeingDebugged:
         case AdTechniquePebHeapFlags:
@@ -1274,7 +1274,7 @@ AcpDetectTiming(
     )
 {
     /*
-     * RDTSC 时序检测（对齐 SS CheckTiming_RDTSC）：自省项，Target 占位。
+     * RDTSC 时序检测（CheckTiming_RDTSC）：自省项，Target 占位。
      *  采样 AD_TIMING_SAMPLE_COUNT 次，计算均值与标准差。
      *  被调试（单步/软断点开销）会导致平均执行周期显著大于
      *  正常水平。判定：avg > AD_RDTSC_SINGLE_THRESHOLD(500)。
@@ -1340,7 +1340,7 @@ AcpDetectOutputDebugString(
     )
 {
     /* OutputDebugString 在调试器中会恢复 LastError；若 0x12345678 被
-     * 清空则判定。对齐 SS CheckAPI_OutputDebugString。自省项：Target 占位。 */
+     * 清空则判定。CheckAPI_OutputDebugString。自省项：Target 占位。 */
     DWORD lastError;
 
     if (!Protection || !WkdProcess || !Result) return STATUS_INVALID_PARAMETER;

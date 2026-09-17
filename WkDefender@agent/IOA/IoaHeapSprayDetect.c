@@ -22,7 +22,7 @@ IoaHsGetNow(
     )
 /*++
 Routine Description:
-    当前系统时间 (FILETIME 100ns 单位, 对齐 SS KeQuerySystemTimePrecise)。
+    当前系统时间 (FILETIME 100ns 单位, KeQuerySystemTimePrecise)。
 --*/
 {
     FILETIME ft;
@@ -42,7 +42,7 @@ IoaHsFnv1a32(
     )
 /*++
 Routine Description:
-    FNV-1a 哈希 (对齐 SS ShadowStrikeHashBytes, HspCalculatePatternHash
+    FNV-1a 哈希 (ShadowStrikeHashBytes, HspCalculatePatternHash
     委托的哈希算法)。PatternHash 当前无消费方, 保留字段对齐 SS。
 --*/
 {
@@ -100,7 +100,7 @@ IoaHsSampleRegion(
 Routine Description:
     门控内容采样 — 复用 MsReadMemory (MemoryScan.c L1774) 读取分配
     前 min(Size,256) 字节, 计算 RepetitionScore/PatternHash, 置
-    SuspectedType。对齐 SS HsRecordAllocation 的 KeStackAttachProcess
+    SuspectedType。HsRecordAllocation 的 KeStackAttachProcess
     + ProbeForRead 采样语义 (采样移至 agent ReadProcessMemory)。
 --*/
 {
@@ -115,7 +115,7 @@ Routine Description:
     State->RepetitionScore   = 0;
     State->PatternHash       = 0;
 
-    /* 地址用户态范围护栏 (对齐 SS HsRecordAllocation L843-847) */
+    /* 地址用户态范围护栏 (HsRecordAllocation L843-847) */
     if (Addr < 0x10000 || Addr > WKD_HS_MAX_USER_ADDRESS) {
         return STATUS_SUCCESS;
     }
@@ -157,7 +157,7 @@ IoaHeapSpray_OnAllocate(
 /*++
 Routine Description:
     分配事件处理 — 聚合计数 + 门控采样 + 评分 + 判定。
-    对齐 SS HsRecordAllocation (HeapSpray.c L698-1017)。
+    HsRecordAllocation (HeapSpray.c L698-1017)。
 
 Arguments:
     State  - 进程堆喷窗口状态 (挂 WKD_PROCESS_BEHAVIOR_STATE.HeapSpray)。
@@ -180,7 +180,7 @@ Return Value:
         return STATUS_INVALID_PARAMETER;
     }
 
-    /* 护栏: 拒绝明显不合理大小 (对齐 SS HsRecordAllocation L759-761,
+    /* 护栏: 拒绝明显不合理大小 (HsRecordAllocation L759-761,
      * 损坏遥测的 SIZE_T 会破坏聚合求和) */
     if (Size > WKD_HS_MAX_SINGLE_SIZE) {
         return STATUS_INVALID_PARAMETER;
@@ -205,7 +205,7 @@ Return Value:
         State->AlignedCount++;
     }
 
-    /* 地址范围统计 (对齐 SS HsAnalyzeProcess L1232-1268) */
+    /* 地址范围统计 (HsAnalyzeProcess L1232-1268) */
     if (State->LowestAddress == 0 || Addr < State->LowestAddress) {
         State->LowestAddress = Addr;
     }
@@ -245,7 +245,7 @@ Return Value:
                 State->PatternSample, State->PatternSampleSize)) {
             State->DetectionFlags |= WKD_HSF_SHELLCODE_PATTERN;
         }
-        /* 重复度标志 (对齐 SS HsRecordAllocation L969-971: >80 置 RepeatedPattern) */
+        /* 重复度标志 (HsRecordAllocation L969-971: >80 置 RepeatedPattern) */
         if (State->RepetitionScore > WKD_HS_REPETITION_THRESHOLD) {
             State->DetectionFlags |= WKD_HSF_REPEATED_PATTERN;
         }
@@ -255,12 +255,12 @@ Return Value:
     sprayScore = IoaHeapSpray_CalculateSprayScore(State);
     State->SprayScore = sprayScore;
 
-    /* 大块连续标志 (对齐 SS HsAnalyzeProcess L1367-1369: >10MB 置 LargeContiguous) */
+    /* 大块连续标志 (HsAnalyzeProcess L1367-1369: >10MB 置 LargeContiguous) */
     if (State->TotalAllocatedSize > WKD_HS_LARGE_CONTIGUOUS_SIZE) {
         State->DetectionFlags |= WKD_HSF_LARGE_CONTIGUOUS;
     }
 
-    /* 判定 (对齐 SS HsRecordAllocation L925-947, 半阈值迟滞防振荡) */
+    /* 判定 (HsRecordAllocation L925-947, 半阈值迟滞防振荡) */
     if (sprayScore >= WKD_HS_MIN_SCORE_FOR_SPRAY &&
         State->TotalAllocatedSize >= WKD_HS_MIN_SPRAY_SIZE &&
         State->AllocationCount >= WKD_HS_MIN_SIMILAR_ALLOCATIONS) {
@@ -282,7 +282,7 @@ IoaHeapSpray_CalculateSprayScore(
     )
 /*++
 Routine Description:
-    堆喷评分 (0-1000)。对齐 SS HspCalculateSprayScore
+    堆喷评分 (0-1000)。HspCalculateSprayScore
     (HeapSpray.c L2160-2246)。
 
 Arguments:
@@ -459,7 +459,7 @@ IoaHeapSpray_AnalyzeProcess(
     )
 /*++
 Routine Description:
-    堆喷完整分析 (查询 API)。对齐 SS HsAnalyzeProcess (HeapSpray.c L1125-1398)。
+    堆喷完整分析 (查询 API)。HsAnalyzeProcess (HeapSpray.c L1125-1398)。
     ※ 死代码: 供 UI/进程详情查询, 当前无调用者。
 
 Arguments:
@@ -491,14 +491,14 @@ Return Value:
     Result->PatternRepetitions= State->RepetitionScore;
     Result->UniquePatterns    = (State->PatternSampleSize > 0) ? 1 : 0;
 
-    /* 地址范围 (对齐 SS HsAnalyzeProcess L1260-1268) */
+    /* 地址范围 (HsAnalyzeProcess L1260-1268) */
     if (State->AllocationCount > 0) {
         Result->LowestAddress  = State->LowestAddress;
         Result->HighestAddress = State->HighestAddress;
         Result->AddressSpan    = (SIZE_T)(State->HighestAddress - State->LowestAddress);
     }
 
-    /* 时序 (对齐 SS L1376-1390: FirstAllocation=窗口起点, LastAllocation=最后分配) */
+    /* 时序 (L1376-1390: FirstAllocation=窗口起点, LastAllocation=最后分配) */
     Result->FirstAllocation = State->WindowStartTime;
     lastAlloc = State->LastAllocation;
     if (lastAlloc.QuadPart == 0) {
@@ -535,7 +535,7 @@ IoaHeapSpray_CheckForSpray(
     )
 /*++
 Routine Description:
-    堆喷快速检查 (查询 API)。对齐 SS HsCheckForSpray (HeapSpray.c L1402-1471)。
+    堆喷快速检查 (查询 API)。HsCheckForSpray (HeapSpray.c L1402-1471)。
     ※ 死代码: 供快速体检, 当前无调用者。
 
 Arguments:

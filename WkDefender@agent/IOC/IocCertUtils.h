@@ -18,26 +18,26 @@
 /*                  常量定义                        */
 /**************************************************/
 
-/* 证书文件大小上限 (10 MB) — 防 DoS via huge files (对齐 SS kMaxFileSize L145) */
+/* 证书文件大小上限 (10 MB) — 防 DoS via huge files (kMaxFileSize L145) */
 #define WKD_CERT_MAX_FILE_SIZE          (10ULL * 1024 * 1024)
 
-/* 裸证书大小上限 (1 MB) — DER/PEM 合理限制 (对齐 SS kMaxCertificateSize L148) */
+/* 裸证书大小上限 (1 MB) — DER/PEM 合理限制 (kMaxCertificateSize L148) */
 #define WKD_CERT_MAX_CERT_SIZE          (1ULL * 1024 * 1024)
 
-/* CryptDecodeObject 输出上限 (64 KB) (对齐 SS kMaxDecodedStructureSize L151) */
+/* CryptDecodeObject 输出上限 (64 KB) (kMaxDecodedStructureSize L151) */
 #define WKD_CERT_MAX_DECODED             (64 * 1024)
 
-/* SAN 条目数上限 — 防 DoS (对齐 SS kMaxSanEntries L1291) */
+/* SAN 条目数上限 — 防 DoS (kMaxSanEntries L1291) */
 #define WKD_CERT_MAX_SAN_ENTRIES         10000
 
-/* RFC3161 时间戳令牌大小上限 (64 KB) (对齐 SS kMaxTimestampTokenSize L2605) */
+/* RFC3161 时间戳令牌大小上限 (64 KB) (kMaxTimestampTokenSize L2605) */
 #define WKD_CERT_MAX_TS_TOKEN            (64 * 1024)
 
 /**************************************************/
 /*                  结构体声明                      */
 /**************************************************/
 
-/* 吊销检查模式 (对齐 SS RevocationMode L118-122)。
+/* 吊销检查模式 (RevocationMode L118-122)。
  * OfflineAllowed 默认: 同链覆盖但累计超时容忍慢/离线 responder,
  * offline/unknown 吊销信任错误不致命 (对齐 wkd #60 cache-only 语义)。 */
 typedef enum _WKD_REVOCATION_MODE {
@@ -46,7 +46,7 @@ typedef enum _WKD_REVOCATION_MODE {
     WkdRevocation_Disabled          /* 跳过吊销检查 */
 } WKD_REVOCATION_MODE, *PWKD_REVOCATION_MODE;
 
-/* 综合证书属性 (对齐 SS CertificateInfo L134-169)。
+/* 综合证书属性 (CertificateInfo L134-169)。
  * 命名: WKD_CERT_DETAILS 而非 WKD_CERT_INFO, 避免与 IocTypes.h 的
  * _WKD_CERT_INFO (WKD_MODULE 内嵌权威副本) 结构重名冲突
  * (2026-09-02 修正, 两文件首度同编译单元 co-include)。 */
@@ -66,8 +66,8 @@ typedef struct _WKD_CERT_DETAILS {
     WCHAR   SignatureAlgorithm[64]; /* 签名算法友好名 "RSA-SHA256" */
 } WKD_CERT_DETAILS, *PWKD_CERT_DETAILS;
 
-/* SAN 条目类型 (对齐 SS GetSubjectAltNames 多类输出;
- * 2026-08-09 补 email/DIRECTORY_NAME, 对齐 SS L1378-1383) */
+/* SAN 条目类型 (GetSubjectAltNames 多类输出;
+ * 2026-08-09 补 email/DIRECTORY_NAME, L1378-1383) */
 typedef enum _WKD_SAN_TYPE {
     WkdSan_DnsName = 0,             /* CERT_ALT_NAME_DNS_NAME */
     WkdSan_IpAddress,               /* CERT_ALT_NAME_IP_ADDRESS (4/16 字节) */
@@ -76,7 +76,7 @@ typedef enum _WKD_SAN_TYPE {
     WkdSan_DirectoryName            /* CERT_ALT_NAME_DIRECTORY_NAME (X509_NAME → 显示串) */
 } WKD_SAN_TYPE, *PWKD_SAN_TYPE;
 
-/* SAN 条目 (定长共用缓冲, Value 长度上限对齐 SS URL 上限 2048 L1330) */
+/* SAN 条目 (定长共用缓冲, Value 长度上限URL 上限 2048 L1330) */
 typedef struct _WKD_CERT_SAN {
     WKD_SAN_TYPE Type;
     WCHAR        Value[2048];
@@ -89,7 +89,7 @@ typedef struct _WKD_CERT_SAN {
 /*++
 Routine Description:
     从文件加载证书 (DER / PEM / PKCS#7 容器自动识别)。
-    对齐 SS Certificate::LoadFromFile L286-382。
+    Certificate::LoadFromFile L286-382。
 
 Arguments:
     FilePath - 证书文件路径。
@@ -106,8 +106,8 @@ IocCert_LoadFromFile(
 
 /*++
 Routine Description:
-    从内存加载证书 (DER / PEM 自动检测, PEM 头查找对齐 SS L422-428)。
-    对齐 SS Certificate::LoadFromMemory L397-507。
+    从内存加载证书 (DER / PEM 自动检测, PEM 头查找L422-428)。
+    Certificate::LoadFromMemory L397-507。
 
 Arguments:
     Data    - 证书数据。
@@ -127,7 +127,7 @@ IocCert_LoadFromMemory(
 /*++
 Routine Description:
     从 PEM 字符串加载证书 (校验 BEGIN/END marker)。
-    对齐 SS Certificate::LoadFromPEM L664-752。
+    Certificate::LoadFromPEM L664-752。
 
 Arguments:
     Pem     - PEM 编码证书字符串 (ASCII)。
@@ -145,7 +145,7 @@ IocCert_LoadFromPEM(
 /*++
 Routine Description:
     获取证书指纹 (SHA1 20B 或 SHA256 32B, hex 字符串)。
-    对齐 SS Certificate::GetThumbprint L902-959。
+    Certificate::GetThumbprint L902-959。
 
 Arguments:
     Cert   - 证书上下文。
@@ -167,7 +167,7 @@ IocCert_GetThumbprint(
 /*++
 Routine Description:
     提取综合证书信息 (主题/颁发者/序列号/指纹/有效期/CA/自签名/签名算法友好名)。
-    对齐 SS Certificate::GetInfo L971-1189。
+    Certificate::GetInfo L971-1189。
 
 Arguments:
     Cert - 证书上下文。
@@ -185,7 +185,7 @@ IocCert_GetInfo(
 /*++
 Routine Description:
     判断证书是否自签名 (Subject == Issuer, blob 直比)。
-    对齐 SS Certificate::IsSelfSigned L1417-1444。
+    Certificate::IsSelfSigned L1417-1444。
 
 Arguments:
     Cert - 证书上下文。
@@ -201,7 +201,7 @@ IocCert_IsSelfSigned(
 /*++
 Routine Description:
     获取 Basic Constraints pathLen 约束。
-    对齐 SS Certificate::GetBasicConstraintsPathLen L1454-1518。
+    Certificate::GetBasicConstraintsPathLen L1454-1518。
 
 Arguments:
     Cert - 证书上下文。
@@ -217,7 +217,7 @@ IocCert_GetBasicConstraintsPathLen(
 /*++
 Routine Description:
     获取签名算法友好名 (OID → "RSA-SHA256" 等)。
-    对齐 SS Certificate::GetSignatureAlgorithm L1584-1657。
+    Certificate::GetSignatureAlgorithm L1584-1657。
 
 Arguments:
     Cert   - 证书上下文。
@@ -238,7 +238,7 @@ IocCert_GetSignatureAlgorithm(
 Routine Description:
     判定证书是否使用强签名算法。
     MD2/MD5 恒拒; SHA1 家族仅在 AllowSha1 时接受; SHA256/384/512 + RSA-PSS 恒强;
-    未知算法保守拒绝。对齐 SS Certificate::IsStrongSignatureAlgo L1529-1573。
+    未知算法保守拒绝。Certificate::IsStrongSignatureAlgo L1529-1573。
 
 Arguments:
     Cert      - 证书上下文。
@@ -256,7 +256,7 @@ IocCert_IsStrongSignatureAlgo(
 /*++
 Routine Description:
     检查证书是否含指定 Enhanced Key Usage (EKU) OID。
-    无 EKU 扩展 → any-use → TRUE (对齐 SS CRYPT_E_NOT_FOUND 语义 L2209-2213)。
+    无 EKU 扩展 → any-use → TRUE (CRYPT_E_NOT_FOUND 语义 L2209-2213)。
 
 Arguments:
     Cert - 证书上下文。
@@ -274,8 +274,8 @@ IocCert_HasEKU(
 /*++
 Routine Description:
     检查证书是否含指定 Key Usage 位。
-    无 KeyUsage 扩展 → any-use → TRUE (对齐 SS L2291-2295)。
-    对齐 SS Certificate::HasKeyUsage L2267-2309。
+    无 KeyUsage 扩展 → any-use → TRUE (L2291-2295)。
+    Certificate::HasKeyUsage L2267-2309。
 
 Arguments:
     Cert  - 证书上下文。
@@ -297,7 +297,7 @@ Routine Description:
     + ignorable errors (OfflineAllowed 容忍 offline/unknown); 可选 RequiredEkuOid
     RequestedUsage; 可选 hAdditionalStore 附加签发候选存储; 最终
     CertVerifyCertificateChainPolicy(AUTHENTICODE)。
-    对齐 SS Certificate::VerifyChain L1866-1990。
+    Certificate::VerifyChain L1866-1990。
 
 Arguments:
     Cert             - 证书上下文。
@@ -323,7 +323,7 @@ IocCert_VerifyChain(
 /*++
 Routine Description:
     独立吊销状态查询 (CRL reason 6 细分)。
-    对齐 SS Certificate::GetRevocationStatus L2450-2572。
+    Certificate::GetRevocationStatus L2450-2572。
     2026-09-02 由 static 升级导出: SignatureVerifier Revoked 分支接线消费
     (吊销原因细分, SS CertificateValidator 增量迁移)。
 

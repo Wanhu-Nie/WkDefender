@@ -88,7 +88,7 @@ StCreateSchema(_In_ sqlite3* Db)
         "ALTER TABLE cg_alerts ADD COLUMN recommended_action INTEGER DEFAULT 0",
         "ALTER TABLE cg_alerts ADD COLUMN detection_source INTEGER DEFAULT 0",
         /* SS FileReputation 黑名单管理迁移, 2026-08-06: ioc_hashes 补威胁名列
-         * (对齐 SS AddToBlacklist hash→threatName) */
+         * (AddToBlacklist hash→threatName) */
         "ALTER TABLE ioc_hashes ADD COLUMN threat_name TEXT",
         NULL
     };
@@ -880,7 +880,7 @@ StUpsertIocHash(
     )
 /*++
 Routine Description:
-    写入 ioc_hashes 黑名单 (对齐 SS AddToBlacklist hash→threatName)。
+    写入 ioc_hashes 黑名单 (AddToBlacklist hash→threatName)。
     INSERT OR REPLACE + IocMatcher 布隆同步 (使 IocScan_HashQuery 预检命中)。
 
 Arguments:
@@ -942,7 +942,7 @@ StRemoveIocHash(
     )
 /*++
 Routine Description:
-    移除 ioc_hashes 黑名单 (对齐 SS RemoveFromBlacklist)。
+    移除 ioc_hashes 黑名单 (RemoveFromBlacklist)。
 
 Arguments:
     Sha256Hex - 文件 SHA256 hex。
@@ -978,7 +978,7 @@ StUpsertCertReputation(
 /*++
 Routine Description:
     写入证书信任 (cert_reputation 表, thumbprint 键)。
-    对齐 SS AddTrustedCertificate/AddUntrustedCertificate (L953-1003)。
+    AddTrustedCertificate/AddUntrustedCertificate (L953-1003)。
 
 Arguments:
     Thumbprint - SHA1 指纹 hex 小写 (对齐 IOC_SCAN_RESULT.Thumbprint)。
@@ -1025,7 +1025,7 @@ StGetCertReputation(
     )
 /*++
 Routine Description:
-    查询证书信任 (对齐 SS GetCertificateTrust L927-951)。
+    查询证书信任 (GetCertificateTrust L927-951)。
 
 Arguments:
     Thumbprint - SHA1 指纹 hex 小写。
@@ -1082,7 +1082,7 @@ StPersistDeviceHistory(
 /*++
 Routine Description:
     写入设备历史 (device_history 表, serial 键 upsert)。
-    对齐 SS MountPointMonitor UpdateDeviceHistory 的持久化侧 (SS 无, wkd 预留)。
+    MountPointMonitor UpdateDeviceHistory 的持久化侧 (SS 无, wkd 预留)。
 
 Arguments:
     Serial          - 设备序列号 (UTF-8, 键)。

@@ -158,6 +158,19 @@ PsGetMainModuleInstance(
     _Out_ PWKD_MODULE_INSTANCE* Instance
     );
 
+/* 按地址区间在进程模块域中定位映射实例（内存域按地址查询接口）：
+ * 区间判定 ImageBase ≤ Address < ImageBase + 映像大小（SizeOfImage，
+ * 缺失时回退驱动上送的 ImageSize）。磁盘视图（ImageBase=NULL）视为
+ * 未命中，命中实例 ImageBase 为有效映射基址。
+ * 消费方：StartRoutine 落模块判定 / 反射加载背衬快速否定
+ * （RidConfirmReflectiveLoading）。 */
+NTSTATUS
+PsFindModuleByAddress(
+    _In_ const PWKD_PROCESS WkdProcess,
+    _In_ ULONG_PTR Address,
+    _Out_ PWKD_MODULE_INSTANCE* Instance
+    );
+
 VOID
 PsDestroyModuleContext(
     _Inout_ PWKD_PROCESS Process

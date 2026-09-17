@@ -116,14 +116,14 @@ typedef struct _VERDICT_ENGINE {
     volatile LONG64     VerdictsProduced;
     volatile LONG64     ResponsesDispatched;
 
-    /* ── 本地白名单 (对齐 SS WhitelistProcess/WhitelistHash, 防误报) ── */
+    /* ── 本地白名单 (WhitelistProcess/WhitelistHash, 防误报) ── */
     CRITICAL_SECTION    WhitelistLock;
     ULONG               WhitelistedPidCount;
     ULONG               WhitelistedPids[VERDICT_WHITELIST_MAX_PIDS];
     ULONG               WhitelistedHashCount;
     CHAR                WhitelistedHashes[VERDICT_WHITELIST_MAX_HASHES][65];  /* 小写 hex */
 
-    /* ── Verdict 统计细分 (对齐 SS ThreatDetectorStats) ── */
+    /* ── Verdict 统计细分 (ThreatDetectorStats) ── */
     volatile LONG64     ThreatsBySeverity[5];       /* DEF_THREAT_SEVERITY 索引 */
     volatile LONG64     ThreatsByCategory[DefThreatCat_Max];
     volatile LONG64     FalsePositives;             /* 用户反馈误报计数 */
@@ -139,7 +139,7 @@ NTSTATUS VerdictEngine_Initialize(_In_opt_ PVERDICT_ENGINE_CONFIG Config);
 VOID     VerdictEngine_Cleanup(VOID);
 
 /* 多引擎融合判定: 有检测产出返回 TRUE, Verdict 填充。
- * 对齐 SS AggregateEngineDetections (ThreatDetector.cpp L410-527):
+ * AggregateEngineDetections (ThreatDetector.cpp L410-527):
  *   加权平均评分 → 严重度分级 → 引擎一致率置信度 → 类别推断 → 推荐动作 */
 BOOLEAN  VerdictEngine_Fuse(
     _In_ PWKD_EVENT_HEADER   Event,
@@ -163,7 +163,7 @@ BOOLEAN  VerdictEngine_GetVerdict(_In_ GUID NodeId, _Out_ PWKD_VERDICT Verdict);
 ULONG    VerdictEngine_GetProcessThreatScore(_In_ ULONG Pid);
 VOID     VerdictEngine_OnProcessTerminate(_In_ ULONG Pid);   /* 进程退出清理 */
 
-/* ── 响应分发 (monitor-only 默认, 对齐 SS ExecuteAction) ── */
+/* ── 响应分发 (monitor-only 默认, ExecuteAction) ── */
 VOID     VerdictEngine_DispatchResponse(_In_ PWKD_VERDICT Verdict);
 
 /* ── Verdict → IOA_ALERT 投影 ── */

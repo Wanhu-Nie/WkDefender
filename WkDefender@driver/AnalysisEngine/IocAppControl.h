@@ -98,7 +98,7 @@ IocAcSetEnabled(
     );
 
 /*
- * 进程创建执行判定（对齐 SS AcCheckProcessExecution）：
+ * 进程创建执行判定（AcCheckProcessExecution）：
  * 哈希→路径规则→内置信任路径→默认策略。
  * 命中 AcVerdict_Block 时调用方应设置
  * CreateInfo->CreationStatus = STATUS_ACCESS_DENIED 阻断创建。
@@ -113,7 +113,7 @@ IocAppControlCheckProcessExecution(
     );
 
 /*
- * 镜像加载判定（对齐 SS AcCheckImageLoad，通知型）：
+ * 镜像加载判定（AcCheckImageLoad，通知型）：
  * 仅路径规则 + 信任路径，命中 Block 由调用方加分上报，无法阻断加载。
  */
 _IRQL_requires_(PASSIVE_LEVEL)

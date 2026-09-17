@@ -19,7 +19,7 @@
 /*  rename/delete 批量变化判定 (勒索扩展名重命名/    */
 /*  大量删除), 死代码待 main.c 回调接线激活。        */
 /*                                                  */
-/*  评分 (对齐 SS BehaviorConstants):                */
+/*  评分 (BehaviorConstants):                */
 /*    高熵写 3/次, >=50次 +20 (T1486)                */
 /*    Canary 触碰 +50, 勒索信 +60, 速率>10/s +5      */
 /*    扩展名变更 +8 (T1486), 大量删除 +5 (T1485)     */
@@ -31,7 +31,7 @@
 #include "IoaTypes.h"
 
 /**************************************************/
-/*   SS BehaviorEventType 语义常量 (对齐 SS L485-662) */
+/*   SS BehaviorEventType 语义常量 (L485-662) */
 /**************************************************/
 
 #define WKD_EVT_FILE_CREATE         200
@@ -41,7 +41,7 @@
 #define WKD_EVT_SHADOW_COPY_DELETE  804
 
 /**************************************************/
-/*   评分常量 (对齐 SS BehaviorConstants)           */
+/*   评分常量 (BehaviorConstants)           */
 /**************************************************/
 
 #define WKD_RANSOM_FILE_THRESHOLD   50      /* SS RANSOMWARE_FILE_THRESHOLD */

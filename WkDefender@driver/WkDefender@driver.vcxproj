@@ -1,0 +1,304 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{BEB15F41-D5E0-A289-1397-B56FE6980F62}</ProjectGuid>
+    <TemplateGuid>{1bc93793-694f-48fe-9372-81e2b05556fd}</TemplateGuid>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
+    <Configuration>Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <RootNamespace>WkDefender_driver</RootNamespace>
+    <TargetName>WkDefender</TargetName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>KMDF</DriverType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>KMDF</DriverType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>KMDF</DriverType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>KMDF</DriverType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+    <InfVerif>false</InfVerif>
+    <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+    <ClCompile>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>FltMgr.lib;Cng.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/integritycheck %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <Inf Include="WkDefender.inf" />
+  </ItemGroup>
+  <ItemGroup>
+    <FilesToPackage Include="$(TargetPath)" />
+  </ItemGroup>
+  <!-- ==================================================================
+       [能力开放阶段-1] 2026-08-10：骨架验证通过，按 WkdEntry.c 已开放能力的
+       依赖闭包激活以下 .c 参与编译（其余仍注释待后续阶段开放）
+       备份：C:\WINDOWS\TEMP\opencode\WkDefender@driver.vcxproj.bak
+       ================================================================== -->
+  <ItemGroup>
+    <ClCompile Include="WkdEntry.c" />
+    <!-- ===== 阶段-1 能力依赖闭包（已激活） ===== -->
+    <ClCompile Include="Common\Utils.c" />
+    <ClCompile Include="Common\BCryptUtils.c" />
+    <ClCompile Include="Common\ExportParser.c" />
+    <ClCompile Include="Common\HashMap.c" />
+    <ClCompile Include="Common\PeParser.c" />
+    <!-- 2026-08-10 引入：Common\Exempts（排除后加载成功，二分验证 Exempts 非元凶） -->
+    <ClCompile Include="Common\Exempts\Exempts.c" />
+    <ClCompile Include="Common\Exempts\ExemptsManager.c" />
+    <ClCompile Include="Common\Exempts\ExemptPid.c" />
+    <ClCompile Include="Common\Exempts\ExemptPath.c" />
+    <ClCompile Include="Notification\MessageSync.c" />
+    <ClCompile Include="Notification\NotificationManager.c" />
+    <ClCompile Include="Notification\AlpcService.c" />
+    <ClCompile Include="Process\ProcessMonitor.c" />
+    <ClCompile Include="Process\ProcessPairContext.c" />
+    <ClCompile Include="Callbacks\ProcessNotification.c" />
+    <ClCompile Include="Callbacks\ImageNotification.c" />
+    <ClCompile Include="Memory\AmsiBypassDetector.c" />
+    <!-- 2026-09 拆分激活：FileSystem 薄层 + 分析模块（Filter.c 已删除，
+         逻辑落位于 Callbacks\FileSystemNotification.c 薄层 + FileSystem\FileScan.c
+         分析能力 + FileSystem\ProcessFileContext.c 勒索评分） -->
+    <ClCompile Include="Callbacks\FileSystemNotification.c" />
+    <ClCompile Include="FileSystem\FileSystem.c" />           <!-- 2026-09-13 重构：编排器（FsInitialize/FsCleanup/FsBackup*） -->
+    <ClCompile Include="FileSystem\FileScan.c" />
+    <ClCompile Include="FileSystem\ProcessFileContext.c" />
+    <ClCompile Include="FileSystem\PostCreateContext.c" />
+    <ClCompile Include="FileSystem\PostWrite.c" />
+    <ClCompile Include="FileSystem\FileBackupEngine.c" />
+    <ClCompile Include="FileSystem\NamedPipeMonitor.c" />
+    <ClCompile Include="FileSystem\PreAcquireSection.c" />
+    <ClCompile Include="FileSystem\PreCreate.c" />              <!-- 2026-10 提取：Create 前置回调流水线（迁移 CbpPreCreateNotifyCallback + 补齐 SS 语义） -->
+    <ClCompile Include="FileSystem\PreSetInformation.c" />
+    <ClCompile Include="FileSystem\PreWrite.c" />              <!-- 2026-10 提取：Write 前置回调流水线（迁移 FspPreWrite + 私有辅助 FspQueryFileId） -->
+    <!-- ===== 阶段-1 链接依赖闭包补齐（LNK2019 迭代） ===== -->
+    <ClCompile Include="Notification\NotificationHandler.c" />
+    <ClCompile Include="Notification\MessageQueue.c" />
+    <ClCompile Include="Process\ProcessModuleTracker.c" />
+<ClCompile Include="Memory\MemoryRegion.c" />
+    <ClCompile Include="Memory\MemoryRegionVerify.c" />
+    <ClCompile Include="Memory\MemoryScanner.c" />
+<ClCompile Include="Memory\SectionTracker.c" />
+    <ClCompile Include="Memory\ShellcodeDetector.c" />
+    <ClCompile Include="Memory\HeapSpray.c" />
+    <ClCompile Include="Process\HollowingDetector.c" />
+    <ClCompile Include="Memory\MemoryIntegrity.c" />           <!-- 2026-09-13 重构：PhCompareImageWithFile 迁入（Memory 域） -->
+    <ClCompile Include="Memory\InjectionDetector.c" />
+    <ClCompile Include="Memory\ROPDetector.c" />
+    <ClCompile Include="Memory\MemoryMonitor.c" />
+    <ClCompile Include="Callbacks\ThreadNotification.c" />
+    <ClCompile Include="ETW\ETWProvider.c" />
+    <ClCompile Include="Common\PeCallbacks.c" />
+    <!-- ===== 自保护：完整恢复全部子组件（2026-09-03 恢复） ===== -->
+    <ClCompile Include="Common\Lookaside.c" />
+    <ClCompile Include="Common\PeriodicTimer.c" />
+    <!-- 恢复编译：对象回调（OB）与注册表回调（CM）消费节点 -->
+    <ClCompile Include="Callbacks\RegistryNotification.c" />
+    <ClCompile Include="Callbacks\ObjectNotification.c" />
+    <!-- 自防护引擎：完整恢复 engine + compat + CP/AU/AD/IM/RG -->
+    <ClCompile Include="AccessControl\SelfProtectionEngine.c" />
+    <ClCompile Include="AccessControl\SelfProtectionCompat.c" />
+    <ClCompile Include="AccessControl\CallbackProtection.c" />
+    <ClCompile Include="AccessControl\AntiDebug.c" />
+    <ClCompile Include="AccessControl\AntiUnload.c" />
+    <ClCompile Include="AccessControl\IntegrityMonitor.c" />
+    <ClCompile Include="AccessControl\RegistryProtection.c" />
+    <ClCompile Include="Syscall\SyscallContextCache.c" />
+    <ClCompile Include="AnalysisEngine\AnalysisEngine.c" />
+    <ClCompile Include="AnalysisEngine\IoaEngine.c" />
+    <ClCompile Include="AnalysisEngine\IocEngine.c" />
+    <ClCompile Include="AnalysisEngine\IocSyscall.c" />
+    <ClCompile Include="AnalysisEngine\IocThread.c" />
+    <ClCompile Include="AnalysisEngine\IocHandle.c" />
+    <ClCompile Include="AnalysisEngine\IocImage.c" />
+    <ClCompile Include="AnalysisEngine\IocProcess.c" />
+    <ClCompile Include="AnalysisEngine\IocAppControl.c" />
+    <ClCompile Include="ThreatScoring\ThreatScoring.c" />
+    <!-- ===== 2026-09 拆分后激活：USBDeviceControl（薄层 InstanceSetup/PreWrite/PreSetInfo 已接线） ===== -->
+    <ClCompile Include="FileSystem\USBDeviceControl.c" />
+    <!-- <ClCompile Include="Notification\MessageQueue.c" /> -->
+    <!-- <ClCompile Include="Memory\MemoryScan.c" /> -->
+    <!-- <ClCompile Include="Memory\MemorySignature.c" /> -->
+    <!-- <ClCompile Include="Memory\MemoryRegion.c" /> -->
+    <!-- <ClCompile Include="Object\ObjectManager.c" /> -->
+    <!-- <ClCompile Include="Common\HashSet.c" /> -->
+    <!-- <ClCompile Include="Common\PeCallbacks.c" /> -->
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Callbacks\ImageNotification.h" />
+    <ClInclude Include="Callbacks\FileSystemNotification.h" />
+    <ClInclude Include="Include\FileSystem.h" />               <!-- 2026-09-13 重构：对外公共头（外部唯一入口） -->
+    <ClInclude Include="Include\Memory\MemoryIntegrity.h" />   <!-- 2026-09-13 重构：对外公共头（Memory 域唯一入口） -->
+    <ClInclude Include="FileSystem\FileSystem.h" />            <!-- 2026-09-13 重构：内部私有头（禁止 FileSystem 目录外包含） -->
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="Callbacks\ProcessNotification.h" />
+    <ClInclude Include="Callbacks\ThreadNotification.h" />
+    <ClInclude Include="Callbacks\ObjectNotification.h" />
+    <ClInclude Include="Notification/MessageSync.h" />
+    <ClInclude Include="Process\ProcessMonitor.h" />
+    <ClInclude Include="Process\ProcessAccessProtection.h" />
+    <ClInclude Include="Process\ThreadAccessProtection.h" />
+    <ClInclude Include="Process\ProcessPairContext.h" />
+    <ClInclude Include="Process\ProcessModuleTracker.h" />
+    <ClInclude Include="Process\HandleScanner.h" />
+    <ClInclude Include="Syscall\SyscallHijack.h" />
+    <ClInclude Include="Syscall\SyscallMonitor.h" />
+    <ClInclude Include="Syscall\SyscallService.h" />
+    <ClInclude Include="Syscall\SyscallContextCache.h" />
+    <ClInclude Include="Syscall\SyscallAggregation.h" />
+    <ClInclude Include="Notification\NotificationManager.h" />
+    <ClInclude Include="ETW\ETWProvider.h" />
+    <ClInclude Include="Notification\NotificationHandler.h" />
+    <ClInclude Include="Notification\MessageQueue.h" />
+    <ClInclude Include="Notification\AlpcService.h" />
+    <ClInclude Include="Memory\MemoryPoolTag.h" />
+    <ClInclude Include="Memory\MemoryScan.h" />
+    <ClInclude Include="Memory\MemorySignature.h" />
+    <ClInclude Include="Memory\MemoryRegion.h" />
+    <ClInclude Include="Memory\MemoryRegionVerify.h" />
+    <ClInclude Include="Memory\MemoryScanner.h" />
+    <ClInclude Include="Memory\SectionTracker.h" />
+    <ClInclude Include="Memory\ShellcodeDetector.h" />
+    <ClInclude Include="Memory\MemoryIntegrity.h" />
+    <ClInclude Include="Memory\HeapSpray.h" />
+    <ClInclude Include="Process\HollowingDetector.h" />
+    <ClInclude Include="Memory\InjectionDetector.h" />
+    <ClInclude Include="Memory\ROPDetector.h" />
+    <ClInclude Include="Memory\MemoryMonitor.h" />
+    <ClInclude Include="Memory\AmsiBypassDetector.h" />
+    <ClInclude Include="AnalysisEngine\AnalysisEngine.h" />
+    <ClInclude Include="AnalysisEngine\IocEngine.h" />
+    <ClInclude Include="AnalysisEngine\IocSyscall.h" />
+    <ClInclude Include="AnalysisEngine\IocThread.h" />
+    <ClInclude Include="AnalysisEngine\IocHandle.h" />
+    <ClInclude Include="AnalysisEngine\IocImage.h" />
+    <ClInclude Include="AnalysisEngine\IocProcess.h" />
+    <ClInclude Include="AnalysisEngine\IocAppControl.h" />
+    <ClInclude Include="AnalysisEngine\IoaEngine.h" />
+    <ClInclude Include="ThreatScoring\ThreatScoring.h" />
+    <ClInclude Include="Object\ObjectManager.h" />
+    <ClInclude Include="Common\Constants.h" />
+    <ClInclude Include="Common\DynamicArray.h" />
+    <ClInclude Include="Common\Utils.h" />
+    <ClInclude Include="Common\BCryptUtils.h" />
+    <ClInclude Include="Common\ExportParser.h" />
+    <ClInclude Include="Common\HashMap.h" />
+    <ClInclude Include="Common\HashSet.h" />
+    <ClInclude Include="Common\PeParser.h" />
+    <ClInclude Include="Common\PeCallbacks.h" />
+    <ClInclude Include="Common\Exempts\Exempts.h" />
+    <ClInclude Include="Common\Exempts\ExemptsInternal.h" />
+    <!-- ===== 自保护：回调代码完整性保护（2026-09-01） ===== -->
+    <ClInclude Include="Common\Lookaside.h" />
+    <ClInclude Include="Common\PeriodicTimer.h" />
+    <ClInclude Include="AccessControl\CallbackProtection.h" />
+    <ClInclude Include="AccessControl\RegistryProtection.h" />
+    <ClInclude Include="Callbacks\RegistryNotification.h" />
+    <ClInclude Include="AccessControl\SelfProtectionCompat.h" />
+    <ClInclude Include="AccessControl\AntiUnload.h" />
+    <ClInclude Include="AccessControl\AntiDebug.h" />
+    <ClInclude Include="AccessControl\IntegrityMonitor.h" />
+    <ClInclude Include="AccessControl\SelfProtectionEngine.h" />
+  </ItemGroup>
+  <!-- [骨架实验] SyscallTrampoline.asm 依赖 SyscallHijack.c 的 ScTrampolineCallback，一并跳过 -->
+  <!--
+  <ItemGroup>
+    <CustomBuild Include="Syscall\SyscallTrampoline.asm">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ml64.exe /c /nologo /Zi /Fo"$(IntDir)SyscallTrampoline.obj" "$(ProjectDir)Syscall\SyscallTrampoline.asm"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ml64.exe /c /nologo /Fo"$(IntDir)SyscallTrampoline.obj" "$(ProjectDir)Syscall\SyscallTrampoline.asm"</Command>
+      <Outputs>$(IntDir)SyscallTrampoline.obj</Outputs>
+      <Message>Assembling SyscallTrampoline.asm...</Message>
+    </CustomBuild>
+  </ItemGroup>
+  -->
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

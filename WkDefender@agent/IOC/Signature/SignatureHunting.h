@@ -24,7 +24,7 @@ extern BOOLEAN g_IoaSignatureHuntingEnabled;
 /*++
 Routine Description:
     被盗证书数据库: 追加单条 (SHA1 指纹 hex 小写为键)。
-    对齐 SS DigitalSignatureValidator::AddStolenCertificate L1961。
+    DigitalSignatureValidator::AddStolenCertificate L1961。
     数据库定长数组 (WKD_STOLEN_CERT_MAX), 满时返回 INSUFFICIENT_RESOURCES。
     空库启动, 由外部威胁情报注入 (LoadStolenCertDb 批量)。
 
@@ -42,7 +42,7 @@ IoaSigHunt_AddStolenCert(
 /*++
 Routine Description:
     被盗证书数据库: 批量导入 (威胁情报 feed)。
-    对齐 SS DigitalSignatureValidator::LoadStolenCertDatabase L1971。
+    DigitalSignatureValidator::LoadStolenCertDatabase L1971。
 
 Arguments:
     Entries - 条目数组。
@@ -72,7 +72,7 @@ IoaSigHunt_ClearStolenCertDb(
 /*++
 Routine Description:
     签名 APT 狩猎核心分析: 9 类签名异常 + WHQL/测试签名标志 + 风险聚合。
-    对齐 SS DigitalSignatureValidator::AnalyzeSignature L1998-2268。
+    DigitalSignatureValidator::AnalyzeSignature L1998-2268。
 
     Check1  被盗证书 (叶+链指纹命中库)         → 100  Critical T1553.002
     Check2  非系统目录自签名                    → 70   High     T1553.002
@@ -84,7 +84,7 @@ Routine Description:
     Check8  未来时间戳 (>now+300s)              → 70   High     T1070.006
     Check9  吊销证书仍使用                       → 95   Critical T1553.002
 
-    RiskScore 取各 anomaly 贡献最大值 (对齐 SS std::max 聚合; 被盗证书 100/
+    RiskScore 取各 anomaly 贡献最大值 (std::max 聚合; 被盗证书 100/
     吊销 95 的高分值在 max 语义下自然优先, 等价 SS 直置/覆盖式赋值)。
 
 Arguments:
@@ -110,7 +110,7 @@ Routine Description:
      在 9 类异常之上叠加镜像链专属信号:
 
        未签名驱动加载    CertStatus==Unsigned && .sys → RiskScore=100, Critical, T1014
-                       (rootkit 线索, 对齐 SS "Unsigned driver loaded")
+                       (rootkit 线索, "Unsigned driver loaded")
        签名等级不匹配    内核判 IMG_SIGNATURE_UNSIGNED 但用户态签名有效 → +80,
                        High, T1553.006 (SupplyChainAnomaly: catalog-only/cross-signed 绕过)
        内核已签名清零    内核判 IMG_SIGNATURE_VALID 且 9 类分析干净 (无被盗证书 +

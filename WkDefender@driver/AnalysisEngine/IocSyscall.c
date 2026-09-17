@@ -144,7 +144,7 @@ IocDetectSyscall(
      * === 线程操作 syscall（远程线程/APC/上下文/挂起恢复） ===
      * [死代码] 对齐 PS ThreadNotify 远程线程注入检测信号（T1055.001/.004/.003）。
      * 不接入原因：当前 syscall IOC 管线未接入驱动评分（SyscallHijack dispatch
-     *   注释态，IocDetectSyscall 无调用者）；线程事件已由 Callbacks/ThreadNotify.c
+     *   注释态，IocDetectSyscall 无调用者）；线程事件已由 Callbacks/ThreadNotification.c
      *   采集（WKD_THREAD.InjectIndicators）+ agent IoaInjectionClassifier
      *   深度分类覆盖。此分支为功能面保留，待 syscall IOC 管线恢复后接入。
      */

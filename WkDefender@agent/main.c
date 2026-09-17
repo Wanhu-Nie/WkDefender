@@ -27,9 +27,9 @@
 #include "log_manager.h"
 #include "system_manager.h"
 #include "ScanManager.h"                       /* 扫描编排层 (SS ScanEngine 迁移) */
-#include "DirectoryMonitor.h"                  /* 目录监控编排层 (SS DirectoryMonitor 迁移 2026-08) */
-#include "FileLockManager.h"                   /* 文件锁管理 (SS FileLockManager 迁移 2026-08) */
-#include "MountPointMonitor.h"                 /* 挂载点监控 (SS MountPointMonitor 迁移 2026-08) */
+#include "FileSystem/DirectoryMonitor.h"      /* 目录监控编排层 (SS DirectoryMonitor 迁移 2026-08) */
+#include "FileSystem/FileLockManager.h"        /* 文件锁管理 (SS FileLockManager 迁移 2026-08) */
+#include "FileSystem/MountPointMonitor.h"     /* 挂载点监控 (SS MountPointMonitor 迁移 2026-08) */
 #include "Common/Exempts/Exempts.h"    /* 统一豁免门面 (Exempts 重构 2026-08-14, 档案 #67, 替代 Whitelist/IocWhitelistPush) */
 #include "Orchestrator/VerdictEngine.h"        /* 中央判定层 (SS ThreatDetector 迁移) */
 #include "IOA/IoaPersistenceDetect.h"          /* 目录级持久化投放判定 (死代码) */
@@ -41,6 +41,8 @@
 #include "ETW/EtwConsumer.h"               /* ETW 独立消费信道 (SS 框架迁移 2026-09-07, 档案 #84) */
 #include "WkDefenderHeader.h"
 #include "AccessControl/AccessControlEngine.h"      /* 自保护公共头 + 编排门面 (2026-09-05 并入) */
+#include "AccessControl/RegistryProtection.h"        /* 注册表保护引擎 (SS RegistryProtection 迁移 2026-09-09, 档案 #97) */
+#include "Registry/RegistryInternal.h"             /* Registry 子系统门面 + 引擎内部 (公共头 2026-09-15 并入, 档案 #93) */
 
 WKDEFENDER_AGENT WkDefenderAgent;
 
@@ -131,6 +133,128 @@ SpWkdMsgRoute(
     return SdfIngestSecurityEvent(
         body->EventId, body->Severity,
         (body->Description[0] != L'\0') ? body->Description : NULL);
+}
+
+/* 注册表保护引擎 (RG) 事件桥接回调 (SS RegistryProtection 迁移 2026-09-09, 档案 #97):
+ *  RG 引擎不反向包含编排公共头, 事件经本桥接 → SdfNotifyAlert(0x5031-0x5034)
+ *  → SP_EVENT_CALLBACK (SpSelfProtectionEventCallback) → UI 0x6004 通道。
+ *  回调内禁止阻塞 (RG 事件分发为串行路径)。 */
+static VOID
+RgEventBridgeCallback(
+    _In_ const RG_PROTECTION_EVENT* Event,
+    _In_opt_ PVOID Context
+    )
+{
+    ULONG subtype = SP_EVENT_SUBTYPE_REG_OP_BLOCKED;
+    ULONG severity = SP_SEVERITY_MEDIUM;
+    WCHAR desc[MAX_PATH * 2];
+
+    UNREFERENCED_PARAMETER(Context);
+
+    if (Event == NULL || AcGetAccessControlEngine() == NULL) {
+        return;
+    }
+
+    if (Event->Type & RgEventOperationBlocked) {
+        subtype = SP_EVENT_SUBTYPE_REG_OP_BLOCKED;
+        severity = SP_SEVERITY_HIGH;
+    } else if (Event->Type & RgEventIntegrityViolation) {
+        subtype = SP_EVENT_SUBTYPE_REG_INTEGRITY;
+        severity = SP_SEVERITY_HIGH;
+    } else if (Event->Type & RgEventValueModified) {
+        subtype = SP_EVENT_SUBTYPE_REG_VALUE_CHANGED;
+        severity = SP_SEVERITY_MEDIUM;
+    } else if (Event->Type & RgEventRollbackPerformed) {
+        subtype = SP_EVENT_SUBTYPE_REG_VALUE_CHANGED;
+        severity = SP_SEVERITY_MEDIUM;
+    }
+
+    /* 描述: 键路径 + 值名 + ANSI 事件描述 (RG_EVENT.Description) */
+    wcsncpy_s(desc, MAX_PATH * 2, Event->KeyPath, _TRUNCATE);
+    if (Event->ValueName[0] != L'\0') {
+        wcsncat_s(desc, MAX_PATH * 2, L"\\", _TRUNCATE);
+        wcsncat_s(desc, MAX_PATH * 2, Event->ValueName, _TRUNCATE);
+    }
+    if (Event->Description[0] != '\0') {
+        WCHAR descA[512];
+        MultiByteToWideChar(CP_UTF8, 0, Event->Description, -1, descA, 512);
+        if (wcschr(desc, L'[') == NULL) {
+            wcsncat_s(desc, MAX_PATH * 2, L" [", _TRUNCATE);
+            wcsncat_s(desc, MAX_PATH * 2, descA, _TRUNCATE);
+            wcsncat_s(desc, MAX_PATH * 2, L"]", _TRUNCATE);
+        }
+    }
+
+    (VOID)SdfNotifyAlert(subtype, severity, desc);
+}
+
+/**************************************************/
+/*  Registry 子系统 Notify 回调 → UI 通知          */
+/*  (门面方案 A 2026-09-09, 档案 #93)             */
+/*                                                */
+/*  五引擎 → WkdRegistry 门面 → 本回调             */
+/*  → WKDEFENDER_NOTIFICATION_DATA → UI 通道       */
+/*  Info/Entry 走控制台日志; 告警/阻断/错误推 UI   */
+/*  回调内禁止阻塞 (子系统为串行执行路径)          */
+/**************************************************/
+
+/* 事件类别 → UI 通知类型 (对齐 SpSelfProtectionEventCallback 通道) */
+static VOID
+RegSubsystemNotifyCallback(
+    _In_ const PWKD_REG_NOTIFY Notify,
+    _In_opt_ PVOID Context
+    )
+{
+    WKDEFENDER_NOTIFICATION_DATA notification;
+    static const PCWSTR sKindNames[] = {
+        L"Info", L"Entry", L"Suspicious", L"Malicious", L"Blocked", L"Error"
+    };
+    PCWSTR kindName;
+    WKDEFENDER_NOTIFICATION_TYPE uiType;
+
+    UNREFERENCED_PARAMETER(Context);
+
+    if (Notify == NULL) {
+        return;
+    }
+    kindName = (Notify->EventKind <= WkdRegEvent_Error)
+             ? sKindNames[Notify->EventKind] : L"Unknown";
+
+    switch (Notify->EventKind) {
+        case WkdRegEvent_Malicious:
+        case WkdRegEvent_Blocked:
+            uiType = WKDEFENDER_NOTIFICATION_TYPE_ERROR;
+            break;
+        case WkdRegEvent_Suspicious:
+        case WkdRegEvent_Error:
+            uiType = WKDEFENDER_NOTIFICATION_TYPE_WARNING;
+            break;
+        case WkdRegEvent_Info:
+        case WkdRegEvent_Entry:
+        default:
+            uiType = WKDEFENDER_NOTIFICATION_TYPE_INFO;
+            break;
+    }
+
+    /* Info/Entry 级事件仅控制台日志 (扫描摘要/条目, 控噪); 告警级及以上推 UI */
+    if (Notify->EventKind == WkdRegEvent_Info ||
+        Notify->EventKind == WkdRegEvent_Entry) {
+        printf("[Registry] [%ls] %ls\n", kindName, Notify->Title);
+        return;
+    }
+
+    if (WkDefenderAgent.NotificationManager == NULL) {
+        return;
+    }
+
+    RtlZeroMemory(&notification, sizeof(notification));
+    notification.type = uiType;
+    wcsncpy_s(notification.title, 256, Notify->Title, _TRUNCATE);
+    wcsncpy_s(notification.message, 1024, Notify->Description, _TRUNCATE);
+    (VOID)NotificationManager_SendNotificationToUI(
+        WkDefenderAgent.NotificationManager, &notification);
+
+    printf("[Registry] [%ls] %ls\n", kindName, Notify->Title);
 }
 
 /**************************************************/
@@ -604,10 +728,10 @@ static NTSTATUS InitializeSubsystems(VOID)
      *      消费链 (扫描触发/持久化/勒索/告警) 默认 g_IoaDirectoryMonitorEnabled=FALSE
      *      死代码开关, 编排器本体初始化 + 关键路径监控始终启用。 */
     printf("[Main] Initializing DirectoryMonitor...\n");
-    status = DirectoryMonitor_Initialize(NULL);
+    status = FsInitializeDirectoryMonitor(NULL);
     if (!NT_SUCCESS(status)) { goto cleanup_13; }
     DirectoryMonitor_SetEventCallback(OnDirectoryEvent);
-    // DirectoryMonitor_MonitorCriticalPaths();
+    // FspMonitorCriticalPaths();
 
     /* 15. FileLockManager 文件锁管理 (SS FileLockManager 迁移, 2026-08)
      *      锁检测 (RM+句柄枚举) + 五级解锁链 + 重启调度 + 锁模式威胁关联。
@@ -659,7 +783,7 @@ static NTSTATUS InitializeSubsystems(VOID)
          *      等级=SpProtectionStandard（main 启动自保护传入），Standard 起全位。 */
         ULONG selfFlags = SdfGetDefaultProtectionFlags(SpProtectionStandard);
 
-        /* 18.1 启动即自保护：注册本进程受保护（对齐 SS TamperProtection::ProtectSelf）。
+        /* 18.1 启动即自保护：注册本进程受保护（TamperProtection::ProtectSelf）。
          *      同步 PP 引擎表；SdfSelfCheck 将校验其生效。
          *      失败不阻断（自保护仅尽力而为）。
          *      policy：EDR 自身类型 → AD_MASK_ALL 显式全激活（2026-09-07 废除
@@ -753,10 +877,38 @@ static NTSTATUS InitializeSubsystems(VOID)
         (VOID)AlpcRegisterRoute(&WkdDefaultAlpcServer,
             WkdAlpcMessage_SecurityEvent, WkdAlpcMessage_SecurityEvent,
             SpWkdMsgRoute, NULL);
+
+        /* 18.4 注册表保护引擎 (SS RegistryProtection 迁移 2026-09-09, 档案 #97):
+         *      引擎独立于编排层 (RG 头不反向包含公共头); 事件上行经桥接回调
+         *      RgEventBridgeCallback → SdfNotifyAlert (0x5031-0x5034) → UI。
+         *      内核桥 (RpSyncProtectedKeysToKernel) 无 WkD 协议通道, 留桩不调用。
+         *      失败不阻断 (自保护仅尽力而为)。 */
+        if (NT_SUCCESS(RpInitialize(NULL))) {
+            ULONG64 rgCallbackId = 0;
+            (VOID)RpRegisterEventCallback(RgEventBridgeCallback, NULL, &rgCallbackId);
+        } else {
+            printf("[Main] WARNING: RegistryProtection init failed (注册表保护跳过)\n");
+        }
     }
+
+    /* 19. Registry 子系统门面 (五引擎聚合 2026-09-09, 档案 #93)
+     *      收纳 PD/RA/RM/SA/SSM: 默认配置全启用 (含 SSM 轮询线程与
+     *      RM 运行态裁决; PD/SA 惰性扫描)。起始扫描默认关闭
+     *      (InitParams=NULL → ScanOnStartup=FALSE), 由 StartAllModules
+     *      经 WkdRegistry_Start 仅启动实时监控, 不阻塞主线。
+     *      Notify 回调在 Initialize 之后注册 (命中单例已就绪护栏)。
+     *      失败经 cleanup_19 逆序回滚 (Shutdown 幂等, 内部已初始化
+     *      部分引擎照常关闭)。 */
+    printf("[Main] Initializing Registry Subsystem...\n");
+    status = WkdRegistry_Initialize(NULL);
+    if (!NT_SUCCESS(status)) { goto cleanup_19; }
+    (VOID)WkdRegistry_SetNotifyCallback(RegSubsystemNotifyCallback, NULL);
 
     printf("[Main] All subsystems initialized\n\n");
     return STATUS_SUCCESS;
+
+cleanup_19:
+    WkdRegistry_Shutdown();         /* Registry 子系统门面 (2026-09-09, 日志 #93, 幂等) */
 
 cleanup_16:
     WkdMpm_Cleanup();
@@ -823,7 +975,7 @@ static NTSTATUS StartAllModules(VOID)
         if (!NT_SUCCESS(s)) {
             printf("[Main] WARNING: SelfProtection start failed: 0x%X\n", s);
         } else {
-            /* 启动自检（对齐 SS SelfDefense SelfTest：进程受保护/代码节完整性/链路）。
+            /* 启动自检（SelfDefense SelfTest：进程受保护/代码节完整性/链路）。
              * 失败不阻断，仅记录。 */
             ULONG failedChecks = 0;
             if (!SdfSelfCheck(&failedChecks)) {
@@ -833,6 +985,12 @@ static NTSTATUS StartAllModules(VOID)
             }
         }
     }
+
+    /* 6. Registry 子系统门面 (2026-09-09): RM 运行态裁决 + SSM 轮询监控 +
+     *      SA 注册表布线; 起始扫描默认关闭。失败阻断 (核心子系统)。 */
+    printf("[Main] Starting Registry Subsystem...\n");
+    s = WkdRegistry_Start();
+    if (!NT_SUCCESS(s)) { return s; }
 
     printf("[Main] All modules started\n\n");
     return STATUS_SUCCESS;
@@ -848,6 +1006,15 @@ static VOID CleanupAllModules(VOID)
 
     /* 0. ETW 独立消费信道：最先停（解阻塞消费线程，回调不再触碰后续释放资源） */
     EtwConsumer_Shutdown();
+
+    /* 0.5 Registry 子系统门面 (2026-09-09)：停实时监控 → 取消活动扫描 →
+     *      等起始线程 → 按 id 注销 10 路桥 → 逆序关五引擎。
+     *      无外部依赖 (PD/RA/RM/SA/SSM 均自足), 与 ETW 同段最先停。 */
+    WkdRegistry_Shutdown();
+
+    /* 注册表保护引擎 (档案 #97): 停监控线程 + 释放键/值表与快照
+     * (与 Registry 子系统同段最先停, 避免其回调触碰后续释放资源)。 */
+    RpShutdown();
 
     /* 自保护编排（2026-09-08 单例化）：唯一全局引擎生命周期即进程生命周期，
      * 随进程退出由 OS 回收（看门狗/反调试/PP/MP 监控线程随之终结），不再

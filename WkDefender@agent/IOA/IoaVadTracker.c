@@ -11,7 +11,7 @@
 #include <wchar.h>                  /* swprintf_s / wcscpy_s (IoaVad_AllocAlert) */
 
 //
-// 保护判断辅助（对齐 SS SS_IS_EXECUTABLE/WRITABLE/RWX）
+// 保护判断辅助（SS_IS_EXECUTABLE/WRITABLE/RWX）
 //
 static BOOLEAN IoaVadIsExecutableProtection(ULONG Protection)
 {
@@ -39,7 +39,7 @@ static int __cdecl IoaVadCompareRegionBase(const void* a, const void* b)
 /* 内容采样长度（对齐堆喷门控采样 4KB） */
 #define WKD_VAD_CONTENT_SAMPLE_SIZE   4096
 
-/* 全局统计（对齐 SS VAD_TRACKER.Stats，快照构建/对比时累计） */
+/* 全局统计（VAD_TRACKER.Stats，快照构建/对比时累计） */
 static WKD_VAD_STATS g_IoaVadStats;
 
 /**************************************************/
@@ -53,7 +53,7 @@ IoaVadGetNow(
     )
 /*++
 Routine Description:
-    当前系统时间 (FILETIME 100ns 单位, 对齐 SS KeQuerySystemTimePrecise,
+    当前系统时间 (FILETIME 100ns 单位, KeQuerySystemTimePrecise,
     wkd IoaHsGetNow 同款)。
 --*/
 {
@@ -107,7 +107,7 @@ IoaVad_AnalyzeRegion(
     )
 /*++
 Routine Description:
-    单区域静态怀疑度分析（对齐 SS VadpAnalyzeRegionSuspicion L2063 +
+    单区域静态怀疑度分析（VadpAnalyzeRegionSuspicion L2063 +
     VadpCalculateSuspicionScore L2135）。静态可实现 7 项：
       RWX(100) / UnbackedExecute(80) / LargePrivate(20) / GuardRegion(30) /
       RecentRWtoRX(70, 静态 AllocationProtect 判) / SuspiciousBase(25) /
@@ -167,7 +167,7 @@ Routine Description:
         score += 25;
     }
 
-    /* 保护不匹配（VirtualProtect 已使用，对齐 SS VAD2-L1 fix） */
+    /* 保护不匹配（VirtualProtect 已使用，VAD2-L1 fix） */
     if (Region->Protection != Region->AllocationProtect) {
         flags |= WKD_VAD_SUSPICION_PROTECTION_MISMATCH;
         score += 40;
@@ -193,7 +193,7 @@ Routine Description:
     构建进程 VAD 快照：复用 MsEnumerateRegions（VirtualQueryEx 枚举 COMMIT
     区域）→ 映射为 WKD_VAD_REGION_ENTRY + 每区域怀疑度评分（含 OverlapWithImage
     模块集重叠判定）+ 进程级统计累计 + 按 BaseAddress 排序（快照对比前置）。
-    对齐 SS VadpScanProcessVad 的枚举+评分阶段 + VAD_PROCESS_CONTEXT 统计字段。
+    VadpScanProcessVad 的枚举+评分阶段 + VAD_PROCESS_CONTEXT 统计字段。
 --*/
 {
     WKD_MEMORY_REGION regions[WKD_VAD_SNAPSHOT_MAX_ENTRIES];
@@ -239,7 +239,7 @@ Routine Description:
             e->SuspicionScore += 60;
         }
 
-        /* 进程级统计（对齐 SS VAD_PROCESS_CONTEXT 统计字段 L1929-1948） */
+        /* 进程级统计（VAD_PROCESS_CONTEXT 统计字段 L1929-1948） */
         if (e->SuspicionFlags & WKD_VAD_SUSPICION_RWX) {
             Snapshot->RWXRegionCount++;
             InterlockedIncrement64((volatile LONG64*)&g_IoaVadStats.RWXDetections);
@@ -257,7 +257,7 @@ Routine Description:
             Snapshot->TotalExecutableSize += regions[i].RegionSize;
         }
 
-        /* 对齐 SS VadpQueryMemoryRegions L1950: SuspiciousRegionCount 计所有
+        /* VadpQueryMemoryRegions L1950: SuspiciousRegionCount 计所有
            score>0 区域 (SS 阈值常量 VAD_SUSPICIOUS_REGION_THRESHOLD=100 定义
            但计数实际用 >0, 未用阈值) */
         if (e->SuspicionScore > 0) {
@@ -269,11 +269,11 @@ Routine Description:
 
     Snapshot->SnapshotTime = IoaVadGetNow();
 
-    /* 按 BaseAddress 排序（快照对比需要，对齐 SS 有序区域链表） */
+    /* 按 BaseAddress 排序（快照对比需要，有序区域链表） */
     qsort(Snapshot->Regions, Snapshot->RegionCount, sizeof(WKD_VAD_REGION_ENTRY),
           IoaVadCompareRegionBase);
 
-    /* 全局统计（对齐 SS Stats.TotalScans/SuspiciousRegions/TotalRegions） */
+    /* 全局统计（Stats.TotalScans/SuspiciousRegions/TotalRegions） */
     InterlockedIncrement64((volatile LONG64*)&g_IoaVadStats.TotalScans);
     InterlockedAdd64((volatile LONG64*)&g_IoaVadStats.SuspiciousRegions,
                      Snapshot->SuspiciousRegionCount);
@@ -297,15 +297,15 @@ IoaVad_CompareSnapshots(
     )
 /*++
 Routine Description:
-    快照对比（对齐 SS VadpCompareSnapshots L2364 merge-compare）：
+    快照对比（VadpCompareSnapshots L2364 merge-compare）：
     两个按 BaseAddress 排序的数组双指针合并比较，输出创建/删除/
     保护变化/大小变化事件。
 
-    跨快照时序判定（对齐 SS VadpCompareSnapshots L2481-2545）：
+    跨快照时序判定（VadpCompareSnapshots L2481-2545）：
       - ProtectionChanged: Old 可写+不可执行 → New 可执行 = 动态 RW→RX 解包
         (RecentRWtoRX +70); New 为 RWX = 新 RWX (+100)。
       - RegionCreated: New 区域 Private + 可执行 = UnbackedExec (标注 0x02,
-        事件分 = 80 对齐 SS 赋值语义)。
+        事件分 = 80 赋值语义)。
       - SuspicionScore = 纯变更语义分 (ProtectionChanged 0+70+100 / Created
         UnbackedExec=80 / Grew·Shrunk·Deleted 恒 0), 不含区域静态分。
 --*/
@@ -332,12 +332,12 @@ Routine Description:
                 BOOLEAN oldX = IoaVadIsExecutableProtection(Old->Regions[oi].Protection);
                 BOOLEAN newX = IoaVadIsExecutableProtection(New->Regions[ci].Protection);
 
-                /* 动态 RW→RX（真实解包时序，对齐 SS L2481-2486） */
+                /* 动态 RW→RX（真实解包时序，L2481-2486） */
                 if (oldW && !oldX && newX) {
                     tFlags |= WKD_VAD_SUSPICION_RECENT_RW_TO_RX;
                     tScore += 70;
                 }
-                /* 新 RWX（对齐 SS L2491-2495） */
+                /* 新 RWX（L2491-2495） */
                 if (newX &&
                     IoaVadIsWritableProtection(New->Regions[ci].Protection) &&
                     New->Regions[ci].Protection != PAGE_NOACCESS) {
@@ -375,7 +375,7 @@ Routine Description:
             oi++;
         } else if (curBase < oldBase) {
             /* 新区区域：Private + 可执行 = UnbackedExec 标注 + 事件分 80
-               （对齐 SS L2541-2545 赋值语义, 事件分 = 纯变更语义分） */
+               （L2541-2545 赋值语义, 事件分 = 纯变更语义分） */
             if (changeCount < MaxChanges) {
                 ULONG tFlags = 0;
                 ULONG tScore = 0;
@@ -493,7 +493,7 @@ IoaVad_FindRegion(
     )
 /*++
 Routine Description:
-    地址 → 区域查找（对齐 SS VadpFindRegion L1725/VadGetRegionInfo L1056）：
+    地址 → 区域查找（VadpFindRegion L1725/VadGetRegionInfo L1056）：
     快照已按 BaseAddress 排序，二分定位最后一个 BaseAddress <= Address
     的区域，校验是否落在区间内。VAD 区域天然不重叠，判定无歧义。
 --*/
@@ -544,7 +544,7 @@ IoaVad_EnumerateRegions(
     )
 /*++
 Routine Description:
-    过滤器枚举（对齐 SS VadEnumerateRegions L1373）：返回 value copies，
+    过滤器枚举（VadEnumerateRegions L1373）：返回 value copies，
     Filter 命中即拷贝，计数上限截断。
 --*/
 {
@@ -576,7 +576,7 @@ IoaVad_ScanRegionContent(
     )
 /*++
 Routine Description:
-    ShellcodePattern(90) 门控内容扫描（对齐 SS 评分表预留分值 L2153，SS
+    ShellcodePattern(90) 门控内容扫描（评分表预留分值 L2153，SS
     分析函数从未置位；wkd 用 MsReadMemory + MsDetectShellcode 真实现）：
     仅对已命中高怀疑标志（UnbackedExec/RWX/RecentRWtoRX/OverlapWithImage）
     的区域做 4KB 样本二次确认，命中置 ContainsShellcode + 置位加分。
@@ -645,7 +645,7 @@ IoaVad_GetStatistics(
     )
 /*++
 Routine Description:
-    全局统计查询（快照构建/对比累计值，对齐 SS VadGetStatistics L1436）。
+    全局统计查询（快照构建/对比累计值，VadGetStatistics L1436）。
 --*/
 {
     if (Stats == NULL) {

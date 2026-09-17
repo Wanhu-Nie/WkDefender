@@ -230,47 +230,6 @@ IoaAnalyzeProcessInjection(
     );
 
 /*
- * IoaRecordModuleLoad — 记录一次模块加载 (DLL 注入模块窗口确认的数据源)。
- * 移植自 ShadowStrike ModuleTracker + InjectionCorrelator。
- * 供 ImageLoad 事件流接入后调用 (当前驱动 ImageLoad 事件未接入 IOA,
- * 见 process_manager.c WkdMessage_ImageLoaded; 接入后即激活确认)。
- */
-NTSTATUS
-IoaRecordModuleLoad(
-    _In_ ULONG ProcessId,
-    _In_ PCWSTR ModulePath,
-    _In_ LARGE_INTEGER LoadTime
-    );
-
-/*
- * IoaConfirmDllInjectionByModule — 远程线程 DLL 注入的模块窗口确认。
- * 移植自 ShadowStrike DetectRemoteThreadInjectionImpl (T1055.001)。
- * 当目标进程在关联时间窗 (1s) 内加载了未信任 (非系统目录) 模块时,
- * 将 DLL 注入置信度提升至确认级 (≥90) 并提高风险分。
- * 数据源缺失 (模块缓存为空) 时返回 STATUS_NOT_FOUND, 不改变判定, 不引入误报。
- */
-NTSTATUS
-IoaConfirmDllInjectionByModule(
-    _In_ ULONG TargetProcessId,
-    _Inout_ PULONG Confidence,
-    _Inout_ PULONG RiskScore
-    );
-
-/*
- * IoaConfirmReflectiveLoading — 反射 DLL 精确确认 (事件驱动定向验证)。
- * 对齐 ShadowStrike AnalyzeCandidate 的内存扫描确认阶段 (ReflectiveDLLDetector.cpp L2403-2418):
- *   分类器以 UNBACKED_START 近似判定 ReflectiveDLL; 本函数用线程入口地址定向验证:
- *     MsGetRegionInfo 定位入口区域 → 私有可执行 → MsScanRegionAt 定向扫描 →
- *     确认隐藏无背衬 PE (WkdMemThreat_PEInjection 且 !PeInPeb)。
- * 不可验证 (无入口地址/区域不可读/无 PE 命中) 时返回 FALSE, 不改变原判定。
- */
-BOOLEAN
-IoaConfirmReflectiveLoading(
-    _In_ ULONG TargetProcessId,
-    _In_ ULONG_PTR StartRoutine
-    );
-
-/*
  * IoaConfirmThreadHijacking — 线程劫持定向确认 (T1055.003)。
  * 对齐 ShadowStrike ValidateThreadInternal + CalculateRiskScore:
  *   分类器/时序确认 (阶段4.5b) 判出劫持候选后, 读取目标线程上下文定向验证:
@@ -308,7 +267,7 @@ IoaCheckAtomBombing(
 /**************************************************/
 
 /*
- * 操作类型枚举 (对齐 SS INJ_OPERATION_TYPE, InjectionDetector.h:145-161)。
+ * 操作类型枚举 (INJ_OPERATION_TYPE, InjectionDetector.h:145-161)。
  */
 typedef enum _IOA_INJ_OP {
     IoaInjOp_None = 0,
@@ -324,7 +283,7 @@ typedef enum _IOA_INJ_OP {
 } IOA_INJ_OP, *PIOA_INJ_OP;
 
 /*
- * 注入检测统计 (对齐 SS INJ_STATISTICS, InjectionDetector.h:421-430)。
+ * 注入检测统计 (INJ_STATISTICS, InjectionDetector.h:421-430)。
  * ※ 死代码: wkd 无操作哈希表/链/阻断通道, 无对应计数置 0 留位。
  */
 typedef struct _WKD_INJECTION_STATISTICS {
@@ -339,7 +298,7 @@ typedef struct _WKD_INJECTION_STATISTICS {
 } WKD_INJECTION_STATISTICS, *PWKD_INJECTION_STATISTICS;
 
 /*
- * 注入链信息 (对齐 SS INJ_CHAIN, InjectionDetector.h:216-257)。
+ * 注入链信息 (INJ_CHAIN, InjectionDetector.h:216-257)。
  * ※ 死代码: SS 链键为 (SrcPid,TgtPid), wkd 进程对键为 (SourceNodeId,TargetNodeId)
  *   GUID; SS 链 5s 滑窗/32 操作上限由 wkd 进程对 60s TTL + 边衰减承担。
  */
@@ -355,7 +314,7 @@ typedef struct _WKD_INJECTION_CHAIN_INFO {
 } WKD_INJECTION_CHAIN_INFO, *PWKD_INJECTION_CHAIN_INFO;
 
 /*
- * IoaCalcOperationSuspicion — 单操作即时嫌疑分 (对齐 SS InjRecordOperation)。
+ * IoaCalcOperationSuspicion — 单操作即时嫌疑分 (InjRecordOperation)。
  * ※ 死代码: 当前驱动不逐操作上送内存/APC syscall 参数解析, 无调用者。
  */
 ULONG
@@ -377,7 +336,7 @@ IoaClassifySecondaryInjection(
     );
 
 /*
- * IoaGetInjectionStatistics — 注入检测统计 (对齐 SS InjGetStatistics)。
+ * IoaGetInjectionStatistics — 注入检测统计 (InjGetStatistics)。
  * ※ 死代码: 无调用者。
  */
 NTSTATUS
@@ -386,7 +345,7 @@ IoaGetInjectionStatistics(
     );
 
 /*
- * IoaQueryInjectionChain — 进程对注入链查询 (对齐 SS InjGetChainInfo)。
+ * IoaQueryInjectionChain — 进程对注入链查询 (InjGetChainInfo)。
  * ※ 死代码: 无调用者。
  */
 NTSTATUS
@@ -396,7 +355,7 @@ IoaQueryInjectionChain(
     );
 
 /*
- * SS 操作模式位输入 (对齐 SS INJ_PATTERN_* 8 位 + INJ_CHAIN_FLAG_*,
+ * SS 操作模式位输入 (INJ_PATTERN_* 8 位 + INJ_CHAIN_FLAG_*,
  * InjectionDetector.c:92-99/216-257)。
  * 供 IoaClassifyBySsOperationPattern 输入 (死代码)。
  */
@@ -414,7 +373,7 @@ typedef struct _IOA_SS_OP_PATTERN {
 } IOA_SS_OP_PATTERN, *PIOA_SS_OP_PATTERN;
 
 /*
- * IoaDetectInjectionAtRegion — 地址区域定向注入检测 (对齐 SS InjDetectInjection,
+ * IoaDetectInjectionAtRegion — 地址区域定向注入检测 (InjDetectInjection,
  * InjectionDetector.c:1099-1224)。
  * ※ 死代码: 无调用者。见实现注释。
  */
@@ -428,7 +387,7 @@ IoaDetectInjectionAtRegion(
     );
 
 /*
- * IoaClearInjectionChain — 清进程对注入语义位 (对齐 SS InjClearChain,
+ * IoaClearInjectionChain — 清进程对注入语义位 (InjClearChain,
  * InjectionDetector.c:1542-1595)。
  * ※ 死代码: 无调用者。InjClearAllChains 需 PairManager 全量遍历 API, 不提供。
  */
@@ -458,18 +417,18 @@ IoaClassifyBySsOperationPattern(
 /*    - Create（WkdEvent_SectionCreate）：建条目      */
 /*    - Map（WkdEvent_MapViewOfSection）：挂映射记录  */
 /*    - CrossProcessMapCount / RemoteMap 三方判定    */
-/*  查询 API 对齐 SS SecGetCrossProcessMaps /        */
+/*  查询 API SecGetCrossProcessMaps /        */
 /*  SecIsCrossProcessMapped / SecGetSectionInfo。   */
 /*  ※ 死代码: 依赖驱动 SmInitialize 启用 + IoaObserve */
 /*    阶段4.12 接线（g_IoaSectionSharingEnabled 门控）。*/
 /**************************************************/
 
-#define IOA_SECTION_HASH_BUCKETS      1024   /* 对齐 SS SEC_HASH_BUCKET_COUNT */
-#define IOA_SECTION_MAX_TRACKED       8192   /* 对齐 SS SEC_MAX_TRACKED_SECTIONS */
-#define IOA_SECTION_MAX_MAPS_PER_SEC  256    /* 对齐 SS SEC_MAX_MAPS_PER_SECTION */
-#define IOA_SECTION_STALE_100NS       (300LL * 10000000LL)  /* 5min，对齐 SS SEC_STALE_THRESHOLD_100NS */
+#define IOA_SECTION_HASH_BUCKETS      1024   /* SEC_HASH_BUCKET_COUNT */
+#define IOA_SECTION_MAX_TRACKED       8192   /* SEC_MAX_TRACKED_SECTIONS */
+#define IOA_SECTION_MAX_MAPS_PER_SEC  256    /* SEC_MAX_MAPS_PER_SECTION */
+#define IOA_SECTION_STALE_100NS       (300LL * 10000000LL)  /* 5min，SEC_STALE_THRESHOLD_100NS */
 
-/* 单条映射记录（对齐 SS SEC_MAP_ENTRY 快照语义） */
+/* 单条映射记录（SEC_MAP_ENTRY 快照语义） */
 typedef struct _IOA_SECTION_MAP_RECORD {
     HANDLE              ProcessId;          /* 映射进程 */
     ULONG64             ViewBase;
@@ -479,21 +438,21 @@ typedef struct _IOA_SECTION_MAP_RECORD {
     LIST_ENTRY          ListEntry;
 } IOA_SECTION_MAP_RECORD, *PIOA_SECTION_MAP_RECORD;
 
-/* Section 条目（对齐 SS SECTION_ENTRY） */
+/* Section 条目（SECTION_ENTRY） */
 typedef struct _IOA_SECTION_ENTRY {
     ULONG64             SectionObject;      /* 内核对象指针（键） */
-    ULONG               SectionId;          /* 自增 ID（对齐 SS SectionId，SecGetSectionById 用） */
+    ULONG               SectionId;          /* 自增 ID（SectionId，SecGetSectionById 用） */
     HANDLE              CreatorProcessId;
     ULONG64             MaximumSize;
     ULONG               SectionType;        /* 0=数据 1=SEC_IMAGE */
     ULONG               IsAnonymous;
     ULONG               SuspicionFlags;     /* WKD_SEC_SUSPICION_* */
     ULONG               SuspicionScore;     /* SS 权重和 */
-    WCHAR               FileName[260];      /* 后备文件名（预留，对齐 SS BackingFile.FileName；
+    WCHAR               FileName[260];      /* 后备文件名（预留，BackingFile.FileName；
                                              * 数据源缺失：驱动 Section Create 不上送路径，恒空，
                                              * 接入后激活 IoaFindSectionByFile） */
     LIST_ENTRY          MapList;            /* IOA_SECTION_MAP_RECORD */
-    LONG                TotalMapCount;      /* 历史累计（对齐 SS MapCount） */
+    LONG                TotalMapCount;      /* 历史累计（MapCount） */
     LONG                CrossProcessMapCount;
     LONG                ActiveMapCount;
     LARGE_INTEGER       CreateTime;
@@ -501,7 +460,7 @@ typedef struct _IOA_SECTION_ENTRY {
     LIST_ENTRY          HashEntry;
 } IOA_SECTION_ENTRY, *PIOA_SECTION_ENTRY;
 
-/* Section 快照（对齐 SS SEC_SECTION_INFO） */
+/* Section 快照（SEC_SECTION_INFO） */
 typedef struct _IOA_SECTION_INFO {
     ULONG64             SectionObject;
     ULONG               SectionId;
@@ -517,7 +476,7 @@ typedef struct _IOA_SECTION_INFO {
     LARGE_INTEGER       LastMapTime;
 } IOA_SECTION_INFO, *PIOA_SECTION_INFO;
 
-/* 映射快照（对齐 SS SEC_MAP_INFO） */
+/* 映射快照（SEC_MAP_INFO） */
 typedef struct _IOA_SECTION_MAP_INFO {
     HANDLE              ProcessId;
     ULONG64             ViewBase;
@@ -528,7 +487,7 @@ typedef struct _IOA_SECTION_MAP_INFO {
 
 /*
  * IoaSectionTrackCreate — 记录 Section 创建（WkdEvent_SectionCreate 消费）。
- * 对齐 SS SecTrackSectionCreate。SectionObject==0 时忽略（创建失败无对象）。
+ * SecTrackSectionCreate。SectionObject==0 时忽略（创建失败无对象）。
  */
 NTSTATUS
 IoaSectionTrackCreate(
@@ -537,7 +496,7 @@ IoaSectionTrackCreate(
 
 /*
  * IoaSectionTrackMap — 记录一次映射（WkdEvent_MapViewOfSection 消费，Origin=1）。
- * 对齐 SS SecTrackSectionMap。SectionObject==0 时无聚合键，忽略。
+ * SecTrackSectionMap。SectionObject==0 时无聚合键，忽略。
  * 跨进程（Source≠Target）→ CrossProcessMapCount++；RemoteMap 由
  * IoaSectionIsRemoteMapped 即时判定（映射进程≠Creator≠当前进程）。
  */
@@ -553,7 +512,7 @@ IoaSectionTrackMap(
 
 /*
  * IoaSectionTrackUnmap — 记录解除映射（WkdEvent_UnmapViewOfSection 消费，Origin=2）。
- * 对齐 SS SecTrackSectionUnmap。按 (ProcessId, ViewBase) 匹配标记 IsMapped=FALSE。
+ * SecTrackSectionUnmap。按 (ProcessId, ViewBase) 匹配标记 IsMapped=FALSE。
  */
 NTSTATUS
 IoaSectionTrackUnmap(
@@ -585,7 +544,7 @@ IoaIsSectionCrossProcessMapped(
 
 /*
  * IoaSectionIsRemoteMapped — RemoteMap 三方判定：映射进程 ≠ Creator 且 ≠ 当前
- * 进程（第三进程映射，对齐 SS SecSuspicion_RemoteMap 120 分语义）。
+ * 进程（第三进程映射，SecSuspicion_RemoteMap 120 分语义）。
  */
 BOOLEAN
 IoaSectionIsRemoteMapped(
@@ -595,7 +554,7 @@ IoaSectionIsRemoteMapped(
     );
 
 /*
- * IoaGetSectionInfo — 查询 Section 快照（对齐 SS SecGetSectionInfo 子集）。
+ * IoaGetSectionInfo — 查询 Section 快照（SecGetSectionInfo 子集）。
  */
 NTSTATUS
 IoaGetSectionInfo(
@@ -613,7 +572,7 @@ IoaSectionCleanupExpired(
     );
 
 /*
- * IoaGetSectionById — 按 SectionId 查询（对齐 SS SecGetSectionById）。
+ * IoaGetSectionById — 按 SectionId 查询（SecGetSectionById）。
  * ※ 死代码: SectionId 为追踪表自增 ID（SectionObject 指针的代理），供 UI/日志引用。
  */
 NTSTATUS
@@ -623,7 +582,7 @@ IoaGetSectionById(
     );
 
 /*
- * IoaFindSectionByFile — 按后备文件名查询（对齐 SS SecFindSectionByFile）。
+ * IoaFindSectionByFile — 按后备文件名查询（SecFindSectionByFile）。
  * ※ 死代码: 数据源缺失——驱动 Section Create 不上送 FilePath，IOA_SECTION_ENTRY.
  *   FileName 恒空 → 恒 STATUS_NOT_FOUND。接入前提: 驱动在 Section Create body
  *   补 FilePath 上送 + TrackCreate 填充 FileName。
@@ -648,7 +607,7 @@ IoaGetSuspiciousSections(
     );
 
 /*
- * 聚合表统计（对齐 SS SEC_STATISTICS）。
+ * 聚合表统计（SEC_STATISTICS）。
  */
 typedef struct _IOA_SECTION_STATISTICS {
     ULONG               ActiveSections;     /* 活跃条目数 */
@@ -662,7 +621,7 @@ typedef struct _IOA_SECTION_STATISTICS {
 } IOA_SECTION_STATISTICS, *PIOA_SECTION_STATISTICS;
 
 /*
- * IoaSectionGetStatistics — 聚合表统计（对齐 SS SecGetStatistics）。
+ * IoaSectionGetStatistics — 聚合表统计（SecGetStatistics）。
  * ※ 死代码: 无调用者。
  */
 NTSTATUS

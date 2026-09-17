@@ -19,6 +19,13 @@ typedef unsigned char BYTE;
 #define WKD_PROCESS_HASH_MAP_SIZE 64
 
 //
+// 注册表行为画像环形缓冲大小（REG_RING_BUFFER_SIZE/REGCB_RING_BUFFER_SIZE）
+// 近期操作时序环形缓冲深度，须为 2 的幂（取模掩码优化）。
+// 消费方：ProcessMonitor.h WKD_RG_PROCESS_PROFILE / RegistryProtection.c。
+//
+#define WKD_RG_RING_BUFFER_SIZE  32
+
+//
 // 跨进程攻击模式检测配置
 //
 #define WKD_CROSS_PROCESS_DETECTION_WINDOW_MS      1000 * 60 * 60 // 1个小时

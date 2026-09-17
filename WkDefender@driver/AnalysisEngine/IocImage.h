@@ -17,7 +17,7 @@
 // dispatch Phase 4 TsSettleScores 统一结算，Phase 4.5 AeEvaluateVerdict 处置
 // （浅层阻断：加载恶意镜像的进程评分达 Blocked 后经豁免校验被终止）。
 //
-// 检测范围（对齐 SS ImageNotify 全功能面，可死代码）：
+// 检测范围（ImageNotify 全功能面，可死代码）：
 //   1. 可疑路径加载（0x0A03 SuspiciousPath）
 //   2. 系统 DLL 伪装（0x0A04 MasqueradingName）
 //   3. typosquatting（0x0A05 Typosquatting）

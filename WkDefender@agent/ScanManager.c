@@ -4,13 +4,13 @@
 /**************************************************/
 
 #include "ScanManager.h"
-#include "DirectoryMonitor.h"            /* Quick ?????��???? (DirectoryMonitor ??? 2026-08) */
+#include "FileSystem/DirectoryMonitor.h"            /* Quick ?????��???? (DirectoryMonitor ??? 2026-08) */
 #include "IOC/IocScanner.h"
 #include "IOC/IocEngine.h"               /* extern g_IocEngine (IocEngine.c ����) */
 #include "IOC/ImageAnalyzer/ImageAnalyzer.h" /* ͳһ���������ˮ�� (2026-08-15) */
 #include "Common/Exempts/Exempts.h"      /* ͳһ�������� (Exempts �ع� #67, ��� IocFileWhitelist) */
 #include "Common/Utils.h"
-#include "FileLockManager.h"          /* ��̽���ſ� (FileLockManager Ǩ�� 2026-08) */
+#include "FileSystem/FileLockManager.h"          /* ��̽���ſ� (FileLockManager Ǩ�� 2026-08) */
 
 #include <windows.h>
 #include <stdio.h>

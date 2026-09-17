@@ -37,6 +37,33 @@ LONG
     _Inout_ PVOID Object
     );
 
+//
+// 空引用/解引用回调模板（纯值语义 Value，无需引用计数时使用）。
+// 对齐 2026-08-25 强制对称契约：Reference/Dereference 必选，
+// no-op 模板满足契约但不做任何操作（Value 由调用方自管）。
+// 与 PFN_HASH_MAP_REFERENCE_CALLBACK / PFN_HASH_MAP_DEREFERENCE_CALLBACK
+// 签名一致，可直接作为 CoInitializeHashMap 的 Reference/Dereference 参数传入。
+//
+FORCEINLINE
+LONG
+CoHashMapNoopReference(
+    _Inout_ PVOID Object
+    )
+{
+    UNREFERENCED_PARAMETER(Object);
+    return 0;
+}
+
+FORCEINLINE
+LONG
+CoHashMapNoopDereference(
+    _Inout_ PVOID Object
+    )
+{
+    UNREFERENCED_PARAMETER(Object);
+    return 0;
+}
+
 /************************************************
 **                  结构体定义
 ************************************************/
@@ -63,8 +90,8 @@ typedef struct _WKD_HASH_MAP {
     EX_PUSH_LOCK GlobalLock;            // 全局推锁（PerBucketLock=FALSE 时使用）
     BOOLEAN PerBucketLock;              // 是否使用桶级锁（Entries[i].Lock）
 
-    volatile ULONG TotalEntries;
-    volatile ULONG ActiveEntries;
+    volatile LONG TotalEntries;
+    volatile LONG ActiveEntries;
 
     /* 回调函数 (2026-08-25 强制对称契约):
      * Reference/Dereference 必选 — CoInitializeHashMap 强制校验成对提供;

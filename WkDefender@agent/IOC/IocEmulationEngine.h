@@ -76,7 +76,7 @@ typedef struct _WKD_EMU_RESULT {
 
 /*++
 Routine Description:
-    OEP 启发式检测 (对齐 SS DetectOEP + PeUnpack):
+    OEP 启发式检测 (DetectOEP + PeUnpack):
     标准序言 push ebp; mov ebp, esp (55 8B EC) / 64 位 48 83 EC。
 
 Arguments:
@@ -96,7 +96,7 @@ IocEmu_DetectOEP(
 
 /*++
 Routine Description:
-    API 分类 (对齐 SS CategorizeAPI)：按 DLL 名映射行为类别。
+    API 分类 (CategorizeAPI)：按 DLL 名映射行为类别。
 
 Arguments:
     DllName  - DLL 名。
@@ -115,7 +115,7 @@ IocEmu_CategorizeApi(
 
 /*++
 Routine Description:
-    API 严重性评估 (对齐 SS AssessAPISeverity)：
+    API 严重性评估 (AssessAPISeverity)：
     敏感 API (注入/内存写/提权) → Critical。
 
 Arguments:

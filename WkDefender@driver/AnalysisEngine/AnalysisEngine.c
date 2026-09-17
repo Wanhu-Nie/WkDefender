@@ -17,8 +17,8 @@
 #include "../ThreatScoring/ThreatScoring.h"
 #include "../Syscall/SyscallMonitor.h"
 #include "../Common/Utils.h"
-#include "../Callbacks/ThreadNotify.h"
-#include "../Callbacks/ImageNotify.h"
+#include "../Callbacks/ThreadNotification.h"
+#include "../Callbacks/ImageNotification.h"
 
 /**************************************************/
 /*           维护线程状态                           */
@@ -36,7 +36,7 @@ typedef struct _AE_MAINTENANCE_STATE {
 static AE_MAINTENANCE_STATE g_AeMaintenance = { 0 };
 
 /**************************************************/
-/*       多目标注入源检测 (对齐 SS 进程关系图)        */
+/*       多目标注入源检测 (进程关系图)        */
 /*                                                  */
 /*  迁移自 ShadowStrike ProcessRelationship.c       */
 /*  PrpCalculateRelationshipScore 的                */
@@ -116,7 +116,7 @@ Return Value:
     /* 第二趟: 出度 >5 的源 → 多目标注入源 */
     for (i = 0; i < entryCount; i++) {
         if (entries[i].OutboundCount > AE_MULTI_TARGET_THRESHOLD) {
-            /* 对齐 SS PR_SCORE_MULTIPLE_TARGETS=120。
+            /* PR_SCORE_MULTIPLE_TARGETS=120。
              * 接入提示: 对源进程相关 pair 提交
              * AeReportIndicatorEx(..., TsIndicator_Injection_RemoteThread, 2);
              * 当前仅记录, 不改变活代码评分行为。 */
@@ -216,7 +216,7 @@ Routine Description:
         }
     }
 
-    /* ============ Phase 3.5: 多目标源检测（死代码, 对齐 SS 多目标修正 +120） ============ */
+    /* ============ Phase 3.5: 多目标源检测（死代码, 多目标修正 +120） ============ */
 
     //if (g_AeMultiTargetEnabled) {
     //    AepDetectMultiTargetSources(snapshot, capacity);
@@ -365,7 +365,7 @@ Return Value:
     /* ---- Phase 4: 评分统一结算（pair 维度） ---- */
     TsSettleScores(WkdTsEngine, pair);
 
-    /* ---- Phase 4.5: 评分裁决消费（迁移自 SS BepDetermineResponse）
+    /* ---- Phase 4.5: 评分裁决消费（BepDetermineResponse）
      * Blocked → 终止源进程（豁免校验）+ 上报；Malicious → 上报 ---- */
     AeEvaluateVerdict(pair);
 
@@ -381,7 +381,7 @@ Cleanup:
 /**************************************************/
 /*       阻断豁免 — AepIsCriticalProcess            */
 /*                                                  */
-/*  迁移自 SS BepIsCriticalProcess                  */
+/*  BepIsCriticalProcess                  */
 /*  (BehaviorEngine.c L1874-1948)。                 */
 /*  实现用 wkd 尾部匹配模式（对齐 CbpIsCriticalBootProcess），  */
 /*  名单 = SS 14 项 + wkd 既有项。                  */
@@ -471,7 +471,7 @@ AepIsCriticalProcess(
 /**************************************************/
 /*       评分裁决消费 — AeEvaluateVerdict           */
 /*                                                  */
-/*  迁移自 SS BepDetermineResponse                  */
+/*  BepDetermineResponse                  */
 /*  (BehaviorEngine.c L4481-4497):                  */
 /*    Critical → Block / High → Alert。             */
 /*  映射到 wkd TsVerdict：                          */
@@ -501,7 +501,7 @@ AeEvaluateVerdict(
 
     /* 仅高置信恶意（Blocked，阈值 95）触发处置 */
     if (verdict == TsVerdict_Blocked) {
-        /* 源进程豁免校验：关键进程不终止（对齐 SS BepIsCriticalProcess） */
+        /* 源进程豁免校验：关键进程不终止（BepIsCriticalProcess） */
         if (!AepIsCriticalProcess(Pair->SourceProcessId, NULL)) {
             PEPROCESS process = NULL;
 
@@ -527,9 +527,9 @@ AeEvaluateVerdict(
                 ObDereferenceObject(process);
             }
         }
-        severity = 4;   /* Critical（对齐 SS ThreatSeverity_Critical → Block） */
+        severity = 4;   /* Critical（ThreatSeverity_Critical → Block） */
     } else if (verdict == TsVerdict_Malicious) {
-        severity = 3;   /* High（对齐 SS ThreatSeverity_High → Alert） */
+        severity = 3;   /* High（ThreatSeverity_High → Alert） */
     } else {
         return;
     }

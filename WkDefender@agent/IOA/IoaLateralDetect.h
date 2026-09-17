@@ -10,7 +10,7 @@
 /*  待接通: 驱动补网络事件源 (远程端口) + 服务事件     */
 /*  源后激活。                                       */
 /*                                                  */
-/*  评分 (对齐 SS BehaviorConstants):                */
+/*  评分 (BehaviorConstants):                */
 /*    远程服务创建 +20 (T1021.002)                   */
 /*    WMI 远程执行 +15 (T1047)                       */
 /*    SMB 445 +8, RDP 3389 +10, WinRM 5985/6 +12     */
@@ -21,7 +21,7 @@
 #include "IoaTypes.h"
 
 /**************************************************/
-/*   SS BehaviorEventType 语义常量 (对齐 SS L485-662) */
+/*   SS BehaviorEventType 语义常量 (L485-662) */
 /**************************************************/
 
 #define WKD_EVT_SERVICE_INSTALL     500     /* ServiceInstall */
@@ -29,7 +29,7 @@
 #define WKD_EVT_NET_CONNECT         400     /* NetworkConnect */
 
 /**************************************************/
-/*   评分常量 (对齐 SS BehaviorConstants)           */
+/*   评分常量 (BehaviorConstants)           */
 /**************************************************/
 
 #define WKD_LAT_SERVICE_SCORE       20      /* 远程服务创建 (目标≠自身) */
@@ -39,7 +39,7 @@
 #define WKD_LAT_WINRM_SCORE         12      /* 5985/5986 */
 
 /**************************************************/
-/*   高危端口 (对齐 SS L1384-1396)                  */
+/*   高危端口 (L1384-1396)                  */
 /**************************************************/
 
 #define WKD_LAT_PORT_SMB            445

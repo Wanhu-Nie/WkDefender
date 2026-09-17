@@ -39,9 +39,9 @@ extern "C" {
 #define AD_MAX_WINDOWS              50          /* 调试器窗口上限 */
 #define AD_MAX_HISTORY              1000        /* 检测历史环形缓冲上限 */
 #define AD_MAX_MEMORY_REGIONS       1000        /* 受保护内存区域上限 */
-#define AD_TIMING_SAMPLE_COUNT      10          /* 时序采样次数（对齐 SS TIMING_SAMPLE_COUNT=10） */
+#define AD_TIMING_SAMPLE_COUNT      10          /* 时序采样次数（TIMING_SAMPLE_COUNT=10） */
 
-/* 检测权重（0-100，对齐 SS AntiDebugConstants 每类权重） */
+/* 检测权重（0-100，AntiDebugConstants 每类权重） */
 #define AD_WEIGHT_PEB_DETECTION     25
 #define AD_WEIGHT_API_DETECTION     30
 #define AD_WEIGHT_TIMING_DETECTION  20
@@ -52,7 +52,7 @@ extern "C" {
 #define AD_WEIGHT_HOOK_DETECTION    45
 #define AD_WEIGHT_INSTRUMENTATION_DETECTION 50
 
-/* 时序阈值（对齐 SS AntiDebugConstants） */
+/* 时序阈值（AntiDebugConstants） */
 #define AD_RDTSC_SINGLE_THRESHOLD   500         /* RDTSC 单指令阈值（周期） */
 #define AD_RDTSC_BLOCK_THRESHOLD    10000       /* RDTSC 指令块阈值 */
 #define AD_TIMING_ANOMALY_NS        1000000     /* QPC 时序异常阈值（纳秒） */

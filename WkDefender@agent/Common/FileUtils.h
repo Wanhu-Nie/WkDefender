@@ -1,91 +1,37 @@
 ﻿/**************************************************/
-/*  WkDefender Agent — 文件/字节/通用工具层          */
+/*  WkDefender Agent — 熵计算 / 文件 I/O 工具层      */
 /*                                                  */
-/*  2026-08-15 重构: 自 IOC/IocScanner.c 迁出        */
-/*  与扫描无关的文件 I/O、文件类型识别(魔数/消歧/     */
-/*  分类/扩展名) 与熵计算(统一) 逻辑。               */
+/*  2026-08-15 初版: 自 IOC/IocScanner.c 迁出        */
+/*  文件 I/O + 熵计算逻辑。                         */
 /*                                                  */
-/*  2026-09-08 重构: 多算法哈希 (SHA256/MD5/CTPH/    */
-/*  TLSH) 与哈希高层已迁出至 BCrypUtils.{c,h} 统一   */
-/*  整合, 本头通过 BCrypUtils.h 转发其 API 声明,     */
-/*  既有调用方（含 IOC 层）保持零改动。             */
+/*  2026-09-08 重构: 多算法哈希迁移至 BCrypUtils      */
+/*                                                  */
+/*  2026-09-14 重构: 文件类型判定 (IOC_FILE_TYPE /    */
+/*  CopDetermineFileTypeInternal / CoDetermineFileType*/
+/*  / CoDetermineFileTypeFromBuffer /                */
+/*  IocScan_AnalyzeFileTypePath / IsTextContent /    */
+/*  GetExtensionInfo / IsExecutable* / IsScript /    */
+/*  IsArchive / CanContainMacros / GetMimeForFormat/ */
+/*  DetectSpoofing) 迁至 Include/FileSystem/         */
+/*  FileAnalyzer.h。本头仅保留熵计算+文件IO工具。    */
 /**************************************************/
 
 #pragma once
 
 #include "../DefendTypes.h"
-#include "../IOC/IocTypes.h"   /* WKD_FILE_FORMAT/WKD_FILE_TYPE_INFO/WKD_FILE_HASH_SET 等 */
+#include "../IOC/IocTypes.h"   /* WKD_FILE_TYPE_INFO 等 (IocScan_ContainsPe 无依赖, 备用) */
 #include "BCrypUtils.h"        /* 哈希 API 统一出口（2026-09-08 迁移） */
 
 /**************************************************/
 /*               文件类型识别                       */
+/*  2026-09-14 已迁移至 Include/FileSystem/          */
+/*  FileAnalyzer.h, 本头不再声明。                  */
+/*  (IocScan_ContainsPe 因不含文件类型判定逻辑,     */
+/*   仍保留在此。)                                  */
 /**************************************************/
-
-/* 粗分类判定（内部走魔数表） */
-typedef enum _IOC_FILE_TYPE {
-    IocFileType_Unknown = 0,
-    IocFileType_Pe32,
-    IocFileType_Pe64,
-    IocFileType_Dll,
-    IocFileType_Sys,
-    IocFileType_Elf,
-    IocFileType_Pdf,
-    IocFileType_Archive,
-    IocFileType_Office,
-    IocFileType_Script,
-} IOC_FILE_TYPE;
-
-/* 缓冲版粗分类 */
-IOC_FILE_TYPE IocScan_DetectFileType(_In_ const BYTE* Data, _In_ ULONG Size);
-
-/* 路径版粗分类 */
-IOC_FILE_TYPE CoDetermineFileType(_In_ PCWSTR FilePath);
-
-/* 缓冲版完整文件类型分析 — 魔数匹配 + Disambiguate 精化 +
- * 类别/风险/扩展名映射 + 扩展名欺骗检测。
- * Data 建议 ≥64KB 以覆盖 ISO@0x8001 等多偏移签名。 */
-NTSTATUS
-CoDetermineFileTypeFromBuffer(
-    _In_  const BYTE*          Data,
-    _In_  ULONG                Size,
-    _In_opt_ PCWSTR            DiskExtension,
-    _Out_ PWKD_FILE_TYPE_INFO  Info
-    );
-
-/* 路径版完整文件类型分析 — 读文件头 + 路径安全欺骗检测 +
- * 扩展名-内容不匹配判定。 */
-NTSTATUS
-IocScan_AnalyzeFileTypePath(
-    _In_  PCWSTR               FilePath,
-    _Out_ PWKD_FILE_TYPE_INFO  Info
-    );
-
-/* 文本内容判定（UTF-8 有效性 + 90% 可打印 + NUL 拒） */
-BOOLEAN IocScan_IsTextContent(_In_ const BYTE* Data, _In_ ULONG Size);
-
-/* 扩展名完整信息查询（format/category/risk/mime/isCommon） */
-NTSTATUS IocScan_GetExtensionInfo(_In_ PCWSTR Extension, _Out_ PWKD_EXTENSION_INFO Info);
-
-/* 可执行判定（Category in Executable/Driver/Library） */
-BOOLEAN IocScan_IsExecutable(_In_ PCWSTR FilePath);
-
-/* 缓冲版可执行判定 */
-BOOLEAN IocScan_IsExecutableBuffer(_In_ const BYTE* Data, _In_ ULONG Size);
-
-/* 脚本判定 */
-BOOLEAN IocScan_IsScript(_In_ PCWSTR FilePath);
-
-/* 归档判定 */
-BOOLEAN IocScan_IsArchive(_In_ PCWSTR FilePath);
-
-/* 可含宏判定 */
-BOOLEAN IocScan_CanContainMacros(_In_ PCWSTR FilePath);
 
 /* 文件缓冲是否含 PE（找 MZ + 校验 e_lfanew 处 PE 签名） */
 BOOLEAN IocScan_ContainsPe(_In_ const BYTE* Data, _In_ ULONG Size);
-
-/* MIME 映射（Web/HTTP 消费语义） */
-PCSTR IocScan_GetMimeForFormat(_In_ WKD_FILE_FORMAT Format);
 
 /**************************************************/
 /*                  熵计算（统一）                  */
@@ -144,4 +90,13 @@ HANDLE
 CoOpenFileForSequentialRead(
     _In_ PCWSTR FilePath,
     _Out_opt_ PSIZE_T FileSize
+    );
+
+/* 读取文件头缓冲（最大 4KB），Header 由调用者 free() 释放 */
+NTSTATUS
+CoReadFileHeader(
+    _In_ PCWSTR FilePath,
+    _Out_opt_ PSIZE_T FileSize,
+    _Outptr_ PBYTE* Header,
+    _Out_ PSIZE_T HeaderSize
     );

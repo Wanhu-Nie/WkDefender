@@ -58,7 +58,7 @@ EXTERN_C GUID WKD_ETW_PROVIDER_GUID;
  * @brief WKDefender ETW 实时会话名。
  *
  * 同机器同权限下唯一；会话已存在时 Start 会自动先停旧会话再重建
- * （对齐 SS EnableETWProcessTracing 的 ERROR_ALREADY_EXISTS 处理）。
+ * （EnableETWProcessTracing 的 ERROR_ALREADY_EXISTS 处理）。
  */
 #define WKD_ETW_SESSION_NAME        L"WkDefender-EtwTrace"
 

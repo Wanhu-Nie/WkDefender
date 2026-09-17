@@ -36,7 +36,7 @@ IocpRecordError(
 
 /*
  * WpeLogAnomalyDropOnce — 异常数组容量耗尽时仅告警一次。
- * 对齐 SS LogValidationGrowthFailureOnce (static atomic_bool 一次性)。
+ * LogValidationGrowthFailureOnce (static atomic_bool 一次性)。
  * C 移植: agent 为多线程, 用 InterlockedCompareExchange 保证线程安全;
  * 告警经 OutputDebugStringW 输出 (可替换为 agent 统一日志)。
  */
@@ -55,7 +55,7 @@ WpeLogAnomalyDropOnce(
 
 /*
  * WpeAddAnomaly — 累积异常记录 (数组满则丢弃, 不阻断)。
- * 容量耗尽时告警一次 (对齐 SS TryAddAnomaly 的 vector 增长失败日志)。
+ * 容量耗尽时告警一次 (TryAddAnomaly 的 vector 增长失败日志)。
  */
 static
 BOOLEAN
@@ -76,7 +76,7 @@ WpeAddAnomaly(
         return TRUE;
     }
 
-    /* 容量耗尽丢弃 — 告警一次 (对齐 SS LogValidationGrowthFailureOnce) */
+    /* 容量耗尽丢弃 — 告警一次 (LogValidationGrowthFailureOnce) */
     if (Anomalies && Count && *Count >= Cap) {
         WpeLogAnomalyDropOnce();
     }
@@ -536,7 +536,7 @@ IocpValidateOptionalHeader32(
     )
 /*++
 Routine Description:
-    校验 PE32 可选头全部字段 (对齐 SS ValidateOptionalHeader32)。
+    校验 PE32 可选头全部字段 (ValidateOptionalHeader32)。
     逻辑与 64 位版近乎一致, 仅字段宽度差异 (此处分列保证尺寸语义精确)。
 
 Arguments:
@@ -670,7 +670,7 @@ IocpValidateOptionalHeader64(
     )
 /*++
 Routine Description:
-    校验 PE32+ 可选头全部字段 (对齐 SS ValidateOptionalHeader64)。
+    校验 PE32+ 可选头全部字段 (ValidateOptionalHeader64)。
 
 Arguments:
     Reader              - 读取器。
@@ -936,7 +936,7 @@ Return Value:
 
     /* count 仅反映"实际存储的对数": Overlaps==NULL 时恒 0,
      * 使 Pass2 的 alreadyRecorded 遍历(基于 count)不因无存储而失效,
-     * 对齐 SS vector 语义(去重后的对集合)。 */
+     * vector 语义(去重后的对集合)。 */
 #define OVERLAP_ADD(l, r)                                                \
     do {                                                                 \
         if (Overlaps && count < OverlapCap) {                            \

@@ -44,17 +44,17 @@ extern "C" {
 /**************************************************/
 /*                  常量定义                       */
 /**************************************************/
-#define WKD_ROP_MAX_CHAIN_LENGTH        1024    /* 对齐 SS ROP_MAX_CHAIN_LENGTH */
-#define WKD_ROP_MIN_CHAIN_LENGTH        3       /* 对齐 SS ROP_MIN_CHAIN_LENGTH */
-#define WKD_ROP_GADGET_MAX_SIZE         16      /* 对齐 SS ROP_GADGET_MAX_SIZE */
-#define WKD_ROP_MAX_GADGETS_PER_MODULE  4096    /* 对齐 SS ROP_MAX_GADGETS_PER_MODULE */
-#define WKD_ROP_STACK_SAMPLE_SIZE       (4 * 1024) /* 对齐 SS ROP_STACK_SAMPLE_SIZE */
-#define WKD_ROP_GADGET_HASH_BUCKETS     1024    /* 对齐 SS ROP_GADGET_HASH_BUCKETS */
+#define WKD_ROP_MAX_CHAIN_LENGTH        1024    /* ROP_MAX_CHAIN_LENGTH */
+#define WKD_ROP_MIN_CHAIN_LENGTH        3       /* ROP_MIN_CHAIN_LENGTH */
+#define WKD_ROP_GADGET_MAX_SIZE         16      /* ROP_GADGET_MAX_SIZE */
+#define WKD_ROP_MAX_GADGETS_PER_MODULE  4096    /* ROP_MAX_GADGETS_PER_MODULE */
+#define WKD_ROP_STACK_SAMPLE_SIZE       (4 * 1024) /* ROP_STACK_SAMPLE_SIZE */
+#define WKD_ROP_GADGET_HASH_BUCKETS     1024    /* ROP_GADGET_HASH_BUCKETS */
 #define WKD_ROP_GADGET_HASH_CHAIN       8       /* 桶内定长链槽数 (agent 无链表, 定长) */
 #define WKD_ROP_GADGET_POOL_SIZE        8192    /* agent gadget 池总量 (定长, 超限拒绝) */
-#define WKD_ROP_MAX_MODULES_TRACKED     256     /* 对齐 SS ROP_MAX_MODULES_TRACKED */
-#define WKD_ROP_MAX_MODULE_BREAKDOWN    16      /* 对齐 SS ROP_DETECTION_RESULT.ModuleBreakdown[16] */
-#define WKD_ROP_DETECTOR_SIGNATURE      0x576B4452  /* 'WkDR' 结构签名 (对齐 SS ROP_DETECTOR_SIGNATURE) */
+#define WKD_ROP_MAX_MODULES_TRACKED     256     /* ROP_MAX_MODULES_TRACKED */
+#define WKD_ROP_MAX_MODULE_BREAKDOWN    16      /* ROP_DETECTION_RESULT.ModuleBreakdown[16] */
+#define WKD_ROP_DETECTOR_SIGNATURE      0x576B4452  /* 'WkDR' 结构签名 (ROP_DETECTOR_SIGNATURE) */
 
 /**************************************************/
 /*                  攻击类型                       */
@@ -82,7 +82,7 @@ typedef enum _WKD_ROP_GADGET_TYPE {
     WkdRopGadget_CallReg,      /* CALL reg */
     WkdRopGadget_CallMem,      /* CALL [reg] */
     WkdRopGadget_Syscall,      /* SYSCALL/SYSENTER */
-    WkdRopGadget_Int,          /* INT (0xCD, 对齐 SS GadgetType_Int) */
+    WkdRopGadget_Int,          /* INT (0xCD, GadgetType_Int) */
     WkdRopGadget_Pivot,        /* 栈转移（XCHG ESP/MOV ESP） */
     WkdRopGadget_Leave,        /* LEAVE; RET */
     WkdRopGadget_Arg,          /* POP reg; RET（参数设置） */
@@ -258,7 +258,7 @@ typedef struct _WKD_ROP_DETECTOR {
         ULONG64         StartTime;
     } Stats;
 
-    /* 速率限制 (对齐 SS RoppCheckRateLimit, 死代码) */
+    /* 速率限制 (RoppCheckRateLimit, 死代码) */
     volatile LONG64 AnalysisCount;
     ULONG64         LastResetTime;
     ULONG           MaxAnalysesPerSecond;
@@ -327,7 +327,7 @@ IoaRop_InferPayload(
 /* ---- 地址驱动路径 (死代码, 新增, 对齐 SS) ---- */
 
 //
-// 初始化 ROP 检测器状态 (对齐 SS RopInitialize)。
+// 初始化 ROP 检测器状态 (RopInitialize)。
 // Detector 须调用方堆分配 (约 500KB+), 本函数初始化锁/配置/统计。
 //
 NTSTATUS
@@ -336,7 +336,7 @@ IoaRop_Initialize(
     );
 
 //
-// 关闭检测器, 释放锁资源 (对齐 SS RopShutdown)。
+// 关闭检测器, 释放锁资源 (RopShutdown)。
 //
 VOID
 IoaRop_Shutdown(
@@ -344,7 +344,7 @@ IoaRop_Shutdown(
     );
 
 //
-// 扫描模块内存镜像 buffer 的可执行节构建 gadget 库 (对齐 SS RopScanModuleForGadgets)。
+// 扫描模块内存镜像 buffer 的可执行节构建 gadget 库 (RopScanModuleForGadgets)。
 // ModuleData 须为内存镜像 (节数据按 VirtualAddress 布局), ModuleBase 为加载基址 (栈槽值匹配)。
 // PE 校验/节表复用 IocpAnalyzeBufferEx。
 //
@@ -358,7 +358,7 @@ IoaRop_ScanModuleForGadgets(
     );
 
 //
-// 单条 gadget 入库 (对齐 SS RopAddGadget): 语义分析 + 危险度评分 + 哈希入桶。
+// 单条 gadget 入库 (RopAddGadget): 语义分析 + 危险度评分 + 哈希入桶。
 //
 NTSTATUS
 IoaRop_AddGadget(
@@ -371,7 +371,7 @@ IoaRop_AddGadget(
     );
 
 //
-// 按地址查库, 拷贝 gadget 数据 (对齐 SS RopLookupGadget)。
+// 按地址查库, 拷贝 gadget 数据 (RopLookupGadget)。
 //
 NTSTATUS
 IoaRop_LookupGadget(
@@ -381,7 +381,7 @@ IoaRop_LookupGadget(
     );
 
 //
-// 栈缓冲地址驱动分析 (对齐 SS RopAnalyzeStackBuffer): 栈槽值查库 → 连续链。
+// 栈缓冲地址驱动分析 (RopAnalyzeStackBuffer): 栈槽值查库 → 连续链。
 // 需已构建 gadget 库; Result 堆分配, 调用方 IoaRop_FreeResult。
 //
 NTSTATUS
@@ -394,7 +394,7 @@ IoaRop_AnalyzeStackBuffer(
     );
 
 //
-// 线程栈完整分析 (对齐 SS RopAnalyzeStack): Wpt 取上下文/栈界 + MsReadMemory
+// 线程栈完整分析 (RopAnalyzeStack): Wpt 取上下文/栈界 + MsReadMemory
 // 读栈 + MsBuildModuleSet 模块判定 + 链检测 + 分类/评分/载荷。
 //
 NTSTATUS
@@ -406,7 +406,7 @@ IoaRop_AnalyzeStack(
     );
 
 //
-// 调用栈完整性验证 (对齐 SS RopValidateCallStack): 链 → IsValid=FALSE+confidence; pivot→70。
+// 调用栈完整性验证 (RopValidateCallStack): 链 → IsValid=FALSE+confidence; pivot→70。
 //
 NTSTATUS
 IoaRop_ValidateCallStack(
@@ -426,7 +426,7 @@ IoaRop_FreeResult(
     );
 
 //
-// 读取检测器统计 (对齐 SS RopGetStatistics)。
+// 读取检测器统计 (RopGetStatistics)。
 //
 NTSTATUS
 IoaRop_GetStatistics(

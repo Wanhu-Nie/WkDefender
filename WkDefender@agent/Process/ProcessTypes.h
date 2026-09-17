@@ -42,7 +42,7 @@ typedef enum _WKD_PROCESS_SOURCE {
 /**************************************************/
 /*               镜像类型                           */
 /*                                                  */
-/*  迁移自驱动 Callbacks/ImageNotify.h（消除循环     */
+/*  迁移自驱动 Callbacks/ImageNotification.h（消除循环     */
 /*  依赖），驱动内消费不上送线格式。                 */
 /**************************************************/
 
@@ -135,7 +135,7 @@ typedef struct _WKD_MODULE WKD_MODULE, * PWKD_MODULE;
 #define WKD_HS_PATTERN_SAMPLE_SIZE      256
 
 typedef struct _WKD_HEAP_SPRAY_STATE {
-    /* ── 窗口聚合计数 (对齐 SS HS_PROCESS_CONTEXT) ── */
+    /* ── 窗口聚合计数 (HS_PROCESS_CONTEXT) ── */
     ULONG           AllocationCount;        /* 窗口内分配次数 */
     ULONG64         TotalAllocatedSize;     /* 窗口内总字节 */
     volatile LONG   AllocationsInWindow;    /* 当前窗口分配数 */
@@ -294,7 +294,7 @@ typedef struct _WKD_THREAD {
 /*  全局文件级结果——对齐驱动决策 #2）。              */
 /**************************************************/
 
-/* 视图级观测位（值 = 驱动 ImageNotify.h IMG_INDICATOR_*） */
+/* 视图级观测位（值 = 驱动 ImageNotification.h IMG_INDICATOR_*） */
 #define WKD_MODULE_VIEW_UNBACKED           0x00000400  /* 无背衬内存=反射加载 */
 #define WKD_MODULE_VIEW_ENTRYPOINT_OUTSIDE 0x00000800
 #define WKD_MODULE_VIEW_MACHINE_MISMATCH   0x00002000

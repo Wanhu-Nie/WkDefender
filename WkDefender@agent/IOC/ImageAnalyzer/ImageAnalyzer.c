@@ -19,6 +19,8 @@
 #include "ImageAnalyzer.h"
 
 #include "../IocScanner.h"
+#include "../../Include/FileSystem/FileAnalyzer.h"  /* CoDetermineFileType / IocScan_AnalyzeFileTypePath (2026-09-14) */
+#include "../IocArchiveScanner.h"        /* 归档专项扫描 (接线激活 2026-09-11) */
 #include "../Signature/SignatureHunting.h"
 #include "../../Process/ProcessModule.h"
 #include "../../Common/Exempts/Exempts.h"
@@ -29,6 +31,11 @@
 
 /* 等待他人深度分析的超时（ms）：超时后本线程兜底自做 */
 #define WKD_IA_WAIT_TIMEOUT_MS   2000
+
+/* 归档专项扫描门控 (死代码开关惯例, 对齐 g_IoaTokenAnalyzerEnabled=TRUE
+ * 先例置 TRUE 激活 2026-09-11; 可运维置 FALSE 关停)。
+ * 消费方: IocAnalyseImage 非 PE 分支 (IocArchiveScanner 接线)。 */
+static BOOLEAN g_IoaArchiveScanEnabled = TRUE;
 
 /**************************************************/
 /*               内部辅助函数                       */
@@ -515,6 +522,8 @@ Return Value:
     PWKD_MODULE module = NULL;
     BOOLEAN pin = FALSE;
     LONG st;
+    BOOLEAN isArchive = FALSE;                 /* 归档专项 FastPath 标志 */
+    PWKD_ARCHIVE_SCAN_RESULT arc = NULL;       /* 归档扫描容器 (~200KB, 堆分配) */
 
     if (!CoCheckStringValidity(ImagePath) || !Result) {
         return STATUS_INVALID_PARAMETER;
@@ -614,13 +623,36 @@ Return Value:
          IocDeepAnalyzeImage(module, ImagePath, Result);
          IaMergeFileSignals(NULL, ImagePath, Result);
 
+        /* 归档专项扫描接线（激活 2026-09-11, 门控 g_IoaArchiveScanEnabled）：
+         * FastPath IocArchive_IsArchive (魔数+扩展名, 头部判定零整读) →
+         * 是归档则全量 IocArchive_ScanFile (ZIP/RAR4/5/TAR/GZIP 内容级解析,
+         * 条目 SHA256 黑库闭环, ZipBomb 5 检查, 路径穿越/加密/嵌套/重叠
+         * 标志) → IocArchive_ResultToIocScan 合并且恶意覆盖。
+         * 容器约 200KB 必须堆分配 (IocArchiveScanner.h WKD_ARCHIVE_SCAN_RESULT),
+         * 非归档/打开失败静默跳过 (不打断主流水线)。
+         * 文档/媒体专项仍为接线 TODO (对齐 ScanManager 三 TODO 注释, 2026-08-15)。 */
+        if (g_IoaArchiveScanEnabled) {
+            if (NT_SUCCESS(IocArchive_IsArchive(ImagePath, &isArchive)) && isArchive) {
+                /* 对齐本文件 Heap* 堆风格 (IaWorkerProc/线程池) */
+                arc = (PWKD_ARCHIVE_SCAN_RESULT)HeapAlloc(GetProcessHeap(),
+                    HEAP_ZERO_MEMORY, sizeof(WKD_ARCHIVE_SCAN_RESULT));
+                if (arc) {
+                    if (NT_SUCCESS(IocArchive_ScanFile(ImagePath, arc))) {
+                        IocArchive_ResultToIocScan(arc, Result);
+                    }
+                    HeapFree(GetProcessHeap(), 0, arc);
+                    arc = NULL;
+                }
+            }
+        }
+
         /* 非 PE 专项扫描器接线（ScanManager 三 TODO 归位 2026-08-15）：
          * 文件类型分发后按需接入，功能面已全量就绪（门控默认关，
          * 对齐 g_Ioa*Enabled 惯例，待部署决策开启）：
          *   // 归档:  IocArchive_IsArchive FastPath → 逐条目提取 → 哈希命中置
          *   //         Malicious → ResultToIocScan 合并 (IOC/IocArchiveScanner.c)
          *   // 文档:  IocDocument_DetectType 判定 PDF/OLE/OOXML/RTF → 宏/嵌入/
-         *   //         CVE/IOC 提取 → ResultToIocScan 合并 (IOC/IocDocumentScanner.c)
+         *   //         CVE/IOC 提取 → ResultToIocScan 合并 (FileSystem/IocDocumentScanner.c)
          *   // 媒体:  IocMedia_ScanFile → 格式/隐写/EXIF/漏洞载荷 → 追加数据
          *   //         → IocMedia_ResultToIocScan 经 HeuristicConfidence 合并
          *   //         (IOC/IocScanner.c 媒体分析分区, API 已导出)

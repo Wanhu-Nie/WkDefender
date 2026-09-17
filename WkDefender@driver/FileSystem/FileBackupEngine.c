@@ -2,15 +2,14 @@
 /*  WkDefender 文件备份/回滚引擎（勒索 CoW）         */
 /**************************************************/
 
-#include "Filter.h"
-#include "FileBackupEngine.h"
+#include "FileSystem.h"   /* 内部私有头（2026-09-13 重构）：include 公共头 + 内部结构 */
 #include "../Notification/NotificationManager.h"   /* 回滚结果上送（NtfCreateMessage/NtfSendMessageAsync） */
 #include <ntstrsafe.h>
 
 /*++
  * 实现说明：
  *   勒索软件 Copy-on-First-Write 备份/回滚引擎，迁移自 ShadowStrike
- *   FileBackupEngine.c（重功能实现非源码复制）。各公共 API 对齐 SS 行号标注。
+ *   FileBackupEngine.c（重功能实现非源码复制）。各公共 API 行号标注。
  *
  * 存储设计（自持实现，不复用 wkd Common/HashMap）：
  *   - wkd HashMap 键上限 WKD_HASH_MAP_MAX_KEY_SIZE=32B，FBE 键为
@@ -19,7 +18,7 @@
  *   - 自持：哈希表 (PID,Path) 256 桶 + 进程 tracker 64 桶 + 全局 LRU
  *     + 2 个 NPAGED_LOOKASIDE + EX_RUNDOWN_REF。
  *
- * 迁移裁剪（对齐 SS 行号）：
+ * 迁移裁剪（行号）：
  *   - FbeGetStatistics/FbeHasBackups：死代码，无查询流水线/UI 消费方。
  *   - FbeOp_Truncate/FbeOp_SetAllocation 备份分支：SS PreSetInfo 亦未接线
  *     （仅 Delete/Rename 调 FbePreSetInfoBackup），保留接口语义。
@@ -1270,7 +1269,7 @@ FbepEvictLruEntries(
 /*++
  *  FbeInitialize
  *    初始化备份引擎：哈希桶/进程桶/LRU/lookaside/默认配置。
- *    对齐 SS FbeInitialize。
+ *    FbeInitialize。
  *--*/
 _Use_decl_annotations_
 NTSTATUS
@@ -1350,7 +1349,7 @@ FbeInitialize(
 /*++
  *  FbeShutdown
  *    关闭引擎：排空操作、释放全部条目与追踪器、删除 lookaside。
- *    对齐 SS FbeShutdown。
+ *    FbeShutdown。
  *--*/
 _Use_decl_annotations_
 VOID
@@ -1435,7 +1434,7 @@ FbeShutdown(
 /*++
  *  FbePreWriteBackup
  *    IRP_MJ_WRITE 前 CoW 备份（copy-on-first-write）。
- *    对齐 SS FbePreWriteBackup。
+ *    FbePreWriteBackup。
  *--*/
 _Use_decl_annotations_
 NTSTATUS
@@ -1651,7 +1650,7 @@ FbePreWriteBackup(
  *  FbePreSetInfoBackup
  *    IRP_MJ_SET_INFORMATION 前 CoW 备份（Rename/Delete/Truncate/SetAllocation）。
  *    Truncate/SetAllocation 为死代码分支（SS PreSetInfo 亦未接线）。
- *    对齐 SS FbePreSetInfoBackup。
+ *    FbePreSetInfoBackup。
  *--*/
 _Use_decl_annotations_
 NTSTATUS
@@ -1871,7 +1870,7 @@ FbePreSetInfoBackup(
 
 /*++
  *  FbepSendRollbackResult
- *    回滚完成后上送结果事件到 agent（对齐 SS FbeRollbackProcess 中
+ *    回滚完成后上送结果事件到 agent（FbeRollbackProcess 中
  *    BeEngineSubmitEvent(FileRollbackStarted) 的事件上报语义，wkd 结果导向）。
  *    agent 侧暂不解析（死代码：待 UI 消费接线），消息经 ALPC 0x300B 转发。
  *--*/
@@ -1908,7 +1907,7 @@ FbepSendRollbackResult(
  *  FbeRollbackProcess
  *    按进程回滚全部备份（两阶段：锁内 CAS 收集 → 无锁恢复）。
  *    逆序恢复（最新优先）以正确处理重命名链。
- *    对齐 SS FbeRollbackProcess。
+ *    FbeRollbackProcess。
  *--*/
 _Use_decl_annotations_
 FBE_ROLLBACK_RESULT
@@ -2027,7 +2026,7 @@ FbeRollbackProcess(
         *FilesRestored = Restored;
     }
 
-    /* 回滚结果上送 agent（对齐 SS 回滚事件上报语义；结果反馈给 UI 消费） */
+    /* 回滚结果上送 agent（回滚事件上报语义；结果反馈给 UI 消费） */
     {
         FBE_ROLLBACK_RESULT fbResult =
             (Restored > 0 && Failed == 0) ? FbeRollback_Success :
@@ -2061,7 +2060,7 @@ FbeRollbackProcess(
  *  FbeCommitProcess
  *    进程退出时丢弃备份（两阶段：锁内 CAS 收集 → 无锁释放）。
  *    Pending 条目不夺取（I/O 进行中归属发起者）。
- *    对齐 SS FbeCommitProcess。
+ *    FbeCommitProcess。
  *--*/
 _Use_decl_annotations_
 VOID

@@ -1,0 +1,128 @@
+;
+; WkDefender.inf
+;
+; WkDefender Kernel Sensor - File System Minifilter Driver
+;
+; 迁移自 PhantomSensor.inf（ShadowStrike PhantomSensor NGAV minifilter 实现），
+; 按迁移计划要求采用 canonical "Instances" 注册表键（不带 Parameters 前缀，
+; 否则 FltMgr 不读取、minifilter 静默失效）。
+;
+; 注意：本驱动同时保留 ALPC 主通道（现有 Notification 子系统），
+; 并新增专用 FLT 通信端口承载 YARA 文件扫描同步回路（回路 A）。
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = "AntiVirus"
+ClassGuid   = {b1d1a169-c54f-4379-81db-bee7d88d7454}
+Provider    = %ManufacturerName%
+CatalogFile = WkDefender.cat
+DriverVer   = 07/18/2026,1.0.0.0
+PnpLockdown = 1
+
+; ---------------------------------------------------------------------------
+; Destination: system32\drivers (DIRID 12)
+; ---------------------------------------------------------------------------
+
+[DestinationDirs]
+DefaultDestDir          = 12
+WkDefender.CopyFiles    = 12
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[SourceDisksFiles]
+WkDefender.sys = 1
+
+; ---------------------------------------------------------------------------
+; Install Sections (x64)
+; ---------------------------------------------------------------------------
+
+[DefaultInstall.NTAMD64]
+OptionDesc = %ServiceDescription%
+CopyFiles  = WkDefender.CopyFiles
+
+[DefaultInstall.NTAMD64.Services]
+AddService = %ServiceName%,,WkDefender.Service
+
+; ---------------------------------------------------------------------------
+; Install Sections (ARM64)
+; ---------------------------------------------------------------------------
+
+[DefaultInstall.NTARM64]
+OptionDesc = %ServiceDescription%
+CopyFiles  = WkDefender.CopyFiles
+
+[DefaultInstall.NTARM64.Services]
+AddService = %ServiceName%,,WkDefender.Service
+
+; ---------------------------------------------------------------------------
+; Copy Files
+; ---------------------------------------------------------------------------
+
+[WkDefender.CopyFiles]
+WkDefender.sys
+
+; ---------------------------------------------------------------------------
+; Uninstall Sections (x64)
+; ---------------------------------------------------------------------------
+
+[DefaultUninstall.NTAMD64]
+LegacyUninstall = 1
+DelFiles        = WkDefender.CopyFiles
+
+[DefaultUninstall.NTAMD64.Services]
+DelService = %ServiceName%,0x200
+
+; ---------------------------------------------------------------------------
+; Uninstall Sections (ARM64)
+; ---------------------------------------------------------------------------
+
+[DefaultUninstall.NTARM64]
+LegacyUninstall = 1
+DelFiles        = WkDefender.CopyFiles
+
+[DefaultUninstall.NTARM64.Services]
+DelService = %ServiceName%,0x200
+
+; ---------------------------------------------------------------------------
+; Service Configuration
+; ---------------------------------------------------------------------------
+
+[WkDefender.Service]
+DisplayName    = %ServiceDisplayName%
+Description    = %ServiceDescription%
+ServiceType    = 2               ; SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 1               ; SERVICE_DEMAND_START（稳定性验证后改为 1）
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\WkDefender.sys
+LoadOrderGroup = FSFilter Anti-Virus
+AddReg         = WkDefender.AddRegistry
+
+; ---------------------------------------------------------------------------
+; Minifilter Instance Registration (canonical "Instances" 键)
+;
+; 说明：FltMgr 读取 HKLM\SYSTEM\CurrentControlSet\Services\<ServiceName>\Instances
+;       下的 DefaultInstance 与对应实例子键。切勿写成 "Parameters\Instances"，
+;       否则 FltMgr 忽略、minifilter 静默不加载（迁移计划第五部分风险第 6 条）。
+; Altitude 385210 暂用；生产须向 MS 申请专属 altitude（计划风险第 5 条）。
+; ---------------------------------------------------------------------------
+
+[WkDefender.AddRegistry]
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Instances\%DefaultInstance%","Altitude",0x00000000,%Altitude%
+HKR,"Instances\%DefaultInstance%","Flags",0x00010001,%Flags%
+
+; ---------------------------------------------------------------------------
+; Strings
+; ---------------------------------------------------------------------------
+
+[Strings]
+ManufacturerName   = "WkDefender"
+ServiceName        = "WkDefender"
+ServiceDisplayName = "WkDefender Kernel Sensor"
+ServiceDescription = "WkDefender real-time endpoint security kernel sensor (minifilter + ALPC)"
+DiskName           = "WkDefender Installation Disk"
+DefaultInstance    = "WkDefender Instance"
+Altitude           = "385210"
+Flags              = 0x0

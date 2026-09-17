@@ -53,6 +53,11 @@ INT IocScanner_CompareFuzzyHash(_In_ PCSTR Digest1, _In_ PCSTR Digest2);
 /* 计算缓冲区 MD5 小写十六进制串 (33 字节含尾 0)，用于 ImpHash 计算。 */
 BOOLEAN IocScan_ComputeMd5Hex(_In_ const BYTE* Data, _In_ ULONG Size, _Out_ CHAR* HexOut);
 
+/* Authenticode 认证哈希: 整文件 SHA-256 (清可选头 CheckSum + 排除证书表,
+ * 微软 Authenticode 语义)。AuthHex 需 >=65 字节; 非 PE → FALSE (不产出伪哈希)。
+ * SS FileHasher ComputeAuthentihashImpl 为 stub, 此为 wkd 自立实现 (2026-09-14)。 */
+BOOLEAN IocScan_ComputeAuthentihash(_In_ PCWSTR FilePath, _Out_ PCHAR AuthHex, _In_ ULONG HexCch);
+
 /**************************************************/
 /*          内部实现（不对本头外开放）               */
 /*  哈希统计 / SelfTest / 内存映射哈希 /            */

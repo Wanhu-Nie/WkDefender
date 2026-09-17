@@ -17,7 +17,7 @@
 /*  文件名判定持久化投放 (启动夹/ntuser.dat/系统目录  */
 /*  DLL 植入), 死代码待 main.c 回调接线激活。         */
 /*                                                  */
-/*  评分 (对齐 SS BehaviorConstants):                */
+/*  评分 (BehaviorConstants):                */
 /*    Run键 +30 (T1547.001), IFEO +15 (T1546.012)    */
 /*    AppInit +10 (T1546.010), 任务 +35 (T1053.005)  */
 /*    服务 +40 (T1543.003), WMI +45 (T1546.003)      */
@@ -29,7 +29,7 @@
 #include "IoaTypes.h"
 
 /**************************************************/
-/*   SS BehaviorEventType 语义常量 (对齐 SS L485-662) */
+/*   SS BehaviorEventType 语义常量 (L485-662) */
 /**************************************************/
 
 #define WKD_EVT_REG_SET_VALUE       302     /* RegistrySetValue */
@@ -38,13 +38,13 @@
 #define WKD_EVT_SERVICE_INSTALL     500     /* ServiceInstall */
 #define WKD_EVT_WMI_SUBSCRIPTION    601     /* WMISubscription */
 #define WKD_EVT_BOOT_CONFIG_MODIFY  805     /* BootConfigModify */
-/* 文件系统事件 (对齐 SS BehaviorEventType, 同 IoaRansomwareDetect.h) */
+/* 文件系统事件 (BehaviorEventType, 同 IoaRansomwareDetect.h) */
 #define WKD_EVT_FILE_CREATE         200     /* FileCreate */
 #define WKD_EVT_FILE_WRITE          203     /* FileWrite */
 #define WKD_EVT_FILE_RENAME         205     /* FileRename */
 
 /**************************************************/
-/*   评分常量 (对齐 SS BehaviorConstants)           */
+/*   评分常量 (BehaviorConstants)           */
 /**************************************************/
 
 #define WKD_PERSIST_RUNKEY_SCORE    30      /* SS REG_RUN_KEY_SCORE */

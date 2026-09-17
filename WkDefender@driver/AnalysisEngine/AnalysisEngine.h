@@ -90,9 +90,9 @@ AeOrchestratorDispatch(
     );
 
 //
-// AepIsCriticalProcess — 阻断豁免判定（迁移自 SS BepIsCriticalProcess）
+// AepIsCriticalProcess — 阻断豁免判定（BepIsCriticalProcess）
 // PID 0/4 直接豁免；ImagePath 为空时经 SeLocateProcessImageName 解析；
-// 名单对齐 SS 14 项 + wkd CbpIsCriticalBootProcess 既有项，尾部匹配。
+// 名单14 项 + wkd CbpIsCriticalBootProcess 既有项，尾部匹配。
 // 与 Exempts（跳过评分语义）独立：本函数是"阻断豁免"（不允许终止）。
 //
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -103,7 +103,7 @@ AepIsCriticalProcess(
     );
 
 //
-// AeEvaluateVerdict — 评分裁决消费（迁移自 SS BepDetermineResponse）
+// AeEvaluateVerdict — 评分裁决消费（BepDetermineResponse）
 // 在评分结算（AeOrchestratorDispatch Phase 4）后调用：
 //   TsVerdict_Blocked  → 经 AepIsCriticalProcess 豁免校验后终止源进程 + ALPC 上报
 //   TsVerdict_Malicious → ALPC 上报 ThreatLevelChanged

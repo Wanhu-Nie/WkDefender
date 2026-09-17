@@ -197,7 +197,7 @@ typedef struct _WKD_MEM_THREAT {
     ULONG               PeEntryPoint;
     USHORT              PeMachine;
     USHORT              PeCharacteristics;
-    /* 模块表对照 (对齐 SS isInPEB / isFileBacked, PECandidate) */
+    /* 模块表对照 (isInPEB / isFileBacked, PECandidate) */
     BOOLEAN             PeInPeb;          /* PE 基址在已加载模块表内 (EnumProcessModules) */
     BOOLEAN             PeFileBacked;     /* 是否有文件支撑 (模块表内 ≈ 文件支撑) */
     /* 证据预览 (前 N 字节) */
@@ -227,8 +227,8 @@ typedef struct _WKD_MEM_SCAN_RESULT {
     ULONG             SuspiciousRegionCount;
     WKD_MEMORY_REGION SuspiciousRegions[WKD_MEM_MAX_SUSPICIOUS];
     ULONG             OverallRiskScore;        /* 0-100 (0.7*max + 0.3*avg) */
-    ULONG             MaxSeverity;             /* 最高威胁 RiskScore (对齐 SS MS_SCAN_RESULT.MaxSeverity, 0=无威胁) */
-    ULONG             DurationMs;              /* 扫描耗时 ms (对齐 SS MS_SCAN_RESULT.DurationMs) */
+    ULONG             MaxSeverity;             /* 最高威胁 RiskScore (MS_SCAN_RESULT.MaxSeverity, 0=无威胁) */
+    ULONG             DurationMs;              /* 扫描耗时 ms (MS_SCAN_RESULT.DurationMs) */
 } WKD_MEM_SCAN_RESULT, *PWKD_MEM_SCAN_RESULT;
 
 /*++
@@ -277,7 +277,7 @@ BOOLEAN MsDetectPE(
 
 /**************************************************/
 /*              模块表对照 (ShadowStrike 迁移)      */
-/*  对齐 SS GetPEBModulesImpl / IsAddressInAnyModule */
+/*  GetPEBModulesImpl / IsAddressInAnyModule */
 /*  (ReflectiveDLLDetector.cpp L2293 / L142)       */
 /**************************************************/
 
@@ -292,7 +292,7 @@ typedef struct _WKD_MEM_MODULE_SET {
 /*++
  * MsBuildModuleSet
  *   构建进程已加载模块基址/大小集 (EnumProcessModules + GetModuleInformation)。
- *   对齐 SS GetPEBModulesImpl (ReflectiveDLLDetector.cpp L2293)。
+ *   GetPEBModulesImpl (ReflectiveDLLDetector.cpp L2293)。
  *   返回 TRUE = 构建成功且非空。供隐藏模块对照 (isInPEB/isFileBacked) 使用。
  *--*/
 BOOL MsBuildModuleSet(
@@ -302,7 +302,7 @@ BOOL MsBuildModuleSet(
 /*++
  * MsIsAddrInModuleSet
  *   地址是否落在任一模块 [Base, Base+Size) 区间内。
- *   对齐 SS IsAddressInAnyModule (ReflectiveDLLDetector.cpp L142)。
+ *   IsAddressInAnyModule (ReflectiveDLLDetector.cpp L142)。
  *--*/
 BOOLEAN MsIsAddrInModuleSet(
     _In_ const WKD_MEM_MODULE_SET* Set,
@@ -346,7 +346,7 @@ BOOLEAN MsDetectC2Beacon(
 
 /*++
  * MsDetectReflectiveLoader
- *   已知反射加载器签名检测 (对齐 SS DetectKnownLoader 启发式, ReflectiveDLLDetector.cpp L1514):
+ *   已知反射加载器签名检测 (DetectKnownLoader 启发式, ReflectiveDLLDetector.cpp L1514):
  *     - CS Beacon config marker / sleep mask stub (g_cobaltStrikePatterns L478)
  *     - Meterpreter reflective stub / stage marker (g_meterpreterPatterns L490)
  *     - API-hash 字节模式: ROR-13 x64/x86 / DJB2 / CRC32 (g_apiHashPatterns L176)
@@ -360,7 +360,7 @@ BOOLEAN MsDetectReflectiveLoader(
 /*++
  * MsContainsPE
  *   进程级 PE 快速检查: 给定 pid+地址+大小, 读前部字节判断 MZ 签名。
- *   对齐 SS ContainsPE (ReflectiveDLLDetector.cpp L1207-1217).
+ *   ContainsPE (ReflectiveDLLDetector.cpp L1207-1217).
  *   ※ 死代码: 供实时内存监控 (T4) PE 预判用, 当前无调用者。
  *--*/
 BOOLEAN MsContainsPE(
@@ -371,27 +371,12 @@ BOOLEAN MsContainsPE(
 /*++
  * MsHasReflectiveLoading
  *   快速布尔判定: 目标进程是否存在隐藏无背衬 PE (反射加载)。
- *   对齐 SS HasReflectiveLoading (ReflectiveDLLDetector.cpp L1114-1117).
+ *   HasReflectiveLoading (ReflectiveDLLDetector.cpp L1114-1117).
  *   Quick 模式全扫 + 查 WkdMemThreat_PEInjection && !PeInPeb.
  *   ※ 死代码: 供 UI 快速体检/进程体检, 当前无调用者。
  *--*/
 BOOLEAN MsHasReflectiveLoading(
     _In_ DWORD ProcessId);
-
-/*++
- * MsHandleKernelImageLoad
- *   镜像加载通知 → PEB 对照 → 无背衬判定 → 定向反射扫描。
- *   对齐 SS OnKernelImageLoad (ReflectiveDLLDetector.cpp L2567-2604):
- *     系统模块/低 PID 跳过 → 模块表对照 (正常加载已入 PEB 则跳过) →
- *     VirtualQueryEx 查 MEM_PRIVATE → MsScanRegionAt 定向扫描。
- *   ※ 死代码: 依赖 ImageLoad 事件接入 IOA (当前 process_manager.c:1720
- *     MsScanOnImageLoad 仅做 YARA 扫描, 未调用本函数)。
- *--*/
-VOID MsHandleKernelImageLoad(
-    _In_  DWORD ProcessId,
-    _In_  ULONG_PTR ImageBase,
-    _In_  SIZE_T ImageSize,
-    _In_  BOOLEAN IsSystemModule);
 
 /*++
  * MsCheckHighEntropy
@@ -404,7 +389,7 @@ BOOLEAN MsCheckHighEntropy(
     _Out_ PULONG Entropy,          /* 输出熵 0-1000 */
     _Out_ PWKD_MEM_THREAT Threat);
 
-/* 高熵区域条目（对齐 SS MS_ENTROPY_REGION，熵 0-1000 尺度） */
+/* 高熵区域条目（MS_ENTROPY_REGION，熵 0-1000 尺度） */
 typedef struct _WKD_ENTROPY_REGION {
     ULONG_PTR BaseAddress;      /* 目标进程 VA 地址 */
     SIZE_T    RegionSize;
@@ -413,7 +398,7 @@ typedef struct _WKD_ENTROPY_REGION {
 
 /*++
  * MsFindHighEntropyRegions
- *   全进程高熵区域发现（对齐 SS MsFindHighEntropyRegions L2135-2265）：
+ *   全进程高熵区域发现（MsFindHighEntropyRegions L2135-2265）：
  *   枚举 MEM_COMMIT 区域 → 读首块采样（64KB）→ 熵 ≥ 阈值 → 记录。
  *   ※ 死代码: 供取证 / UI 主动扫描接线，当前无调用者。
  *--*/
@@ -526,14 +511,14 @@ typedef struct _WKD_MEM_SCANNER_STATS {
     volatile LONG64 PeDetections;
     volatile LONG64 YaraMatches;
     volatile LONG64 ScanErrors;
-    volatile LONG64 Timeouts;               /* 对齐 SS MsGetStatistics.Timeouts (扫描超时次数) */
-    volatile LONG64 CumulativeScanTimeMs;   /* 对齐 SS Stats.CumulativeScanTimeMs (扫描耗时累计) */
-    volatile LONG64 AverageScanTimeMs;      /* 对齐 SS Stats.AverageScanTimeMs (Cumulative/Total) */
+    volatile LONG64 Timeouts;               /* MsGetStatistics.Timeouts (扫描超时次数) */
+    volatile LONG64 CumulativeScanTimeMs;   /* Stats.CumulativeScanTimeMs (扫描耗时累计) */
+    volatile LONG64 AverageScanTimeMs;      /* Stats.AverageScanTimeMs (Cumulative/Total) */
 } WKD_MEM_SCANNER_STATS, *PWKD_MEM_SCANNER_STATS;
 
 /*++
  * MsGetStatistics
- *   读取扫描统计（对齐 SS MemoryScanner MsGetStatistics L2273-2321；wkd 全局
+ *   读取扫描统计（MemoryScanner MsGetStatistics L2273-2321；wkd 全局
  *   g_MsStats 由扫描入口 + MsScanRegionContent 埋点维护）。
  *   ※ 死代码: 查询 API 无调用者（对齐项目惯例 #30/#40），供 UI/诊断接线。
  *--*/
@@ -542,7 +527,7 @@ VOID MsGetStatistics(_Out_ PWKD_MEM_SCANNER_STATS Stats);
 /*++ API 哈希值解析 (ShadowStrike ShellcodeDetector 迁移 2026-08-07):
  *   SdpDetectApiHashing 从 MOV/PUSH imm32 提取 ROR13 哈希 → 查内置 38 条库
  *   解析具体 API 名。wkd 原 g_ApiHashPatterns 仅识别哈希指令字节模式, 本结构
- *   承载"值解析"结果 (强信号, 对齐 SS SD_API_HASH_INFO 精简为值语义)。
+ *   承载"值解析"结果 (强信号, SD_API_HASH_INFO 精简为值语义)。
  *--*/
 typedef struct _WKD_API_HASH_ENTRY {
     ULONG       Hash;       /* ROR13 hash 值 */
@@ -552,7 +537,7 @@ typedef struct _WKD_API_HASH_ENTRY {
 
 typedef struct _WKD_API_HASH_RESULT {
     ULONG ResolvedCount;                /* 解析成功数 */
-    ULONG ResolutionOffset;             /* 首个命中 imm32 相对偏移 (对齐 SS ResolutionCodeStart 语义, 改相对偏移) */
+    ULONG ResolutionOffset;             /* 首个命中 imm32 相对偏移 (ResolutionCodeStart 语义, 改相对偏移) */
     struct {
         ULONG Hash;                     /* 命中哈希值 */
         CHAR  ApiName[64];
@@ -560,7 +545,7 @@ typedef struct _WKD_API_HASH_RESULT {
     } Resolved[16];                     /* SS 上限 32; 值语义栈结构压到 16 防爆栈 */
 } WKD_API_HASH_RESULT, *PWKD_API_HASH_RESULT;
 
-/* 直接 syscall stub 摘要 (对齐 SS SD_SYSCALL_INFO, 值语义, StubOffset 为相对偏移) */
+/* 直接 syscall stub 摘要 (SD_SYSCALL_INFO, 值语义, StubOffset 为相对偏移) */
 typedef struct _WKD_SYSCALL_STUB {
     ULONG      SyscallNumber;           /* 系统调用号 (x64 MOV EAX,imm32 提取) */
     ULONG_PTR  StubOffset;              /* 相对缓冲偏移 */
@@ -582,7 +567,7 @@ typedef struct _WKD_SHELLCODE_ANALYSIS {
     CHAR    Family[32];          /* 已知壳码家族 (预留) */
     /* ShadowStrike ShellcodeDetector 迁移 2026-08：SS 独有检测标志（wkd
      * IocDetectShellcode 未覆盖：EggHunter/编码器循环/HeavensGate/
-     * StackPivot/可疑调用，对齐 SS SdpDetect* 系列）。 */
+     * StackPivot/可疑调用，SdpDetect* 系列）。 */
     BOOLEAN HasEggHunter;        /* EggHunter（SEH/syscall/NtDisplayString 签名） */
     BOOLEAN HasEncoder;          /* 编码器循环（XOR/ADD/SUB/ROL/ROR + 邻近循环） */
     CHAR    EncoderType[12];     /* "XOR"/"ADD"/"SUB"/"ROL"/"ROR" */
@@ -597,12 +582,12 @@ typedef struct _WKD_SHELLCODE_ANALYSIS {
     CHAR    ResolvedApis[8][64]; /* 解析出的 API 名 */
     ULONG   SyscallCount;        /* 直接 syscall 数 (>2 再 +10) */
     ULONG   SyscallNumbers[16];  /* 系统调用号 */
-    ULONG   NopSledOffset;       /* NOP sled 起始相对偏移 (对齐 SS NopSled.StartAddress) */
-    UCHAR   NopByte;             /* NOP sled 主导字节 (对齐 SS NopSled.NopByte, 通常 0x90) */
-    ULONG   EggHunterOffset;     /* EggHunter 命中相对偏移 (对齐 SS EggHunter.HunterAddress) */
-    ULONG   StackPivotGadgetOffset; /* 栈 pivot gadget 相对偏移 (对齐 SS StackPivot.GadgetAddress) */
-    ULONG   EncoderLoopOffset;   /* 编码器解码循环起始相对偏移 (对齐 SS Encoder.LoopStart) */
-    ULONG   AnalysisDurationMs;  /* 分析耗时 ms (对齐 SS SdAnalyzeBuffer AnalysisDurationMs) */
+    ULONG   NopSledOffset;       /* NOP sled 起始相对偏移 (NopSled.StartAddress) */
+    UCHAR   NopByte;             /* NOP sled 主导字节 (NopSled.NopByte, 通常 0x90) */
+    ULONG   EggHunterOffset;     /* EggHunter 命中相对偏移 (EggHunter.HunterAddress) */
+    ULONG   StackPivotGadgetOffset; /* 栈 pivot gadget 相对偏移 (StackPivot.GadgetAddress) */
+    ULONG   EncoderLoopOffset;   /* 编码器解码循环起始相对偏移 (Encoder.LoopStart) */
+    ULONG   AnalysisDurationMs;  /* 分析耗时 ms (SdAnalyzeBuffer AnalysisDurationMs) */
 } WKD_SHELLCODE_ANALYSIS, *PWKD_SHELLCODE_ANALYSIS;
 
 /*++
@@ -620,8 +605,8 @@ NTSTATUS MsReadMemory(
 
 /*++
  * MsExtractPayload
- *   提取反射加载 PE 内存映像 (对齐 SS ExtractPayload, ReflectiveDLLDetector.cpp L1587-1635).
- *   上限 100MB (对齐 SS kMaxExtraction). 死代码: 取证阶段接入。
+ *   提取反射加载 PE 内存映像 (ExtractPayload, ReflectiveDLLDetector.cpp L1587-1635).
+ *   上限 100MB (kMaxExtraction). 死代码: 取证阶段接入。
  *--*/
 NTSTATUS MsExtractPayload(
     _In_  DWORD ProcessId,
@@ -632,7 +617,7 @@ NTSTATUS MsExtractPayload(
 
 /*++
  * MsDumpPE
- *   提取并写盘 (对齐 SS DumpPE, ReflectiveDLLDetector.cpp L1637-1655). 死代码: 取证阶段接入。
+ *   提取并写盘 (DumpPE, ReflectiveDLLDetector.cpp L1637-1655). 死代码: 取证阶段接入。
  *--*/
 BOOLEAN MsDumpPE(
     _In_  DWORD ProcessId,
@@ -674,11 +659,11 @@ NTSTATUS MsEnumerateSuspiciousRegions(
     _Out_ PULONG Count);
 
 /*++
- * MsGetRegionInfo
+ * MmGetMemoryRegionInformation
  *   地址 → 区域信息 (对齐 PS GetRegionInfo, MemoryScanner.cpp L2243).
  *   死代码: 暂不接线。
  *--*/
-BOOLEAN MsGetRegionInfo(
+BOOLEAN MmGetMemoryRegionInformation(
     _In_  DWORD ProcessId,
     _In_  ULONG_PTR Address,
     _Out_ PWKD_MEMORY_REGION Region);

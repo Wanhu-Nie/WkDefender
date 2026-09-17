@@ -139,12 +139,12 @@ ExemptsCleanup(
     );
 
 /*---------------------------------------------------------------------------
- * 统一豁免判定（唯一判定入口，对齐 SS 信任层级 Hash>Cert>Publisher>Path）
+ * 统一豁免判定（唯一判定入口，信任层级 Hash>Cert>Publisher>Path）
  *---------------------------------------------------------------------------*/
 
 /*++
 Routine Description:
-    统一豁免判定。信任层级（对齐 SS IsWhitelisted）：
+    统一豁免判定。信任层级（IsWhitelisted）：
         Hash > Certificate > Publisher > Path，首匹配胜。
     - 哈希层：Sha256 命中哈希规则 → Trusted(HashMatch)
     - 证书层：微软签名（内置信任）或证书指纹规则 → Trusted(CertMatch)

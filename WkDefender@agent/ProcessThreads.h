@@ -56,7 +56,7 @@ WptAnalyzeThreads(
 
 //
 // 精确判定线程起始地址是否落在无背衬可执行区域 (MEM_PRIVATE + 可执行)。
-// 对齐 SS IsThreadStartUnbacked (ReflectiveDLLDetector.cpp L1390-1425):
+// IsThreadStartUnbacked (ReflectiveDLLDetector.cpp L1390-1425):
 //   NtQueryInformationThread=9 取起始地址 → Toolhelp 定位所属进程 →
 //   VirtualQueryEx 查区域类型/保护。
 // ※ 死代码补充: WptAnalyzeThreads 已用"模块表比对"近似覆盖 (IsStartAddressBacked),
@@ -69,7 +69,7 @@ WptIsThreadStartUnbacked(
 
 //
 // 统计线程调用栈中未落任何已加载模块的帧数。
-// 对齐 SS CountUnbackedCallStackFrames (ReflectiveDLLDetector.cpp L1427-1508):
+// CountUnbackedCallStackFrames (ReflectiveDLLDetector.cpp L1427-1508):
 //   挂起线程 → GetThreadContext → StackWalk64 (dbghelp 全局串行) →
 //   逐帧模块判定 (未模块帧数)。
 // ※ 死代码: 成本高 (挂线程 + dbghelp 全局锁), 定位 Deep/Forensic 模式,
@@ -88,7 +88,7 @@ WptCountUnbackedCallStackFrames(
 /**************************************************/
 
 //
-// 简化 x64 线程上下文 (对齐 SS ThreadContext64 子集, 含 WoW64 投影)
+// 简化 x64 线程上下文 (ThreadContext64 子集, 含 WoW64 投影)
 //
 typedef struct _WKD_THREAD_CONTEXT64 {
     ULONG_PTR   Rip;
@@ -103,10 +103,10 @@ typedef struct _WKD_THREAD_CONTEXT64 {
 } WKD_THREAD_CONTEXT64, *PWKD_THREAD_CONTEXT64;
 
 //
-// 线程上下文验证结果 (对齐 SS ThreadValidation + CalculateRiskScore)
+// 线程上下文验证结果 (ThreadValidation + CalculateRiskScore)
 //
 
-// 劫持方式细分 (对齐 SS HijackType 子集 + DetectHijackInternal 类型判定)
+// 劫持方式细分 (HijackType 子集 + DetectHijackInternal 类型判定)
 typedef enum _WKD_HIJACK_TYPE {
     WkdHijack_Unknown            = 0,
     WkdHijack_RipModification    = 1,   /* RIP 指向无背衬/壳码 */
@@ -143,13 +143,13 @@ typedef struct _WKD_THREAD_VALIDATION {
 
     /* 综合 */
     BOOLEAN     IsCompromised;
-    ULONG       RiskScore;          // 0-100 对齐 SS CalculateRiskScore
-    WKD_HIJACK_TYPE HijackType;     // 对齐 SS DetectHijackInternal 类型判定
+    ULONG       RiskScore;          // 0-100 CalculateRiskScore
+    WKD_HIJACK_TYPE HijackType;     // DetectHijackInternal 类型判定
 } WKD_THREAD_VALIDATION, *PWKD_THREAD_VALIDATION;
 
 //
 // 读取线程上下文 (含 WoW64: 32 位线程取 WOW64_CONTEXT 投影到 64 位)。
-// 对齐 SS GetThreadContextInternal (ThreadHijackDetector.cpp L1310-1415)。
+// GetThreadContextInternal (ThreadHijackDetector.cpp L1310-1415)。
 // ※ 死代码: 供线程劫持定向确认 (IoaConfirmThreadHijacking) 与主动扫描使用,
 //   当前无调用者 (激活依赖注入分类器接线)。
 //
@@ -161,7 +161,7 @@ WptGetThreadContext(
 
 //
 // 读取线程 TEB 栈边界 (StackBase/StackLimit)。
-// 对齐 SS GetThreadStackBounds (ThreadHijackDetector.cpp L463-526):
+// GetThreadStackBounds (ThreadHijackDetector.cpp L463-526):
 //   NtQueryInformationThread(ThreadBasicInformation=0) 取 TebBaseAddress →
 //   ReadProcessMemory 读 NT_TIB (x64: StackBase@+0x08/StackLimit@+0x10;
 //   WoW64: 32 位 TEB 位于 TebBaseAddress+0x2000, StackBase@+0x04/StackLimit@+0x08)。
@@ -176,7 +176,7 @@ WptGetThreadStackBounds(
 
 //
 // 综合验证线程上下文 (RIP/栈/段/调试寄存器/可选调用栈) → 风险分。
-// 对齐 SS ValidateThreadInternal + CalculateRiskScore:
+// ValidateThreadInternal + CalculateRiskScore:
 //   unbacked RIP+40 / shellcode+25 / RWX 私有+15 / 栈翻转+15 /
 //   段异常+30 / 调试寄存器+10 / 调用栈无背衬帧(>1)+25 / 跨进程+20, cap 100。
 // ※ 死代码: 供线程劫持定向确认 (IoaConfirmThreadHijacking) 使用, 当前无调用者。
@@ -197,7 +197,7 @@ WptValidateThread(
 /**************************************************/
 
 //
-// 线程主动扫描结果 (对齐 SS ScanResult 精简版)
+// 线程主动扫描结果 (ScanResult 精简版)
 //
 #define WKD_THREAD_SCAN_MAX    WKD_THREAD_MAX_ANALYZE
 
@@ -211,18 +211,18 @@ typedef struct _WKD_THREAD_SCAN_RESULT {
 } WKD_THREAD_SCAN_RESULT, *PWKD_THREAD_SCAN_RESULT;
 
 //
-// 线程上下文基线 (对齐 SS MonitoredThread 子集, 供 RestoreContext 恢复)
+// 线程上下文基线 (MonitoredThread 子集, 供 RestoreContext 恢复)
 //
 typedef struct _WKD_THREAD_BASELINE {
     ULONG               ThreadId;
     ULONG               OwnerPid;
-    LARGE_INTEGER       CreateTime;      /* 线程创建时间 (TID 复用锚, 对齐 SS EstablishBaseline) */
+    LARGE_INTEGER       CreateTime;      /* 线程创建时间 (TID 复用锚, EstablishBaseline) */
     WKD_THREAD_CONTEXT64 Ctx;
 } WKD_THREAD_BASELINE, *PWKD_THREAD_BASELINE;
 
 //
 // 主动扫描进程全部线程 (Toolhelp 枚举 + 逐线程 WptValidateThread)。
-// 对齐 SS ScanProcessInternal (ThreadHijackDetector.cpp L1665-1740)。
+// ScanProcessInternal (ThreadHijackDetector.cpp L1665-1740)。
 // ※ 死代码: 与事件驱动架构冲突, 定位未来主动扫描任务, 当前无调用者。
 //
 NTSTATUS
@@ -233,7 +233,7 @@ WptScanProcess(
 
 //
 // 主动扫描全系统进程 (汇总计数)。
-// 对齐 SS ScanAllProcesses (ThreadHijackDetector.cpp L2533-2579)。
+// ScanAllProcesses (ThreadHijackDetector.cpp L2533-2579)。
 // ※ 死代码: 同上。
 //
 NTSTATUS
@@ -243,7 +243,7 @@ WptScanAllProcesses(
 
 //
 // 建立线程上下文基线 (基线表 cap 8192, TID 复用锚 = CreateTime)。
-// 对齐 SS EstablishBaselineInternal (ThreadHijackDetector.cpp L2060-2129)。
+// EstablishBaselineInternal (ThreadHijackDetector.cpp L2060-2129)。
 // ※ 死代码: 基线唯一来源是 agent 周期扫描 (驱动 SetContext 事件无旧上下文),
 //   当前无调用者。
 //
@@ -271,7 +271,7 @@ WptClearBaseline(
 
 //
 // 从基线恢复线程上下文 (含 DR0-7 清零, 防遗留硬件断点)。
-// 对齐 SS RestoreContextInternal (ThreadHijackDetector.cpp L1948-2025)。
+// RestoreContextInternal (ThreadHijackDetector.cpp L1948-2025)。
 // ※ 死代码: 事后恢复是妥协方案 (WkD 第2层同步阻塞在事前拦截), 当前无调用者。
 //
 BOOLEAN
@@ -281,7 +281,7 @@ WptRestoreContext(
 
 //
 // 终止攻击者进程 (线程劫持响应)。
-// 对齐 SS TerminateAttackerInternal (ThreadHijackDetector.cpp L2027-2054):
+// TerminateAttackerInternal (ThreadHijackDetector.cpp L2027-2054):
 //   OpenProcess(PROCESS_TERMINATE) + TerminateProcess; 豁免关键系统进程。
 // ※ 死代码: 依赖 remediation 通道 (WkD 第2层同步阻塞已覆盖事前拦截), 当前无调用者。
 //
@@ -296,7 +296,7 @@ WptTerminateAttacker(
 /**************************************************/
 
 //
-// 上下文修改类型 (对齐 SS ContextModificationType 子集)
+// 上下文修改类型 (ContextModificationType 子集)
 //
 typedef enum _WKD_CONTEXT_MOD_TYPE {
     WkdCtxMod_None               = 0,
@@ -308,7 +308,7 @@ typedef enum _WKD_CONTEXT_MOD_TYPE {
 #define WKD_CTX_CHANGE_MAX  4
 
 //
-// 单条上下文变化 (对齐 SS ContextChange)
+// 单条上下文变化 (ContextChange)
 //
 typedef struct _WKD_CONTEXT_CHANGE {
     WKD_CONTEXT_MOD_TYPE Type;
@@ -323,11 +323,11 @@ typedef struct _WKD_CONTEXT_CHANGE {
 
 //
 // 对比两个上下文快照, 提取 RIP/RSP/DR7 变化。
-// 对齐 SS CompareContextsInternal (ThreadHijackDetector.cpp L1417-1490):
+// CompareContextsInternal (ThreadHijackDetector.cpp L1417-1490):
 //   - RIP 变化: 新旧模块对照, 新 RIP 无背衬→可疑
 //   - RSP 变化: delta > 1MB → 栈翻转 (可疑)
 //   - DR7 变化: 新 DR7 != 0 → 硬件断点 (可疑)
-// ※ 死代码: 供 SetContext 前后对比 (对齐 SS OnSetContextThreadInternal),
+// ※ 死代码: 供 SetContext 前后对比 (OnSetContextThreadInternal),
 //   当前无调用者。
 //
 NTSTATUS
@@ -346,7 +346,7 @@ WptCompareContexts(
 /**************************************************/
 
 //
-// 周期监控单次扫描 (对齐 SS MonitoringThreadWorker 的 1s 周期遍历,
+// 周期监控单次扫描 (MonitoringThreadWorker 的 1s 周期遍历,
 //   ThreadHijackDetector.cpp L2151-2196): 全系统线程验证 + 劫持确认。
 // ※ 死代码: WkD 事件驱动无独立监控线程, 激活需创建专用线程周期调用。
 //
@@ -356,7 +356,7 @@ WptMonitoringWorkerOnce(
     );
 
 //
-// 基线表 TTL 清理 (对齐 SS CleanupThreadWorker L2198-2244):
+// 基线表 TTL 清理 (CleanupThreadWorker L2198-2244):
 //   清理 CreateTime 超过 1h 的基线条目。
 // ※ 死代码: 基线表当前只写不清理, 激活需周期调用。
 //

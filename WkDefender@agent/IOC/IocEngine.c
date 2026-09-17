@@ -342,7 +342,7 @@ Return Value:
     WkdThread->IoacUnusualEntry    = Payload->IsUnusualEntry;
     WkdThread->IoacUnbackedStart   = !Payload->IsStartAddrBacked;
 
-    /* 拒绝越界 (对齐 SS kUserModeMax 防回绕) */
+    /* 拒绝越界 (kUserModeMax 防回绕) */
     address = Payload->StartRoutine;
     if (address < 0x10000 || address > 0x7FFFFFFFFFFFULL) return STATUS_INVALID_ADDRESS;
 

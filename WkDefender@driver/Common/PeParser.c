@@ -72,7 +72,7 @@ WkdPeEntropyShannon(
 /*++
     Routine Description（描述）:
         PS 语义 Shannon 熵近似（prob*10000/Size + 右移 logApprox，clamp 800）。
-        对齐 SS ImgpCalculateSectionEntropy，供 PhantomSensor 回调。
+        ImgpCalculateSectionEntropy，供 PhantomSensor 回调。
 
     Arguments（参数）:
         Data - 数据缓冲。
@@ -327,7 +327,7 @@ WkdPeRemapFileToImage(
     )
 /*++
     Routine Description（描述）:
-        file→image 布局重排（对齐 SS NipRemapFileToImage，死代码预留）：
+        file→image 布局重排（NipRemapFileToImage，死代码预留）：
         解析头后分配并清零 SizeOfImage 镜像缓冲，SizeOfHeaders 双夹拷贝头部，
         逐节 copySize 截断搬移到 VirtualAddress。之后可作 WkdPeMode_Image 再解析。
 
@@ -424,7 +424,7 @@ WkdPeClassify(
     )
 /*++
     Routine Description（描述）:
-        粗分类（对齐 SS ShadowpParsePEHeaders 语义）：
+        粗分类（ShadowpParsePEHeaders 语义）：
         非 PE 返回 STATUS_SUCCESS 且 IsPe=FALSE（不报错）。
 
     Arguments（参数）:

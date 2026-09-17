@@ -112,7 +112,7 @@ extern "C" {
 
 /**************************************************/
 /*               保护级别枚举                       */
-/*  对齐 SS MemoryProtectionLevel。                 */
+/*  MemoryProtectionLevel。                 */
 /**************************************************/
 
 typedef enum _MP_PROTECTION_LEVEL {
@@ -125,7 +125,7 @@ typedef enum _MP_PROTECTION_LEVEL {
 
 /**************************************************/
 /*               内存区域类型枚举                   */
-/*  对齐 SS MemoryRegionType。                     */
+/*  MemoryRegionType。                     */
 /**************************************************/
 
 typedef enum _MP_REGION_TYPE {
@@ -142,8 +142,8 @@ typedef enum _MP_REGION_TYPE {
 
 /**************************************************/
 /*               页保护位标志                       */
-/*  对齐 SS PageProtection（值即 Windows PAGE_*，   */
-/*  除 TargetsNoUpdate 对齐 SS 原文 0x40000000，    */
+/*  PageProtection（值即 Windows PAGE_*，   */
+/*  除 TargetsNoUpdate 原文 0x40000000，    */
 /*  Agent 侧不消费该位）。                         */
 /**************************************************/
 
@@ -160,12 +160,12 @@ typedef enum _MP_PAGE_PROTECTION {
     MpPageNoCache          = 0x00000200,
     MpPageWriteCombine     = 0x00000400,
     MpPageTargetsInvalid   = 0x40000000,
-    MpPageTargetsNoUpdate  = 0x40000000   /* 对齐 SS 原文；Windows 规范值 0x80000000 */
+    MpPageTargetsNoUpdate  = 0x40000000   /* 原文；Windows 规范值 0x80000000 */
 } MP_PAGE_PROTECTION, *PMP_PAGE_PROTECTION;
 
 /**************************************************/
 /*               分配类型枚举                       */
-/*  对齐 SS AllocationType。                       */
+/*  AllocationType。                       */
 /**************************************************/
 
 typedef enum _MP_ALLOCATION_TYPE {
@@ -178,7 +178,7 @@ typedef enum _MP_ALLOCATION_TYPE {
 
 /**************************************************/
 /*               完整性状态枚举                     */
-/*  对齐 SS MemoryIntegrityStatus。                */
+/*  MemoryIntegrityStatus。                */
 /**************************************************/
 
 typedef enum _MP_INTEGRITY_STATUS {
@@ -191,7 +191,7 @@ typedef enum _MP_INTEGRITY_STATUS {
 
 /**************************************************/
 /*               保护事件类型位标志                 */
-/*  对齐 SS MemoryProtectionEventType。            */
+/*  MemoryProtectionEventType。            */
 /**************************************************/
 
 typedef enum _MP_EVENT_TYPE {
@@ -212,7 +212,7 @@ typedef enum _MP_EVENT_TYPE {
 
 /**************************************************/
 /*               保护响应位标志                     */
-/*  对齐 SS MemoryProtectionResponse。             */
+/*  MemoryProtectionResponse。             */
 /**************************************************/
 
 typedef enum _MP_RESPONSE {
@@ -230,7 +230,7 @@ typedef enum _MP_RESPONSE {
 
 /**************************************************/
 /*               模块状态枚举                       */
-/*  对齐 SS ModuleStatus（SecurityEnums 规范）。    */
+/*  ModuleStatus（SecurityEnums 规范）。    */
 /**************************************************/
 
 typedef enum _MP_MODULE_STATUS {
@@ -244,7 +244,7 @@ typedef enum _MP_MODULE_STATUS {
 
 /**************************************************/
 /*               配置结构                           */
-/*  对齐 SS MemoryProtectionConfiguration。        */
+/*  MemoryProtectionConfiguration。        */
 /**************************************************/
 
 typedef struct _MP_CONFIGURATION {
@@ -279,7 +279,7 @@ typedef struct _MP_CONFIGURATION {
 
 /**************************************************/
 /*               受保护区域信息                     */
-/*  对齐 SS ProtectedRegion（string→定长缓冲）。   */
+/*  ProtectedRegion（string→定长缓冲）。   */
 /**************************************************/
 
 typedef struct _MP_PROTECTED_REGION {
@@ -304,7 +304,7 @@ typedef struct _MP_PROTECTED_REGION {
 
 /**************************************************/
 /*               安全分配信息                       */
-/*  对齐 SS SecureAllocation。                     */
+/*  SecureAllocation。                     */
 /**************************************************/
 
 typedef struct _MP_SECURE_ALLOCATION {
@@ -322,7 +322,7 @@ typedef struct _MP_SECURE_ALLOCATION {
 
 /**************************************************/
 /*               保护事件                           */
-/*  对齐 SS ProtectionEvent（context→定长键值对）。*/
+/*  ProtectionEvent（context→定长键值对）。*/
 /**************************************************/
 
 typedef struct _MP_EVENT_CONTEXT_ENTRY {
@@ -349,7 +349,7 @@ typedef struct _MP_PROTECTION_EVENT {
 
 /**************************************************/
 /*               内存区域信息                       */
-/*  对齐 SS MemoryRegionInfo。                     */
+/*  MemoryRegionInfo。                     */
 /**************************************************/
 
 typedef struct _MP_REGION_INFO {
@@ -366,7 +366,7 @@ typedef struct _MP_REGION_INFO {
 
 /**************************************************/
 /*               堆信息                             */
-/*  对齐 SS HeapInfo。                             */
+/*  HeapInfo。                             */
 /**************************************************/
 
 typedef struct _MP_HEAP_INFO {
@@ -382,7 +382,7 @@ typedef struct _MP_HEAP_INFO {
 
 /**************************************************/
 /*               统计                               */
-/*  对齐 SS MemoryProtectionStatistics。           */
+/*  MemoryProtectionStatistics。           */
 /**************************************************/
 
 typedef struct _MP_STATISTICS {
@@ -402,7 +402,7 @@ typedef struct _MP_STATISTICS {
 
 /**************************************************/
 /*               回调类型                           */
-/*  对齐 SS 4 类回调（std::function→函数指针）。   */
+/*  4 类回调（std::function→函数指针）。   */
 /**************************************************/
 
 /* 保护事件回调（对齐 ProtectionEventCallback）。返回 STATUS_SUCCESS 表示已消费。 */
@@ -448,7 +448,7 @@ typedef struct _AC_MEMORY_INTEGRITY_ENGINE AC_MEMORY_INTEGRITY_ENGINE, *PAC_MEMO
 /**************************************************/
 
 /* ------------------------------------------------ */
-/* 生命周期（对齐 SS Initialize/Shutdown 系列）      */
+/* 生命周期（Initialize/Shutdown 系列）      */
 /* ------------------------------------------------ */
 
 /* 初始化内存保护引擎（默认配置=Standard）。PASSIVE_LEVEL */
@@ -459,7 +459,7 @@ MpInitialize(
     _In_opt_ PMP_CONFIGURATION Config       /* NULL=使用默认配置 */
     );
 
-/* 停止引擎并释放内部资源（对齐 SS Shutdown，免鉴权）。PASSIVE_LEVEL */
+/* 停止引擎并释放内部资源（Shutdown，免鉴权）。PASSIVE_LEVEL */
 NTSTATUS
 MpShutdown(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
@@ -472,13 +472,13 @@ MpCleanup(
     );
 
 /* 启动完整性巡检线程（周期完整性校验 + EnableHeapProtection 时追加堆校验；
- * 对齐 SS startIntegrityMonitoring，Agent 侧由编排层显式启停）。PASSIVE_LEVEL */
+ * startIntegrityMonitoring，Agent 侧由编排层显式启停）。PASSIVE_LEVEL */
 NTSTATUS
 AcStartMemoryIntegralityProtection(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
     );
 
-/* 停止完整性监视线程（对齐 SS stopIntegrityMonitoring）。PASSIVE_LEVEL */
+/* 停止完整性监视线程（stopIntegrityMonitoring）。PASSIVE_LEVEL */
 NTSTATUS
 MpStop(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
@@ -490,38 +490,38 @@ MpIsInitialized(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
     );
 
-/* 查询引擎状态（对齐 SS GetStatus）。PASSIVE_LEVEL */
+/* 查询引擎状态（GetStatus）。PASSIVE_LEVEL */
 MP_MODULE_STATUS
 MpGetStatus(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
     );
 
 /* ------------------------------------------------ */
-/* 配置（对齐 SS SetConfiguration/GetConfiguration/  */
+/* 配置（SetConfiguration/GetConfiguration/  */
 /*        SetProtectionLevel/GetProtectionLevel）    */
 /* ------------------------------------------------ */
 
-/* 取默认配置（对齐 SS 默认值：Standard、全功能开启、 */
+/* 取默认配置（默认值：Standard、全功能开启、 */
 /* 安全池 1MB、完整性间隔 30s、DefaultResponse=Active）。PASSIVE_LEVEL */
 VOID
 MpGetDefaultConfiguration(
     _Out_ PMP_CONFIGURATION Config
     );
 
-/* 取保护级别对应的配置模板（对齐 SS FromLevel）。PASSIVE_LEVEL */
+/* 取保护级别对应的配置模板（FromLevel）。PASSIVE_LEVEL */
 VOID
 MpGetConfigurationForLevel(
     _In_ MP_PROTECTION_LEVEL Level,
     _Out_ PMP_CONFIGURATION Config
     );
 
-/* 校验配置有效性（对齐 SS IsValid）。PASSIVE_LEVEL */
+/* 校验配置有效性（IsValid）。PASSIVE_LEVEL */
 BOOLEAN
 MpIsConfigurationValid(
     _In_ PMP_CONFIGURATION Config
     );
 
-/* 更新配置（对齐 SS SetConfiguration；DefaultResponse 等实时生效）。PASSIVE_LEVEL */
+/* 更新配置（SetConfiguration；DefaultResponse 等实时生效）。PASSIVE_LEVEL */
 NTSTATUS
 MpSetConfiguration(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine,
@@ -535,7 +535,7 @@ MpGetConfiguration(
     _Out_ PMP_CONFIGURATION Config
     );
 
-/* 设置保护级别（校验并应用 FromLevel 模板；对齐 SS SetProtectionLevel）。PASSIVE_LEVEL */
+/* 设置保护级别（校验并应用 FromLevel 模板；SetProtectionLevel）。PASSIVE_LEVEL */
 NTSTATUS
 MpSetProtectionLevel(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine,
@@ -549,7 +549,7 @@ MpGetProtectionLevel(
     );
 
 /* ------------------------------------------------ */
-/* 安全内存分配（对齐 SS AllocateSecure 系列）       */
+/* 安全内存分配（AllocateSecure 系列）       */
 /* ------------------------------------------------ */
 
 /* 进程加固（ApplyProcessHardening/EnableASLR/EnableDEP/EnableCFG 及其 Is* 查询）
@@ -579,7 +579,7 @@ MpFreeSecure(
     _In_ SIZE_T Size
     );
 
-/* 重分配安全内存（拷贝 min(old,new) 字节；对齐 SS ReallocateSecure）。PASSIVE_LEVEL */
+/* 重分配安全内存（拷贝 min(old,new) 字节；ReallocateSecure）。PASSIVE_LEVEL */
 PVOID
 MpReallocateSecure(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine,
@@ -653,7 +653,7 @@ MpGetSecureMemoryUsage(
     );
 
 /* ------------------------------------------------ */
-/* 内存区域保护（对齐 SS ProtectRegion 系列）        */
+/* 内存区域保护（ProtectRegion 系列）        */
 /* ------------------------------------------------ */
 
 /* 保护内存区域（按类型设页保护 + 建立 CRC32+SHA-256 基线）。
@@ -708,7 +708,7 @@ MpGetAllProtectedRegions(
     );
 
 /* ------------------------------------------------ */
-/* 完整性校验（对齐 SS VerifyRegionIntegrity 系列）  */
+/* 完整性校验（VerifyRegionIntegrity 系列）  */
 /* ------------------------------------------------ */
 
 /* 校验区域完整性（CRC32+SHA-256 对比 + hook 特征检测）。PASSIVE_LEVEL */
@@ -727,7 +727,7 @@ AcpVerifyMemoryIntegrity(
     _Inout_   PULONG Count
     );
 
-/* 强制触发一次完整性校验（对齐 SS ForceIntegrityCheck）。PASSIVE_LEVEL */
+/* 强制触发一次完整性校验（ForceIntegrityCheck）。PASSIVE_LEVEL */
 VOID
 MpForceIntegrityCheck(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
@@ -741,7 +741,7 @@ MpUpdateRegionBaseline(
     );
 
 /* ------------------------------------------------ */
-/* 反转储保护（对齐 SS EnableAntiDump 系列）         */
+/* 反转储保护（EnableAntiDump 系列）         */
 /* ------------------------------------------------ */
 
 /* 启用反转储（混淆自身 PE 头）。PASSIVE_LEVEL */
@@ -775,7 +775,7 @@ MpRestorePEHeaders(
     );
 
 /* ------------------------------------------------ */
-/* 堆保护（对齐 SS EnableHeapProtection 系列）       */
+/* 堆保护（EnableHeapProtection 系列）       */
 /* ------------------------------------------------ */
 
 /* 启用堆保护（HeapSetInformation 终止于损坏）。PASSIVE_LEVEL */
@@ -814,7 +814,7 @@ MpDestroySecureHeap(
     );
 
 /* ------------------------------------------------ */
-/* 内存查询（对齐 SS QueryMemoryRegion 系列）        */
+/* 内存查询（QueryMemoryRegion 系列）        */
 /* ------------------------------------------------ */
 
 /* 查询地址所在内存区域信息。返回是否成功。PASSIVE_LEVEL */
@@ -850,7 +850,7 @@ MpSetPageProtection(
     );
 
 /* ------------------------------------------------ */
-/* 回调管理（对齐 SS Register/Unregister 系列）      */
+/* 回调管理（Register/Unregister 系列）      */
 /* ------------------------------------------------ */
 
 /* 注册保护事件回调，返回回调 ID。PASSIVE_LEVEL */
@@ -902,7 +902,7 @@ MpUnregisterHeapCorruptionCallback(
 /* 统计 / 历史 / 报告 / 自检                         */
 /* ------------------------------------------------ */
 
-/* 取统计快照（对齐 SS GetStatistics）。PASSIVE_LEVEL */
+/* 取统计快照（GetStatistics）。PASSIVE_LEVEL */
 NTSTATUS
 MpGetStatistics(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine,
@@ -915,7 +915,7 @@ MpResetStatistics(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
     );
 
-/* 取事件历史（最多 maxEntries 条；对齐 SS GetEventHistory）。PASSIVE_LEVEL */
+/* 取事件历史（最多 maxEntries 条；GetEventHistory）。PASSIVE_LEVEL */
 NTSTATUS
 MpGetEventHistory(
     _In_      PAC_MEMORY_INTEGRITY_ENGINE Engine,
@@ -938,14 +938,14 @@ MpExportReport(
     _Inout_   PULONG Length
     );
 
-/* 版本字符串（对齐 SS GetVersionString）。返回静态串。PASSIVE_LEVEL */
+/* 版本字符串（GetVersionString）。返回静态串。PASSIVE_LEVEL */
 PCWSTR
 MpGetVersionString(
     VOID
     );
 
 /* ------------------------------------------------ */
-/* 静态工具（对齐 SS SecureZero/ConstantTimeCompare）*/
+/* 静态工具（SecureZero/ConstantTimeCompare）*/
 /* ------------------------------------------------ */
 
 /* 安全清零（volatile 写入 + 内存栅栏，防编译器优化）。PASSIVE_LEVEL */
@@ -964,7 +964,7 @@ MpConstantTimeCompare(
     );
 
 /* ------------------------------------------------ */
-/* 名称工具（对齐 SS Get*Name 系列）                 */
+/* 名称工具（Get*Name 系列）                 */
 /* ------------------------------------------------ */
 
 /* 保护级别 → 可读名。PASSIVE_LEVEL */
@@ -991,7 +991,7 @@ MpAllocationTypeName(
     _In_ MP_ALLOCATION_TYPE Type
     );
 
-/* 页保护格式化为可读串（对齐 SS FormatPageProtection）。PASSIVE_LEVEL */
+/* 页保护格式化为可读串（FormatPageProtection）。PASSIVE_LEVEL */
 VOID
 MpFormatPageProtection(
     _In_ ULONG Protection,

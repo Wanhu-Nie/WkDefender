@@ -77,7 +77,7 @@ T3Cleanup(
 }
 
 /**************************************************/
-/*       可疑集群检测 (对齐 SS 进程关系图)            */
+/*       可疑集群检测 (进程关系图)            */
 /*                                                  */
 /*  迁移自 ShadowStrike ProcessRelationship.c       */
 /*  PrFindSuspiciousClusters + PrpAnalyzeCluster-   */
@@ -92,7 +92,7 @@ T3Cleanup(
 
 static BOOLEAN g_IoaClusterDetectionEnabled = FALSE;
 
-/* 对齐 SS PR_CLUSTER_* (ProcessRelationship.h) */
+/* PR_CLUSTER_* (ProcessRelationship.h) */
 #define T3_CLUSTER_MIN_SCORE         30      /* SS 300 / 10 → 0-100 尺度 */
 #define T3_CLUSTER_MIN_RELATIONSHIPS 3       /* SS PR_CLUSTER_MIN_RELATIONSHIPS */
 #define T3_CLUSTER_TIMEWINDOW_MS     30000   /* SS PR_CLUSTER_TIMEWINDOW_MS */
@@ -117,7 +117,7 @@ T3pClusterIsInCluster(
     )
 /*++
 Routine Description:
-    检查节点是否已加入簇（去重, 对齐 SS PrpIsNodeInCluster）。
+    检查节点是否已加入簇（去重, PrpIsNodeInCluster）。
 
 Arguments:
     Ctx    — 簇上下文。
@@ -148,7 +148,7 @@ T3pClusterVisit(
 /*++
 Routine Description:
     递归扩散簇: 沿出边遍历, 只计 30s 窗口内边, 加权置信度累计簇分。
-    对齐 SS PrpAnalyzeClusterRecursive (深度/进程上限剪枝 + 出边扩散)。
+    PrpAnalyzeClusterRecursive (深度/进程上限剪枝 + 出边扩散)。
 
 Arguments:
     Graph — 因果图。
@@ -180,7 +180,7 @@ Return Value:
         }
     }
 
-    /* 沿出边扩散（对齐 SS 源节点关系列表遍历）:
+    /* 沿出边扩散（源节点关系列表遍历）:
      * 只计 LastSeen 在 30s 窗口内的边, 簇分 = Σ(Weight×Confidence/100)/10 */
     for (entry = Node->OutEdgesHead.Flink;
          entry != &Node->OutEdgesHead;
@@ -273,7 +273,7 @@ Return Value:
         DefConfidence_High : DefConfidence_Medium;
     alert->RecommendedAction = DefRespAction_Alert;
     alert->DetectionSource = DefDetSrc_Cluster;
-    alert->MitreId = NULL;   /* 协同攻击无单一 MITRE 技术, 对齐 SS 提交 SuspiciousParentChild 语义 */
+    alert->MitreId = NULL;   /* 协同攻击无单一 MITRE 技术, 提交 SuspiciousParentChild 语义 */
 
     buf = (PWCHAR)((PUCHAR)alert + sizeof(IOA_ALERT));
     alert->RuleName = buf;
@@ -295,7 +295,7 @@ T3pDetectSuspiciousClusters(
 Routine Description:
     因果图可疑集群周期扫描。遍历 process 节点, 出边扩散 BFS,
     簇分≥30 且边数≥3 判定为可疑集群, 构造 IOA_ALERT 入队。
-    对齐 SS PrFindSuspiciousClusters (60s 周期定时器触发)。
+    PrFindSuspiciousClusters (60s 周期定时器触发)。
 
     [死代码] 门控 g_IoaClusterDetectionEnabled=FALSE 默认关。
     阈值按 SS 0-1000 → wkd 0-100 尺度换算 (/10), 需按 wkd 数据校准。
@@ -387,7 +387,7 @@ T3PeriodicMaintenance(
     /* 淘汰过期链 */
     T3ChainPool_EvictExpired(&Engine->ChainPool);
 
-    /* 可疑集群检测（死代码门控, 对齐 SS PrFindSuspiciousClusters 60s 周期） */
+    /* 可疑集群检测（死代码门控, PrFindSuspiciousClusters 60s 周期） */
     if (g_IoaClusterDetectionEnabled) {
         T3pDetectSuspiciousClusters();
     }

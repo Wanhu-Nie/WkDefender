@@ -73,6 +73,11 @@ extern "C" {
 
 /* 注册表保护（RegistryProtection 模块，RG） */
 #define SP_EVENT_SUBTYPE_REG_BASE             0x5030   /* RG 子类型段起始 */
+/* 值须与 RegistryProtection.h RG_EVENT_SUBTYPE_* 对齐，变更需双端同步 */
+#define SP_EVENT_SUBTYPE_REG_OP_BLOCKED       0x5031   /* 注册表操作被阻断 */
+#define SP_EVENT_SUBTYPE_REG_INTEGRITY        0x5032   /* 注册表完整性违规 */
+#define SP_EVENT_SUBTYPE_REG_VALUE_CHANGED    0x5033   /* 受保护注册表值变更 */
+#define SP_EVENT_SUBTYPE_REG_KERNEL_BLOCK     0x5034   /* 内核注册表回调阻断（预留驱动桥接） */
 
 /* 进程保护决策引擎（ProcessProtection 模块，PP） */
 #define SP_EVENT_SUBTYPE_PP_BASE              0x5040   /* PP 子类型段起始 */
@@ -279,7 +284,7 @@ typedef enum _SP_WATCHDOG_STATE {
 
 /**************************************************/
 /*               脚本/授权令牌                      */
-/*  对齐 SS 授权令牌（HMAC-SHA256）。骨架：          */
+/*  授权令牌（HMAC-SHA256）。骨架：          */
 /*  SdfSetAuthToken 设置密钥，SdfVerifyAuthToken    */
 /*  校验 bearer token 是否由该密钥签发。            */
 /**************************************************/

@@ -737,7 +737,7 @@ AbdpScanWorkerThread(
     )
 /*++
 Routine Description:
-    30s 周期扫描所有已追踪进程（对齐 SS ABD_SCAN_INTERVAL_100NS）。
+    30s 周期扫描所有已追踪进程（ABD_SCAN_INTERVAL_100NS）。
     通过 ShutdownEvent 唤醒中断等待，支持快速退出。
 Arguments:
     Context - 未使用。
@@ -1300,7 +1300,7 @@ AbdpReadProcessMemory(
 /*++
 Routine Description:
     附加到目标进程读取指定地址内存（SEH 保护）。
-    委托给通用 WkdReadProcessMemory（Utils.c，对齐 SS MmpReadProcessMemory），
+    委托给通用 WkdReadProcessMemory（Utils.c，MmpReadProcessMemory），
     保留单次读取上限约束（当前调用仅 ABD_PROLOGUE_SIZE=16）。
 Arguments:
     ProcessId - 目标进程 PID。

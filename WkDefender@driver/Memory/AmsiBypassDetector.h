@@ -40,7 +40,7 @@
 #define ABD_FUNCTION_NAME_MAX       64
 #define ABD_MAX_CRITICAL_FUNCTIONS  8
 
-/* 周期扫描间隔 (对齐 SS ABD_SCAN_INTERVAL_100NS = 30s) */
+/* 周期扫描间隔 (ABD_SCAN_INTERVAL_100NS = 30s) */
 #define ABD_SCAN_INTERVAL_100NS     (-(LONGLONG)30 * 10000000LL)
 
 /* CAS 生命周期 */

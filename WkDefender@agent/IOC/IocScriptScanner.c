@@ -23,7 +23,7 @@ typedef struct _WKD_SCRIPT_SIGNATURE {
     const char* ThreatName;
 } WKD_SCRIPT_SIGNATURE;
 
-/* PowerShell (对齐 SS PowerShellScanner Heuristics) */
+/* PowerShell (PowerShellScanner Heuristics) */
 static const WKD_SCRIPT_SIGNATURE g_PsSignatures[] = {
     { "invoke-expression", 70, "Downloader",  "PS.InvokeExpression" },
     { " iex ",             70, "Downloader",  "PS.InvokeExpression" },
@@ -50,7 +50,7 @@ static const WKD_SCRIPT_SIGNATURE g_PsSignatures[] = {
     { "constrainedlanguage", 90, "Evasion",   "PS.LanguageModeBypass" },
 };
 
-/* Python (对齐 SS PythonScriptScanner capability 权重) */
+/* Python (PythonScriptScanner capability 权重) */
 static const WKD_SCRIPT_SIGNATURE g_PySignatures[] = {
     { "browser_cookie3",   35, "Credential",  "Py.CredentialTheft" },
     { "win32crypt",        35, "Credential",  "Py.CredentialTheft" },
@@ -76,7 +76,7 @@ static const WKD_SCRIPT_SIGNATURE g_PySignatures[] = {
     { "qemu",              20, "AntiVM",      "Py.AntiVM" },
 };
 
-/* JavaScript (对齐 SS JavaScriptScanner) */
+/* JavaScript (JavaScriptScanner) */
 static const WKD_SCRIPT_SIGNATURE g_JsSignatures[] = {
     { "wscript.shell",     70, "ProcessExec", "JS.WScript" },
     { "activexobject",     70, "ProcessExec", "JS.ActiveX" },
@@ -89,7 +89,7 @@ static const WKD_SCRIPT_SIGNATURE g_JsSignatures[] = {
     { "fromcharcode",      40, "Obfuscation", "JS.FromCharCode" },
 };
 
-/* VBScript (对齐 SS VBScriptScanner) */
+/* VBScript (VBScriptScanner) */
 static const WKD_SCRIPT_SIGNATURE g_VbsSignatures[] = {
     { "wscript.shell",     70, "ProcessExec", "VBS.WScript" },
     { "shell.exec",        70, "ProcessExec", "VBS.ShellExec" },

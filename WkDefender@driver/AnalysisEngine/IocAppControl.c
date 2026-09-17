@@ -135,7 +135,7 @@ IocAcpLeaveOperation(
 /*                                                  */
 /*  支持 \SystemRoot\、\??\X:\、\Device\<name>\     */
 /*  三种根格式解析后与信任目录前缀比较。            */
-/*  注意（对齐 SS 缺陷）：\Windows\ 前缀会放行      */
+/*  注意（缺陷）：\Windows\ 前缀会放行      */
 /*  \Windows\Temp\、\Windows\Tasks\ 等用户可写      */
 /*  目录，需依赖 PathBlock 规则补充。               */
 /**************************************************/
@@ -348,7 +348,7 @@ IocAcpPathRuleExistsLocked(
 /**************************************************/
 /*          Learning 自学习（死代码）              */
 /*                                                  */
-/*  对齐 SS AcpLearnHashRule：为观察到的可执行文件  */
+/*  AcpLearnHashRule：为观察到的可执行文件  */
 /*  自动加入哈希白名单。风险：攻击样本首次执行即被  */
 /*  "学习"为白名单（自动洗白），默认门控关闭。      */
 /*  SS 规则管理入口缺失，本迁移补 Learning 门控。   */
@@ -576,7 +576,7 @@ Return Value:
 /**************************************************/
 /*           进程创建执行判定                      */
 /*                                                  */
-/*  对齐 SS AcCheckProcessExecution 判定链：        */
+/*  AcCheckProcessExecution 判定链：        */
 /*    哈希 → 路径规则 → 内置信任路径 → 默认策略。   */
 /*  Block 时调用方应设置 CreateInfo->CreationStatus */
 /*  = STATUS_ACCESS_DENIED 阻断创建。               */
@@ -598,7 +598,7 @@ Routine Description:
 
 Arguments:
     ImagePath       - 归一化镜像路径（可含短文件名）。
-    ImageHash       - 可选 SHA-256（进程创建路径通常为 NULL，对齐 SS 异步哈希）。
+    ImageHash       - 可选 SHA-256（进程创建路径通常为 NULL，异步哈希）。
     ProcessId       - 新进程 ID。
     ParentProcessId - 父进程 ID（命中上报的源进程，标记攻击者）。
 
@@ -674,7 +674,7 @@ Return Value:
     }
 
     /*
-     * 命中上报（对齐 SS BeEngineSubmitEvent：Block→90 / Audit→40）：
+     * 命中上报（BeEngineSubmitEvent：Block→90 / Audit→40）：
      * 经 AeReportIndicatorPair 上报 TsIndicator_Defense_AppControlBlock
      * （权重 15，默认等级 High），进程对 = (父→子) 标记攻击者。
      * 对未跟踪父进程返回错误，非致命忽略。
@@ -714,7 +714,7 @@ Return Value:
 /**************************************************/
 /*           镜像加载判定（通知型）                */
 /*                                                  */
-/*  对齐 SS AcCheckImageLoad：仅路径规则 + 信任     */
+/*  AcCheckImageLoad：仅路径规则 + 信任     */
 /*  路径，无哈希判定。镜像加载回调无法阻断，命中    */
 /*  Block 仅由调用方加分上报。                      */
 /**************************************************/

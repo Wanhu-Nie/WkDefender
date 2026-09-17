@@ -81,7 +81,7 @@ WkdArc_ReadLE32(
            ((ULONG)P[2] << 16) | ((ULONG)P[3] << 24);
 }
 
-/* 溢出安全累加 (对齐 SS L2319-2323) */
+/* 溢出安全累加 (L2319-2323) */
 static BOOLEAN
 WkdArc_SafeAdd64(
     _In_  ULONG64  A,
@@ -119,7 +119,7 @@ WkdArc_Utf8ToWide(
 
 /**************************************************/
 /*               CRC32 (查表法)                     */
-/*  对齐 SS ComputeCrc32 L500-506 + CRC32_TABLE    */
+/*  ComputeCrc32 L500-506 + CRC32_TABLE    */
 /**************************************************/
 
 static ULONG g_WkdArcCrc32Table[256];
@@ -175,7 +175,7 @@ WkdArc_Crc32(
 
 /**************************************************/
 /*               归档格式检测                       */
-/*  对齐 SS MAGIC_TABLE L199-213 + DetectFormat     */
+/*  MAGIC_TABLE L199-213 + DetectFormat     */
 /**************************************************/
 
 typedef struct _WKD_ARC_MAGIC {
@@ -243,7 +243,7 @@ WkdArc_DetectFormatBuffer(
 /*++
 Routine Description:
     从内存 buffer 检测归档格式 (魔数表优先)。
-    对齐 SS DetectFormat(span) L961-972。
+    DetectFormat(span) L961-972。
 
 Arguments:
     Buffer - 头部字节。
@@ -300,7 +300,7 @@ WkdArc_DetectFormatPath(
 /*++
 Routine Description:
     从文件路径检测归档格式 (魔数优先 + 复合 tar.* + 扩展名兜底)。
-    对齐 SS DetectFormat(path) L866-959。
+    DetectFormat(path) L866-959。
 
 Arguments:
     FilePath - 文件路径。
@@ -327,7 +327,7 @@ Return Value:
 
     WkdArc_DetectFormatBuffer(head, rd, &fmt);
     if (fmt == WkdArcFormat_Unknown) {
-        /* 扩展名兜底 (对齐 SS L931-952) */
+        /* 扩展名兜底 (L931-952) */
         PCWSTR dot = wcsrchr(FilePath, L'.');
         if (dot) {
             ULONG i;
@@ -341,7 +341,7 @@ Return Value:
         return STATUS_SUCCESS;
     }
 
-    /* 复合格式: tar.gz/tgz, tar.bz2/tbz2, tar.xz/txz, tar.zst (对齐 SS L903-928) */
+    /* 复合格式: tar.gz/tgz, tar.bz2/tbz2, tar.xz/txz, tar.zst (L903-928) */
     WkdArc_FileNameLower(FilePath, nameLower, sizeof(nameLower) / sizeof(WCHAR));
     if (fmt == WkdArcFormat_Gzip &&
         (wcsstr(nameLower, L".tar.gz") || wcsstr(nameLower, L".tgz"))) {
@@ -369,7 +369,7 @@ WkdArc_GetFormatName(
     )
 /*++
 Routine Description:
-    格式化归档格式名。对齐 SS GetFormatName L3737-3769。
+    格式化归档格式名。GetFormatName L3737-3769。
 
 Arguments:
     Format - 格式。
@@ -417,11 +417,11 @@ Return Value:
 
 /**************************************************/
 /*               路径安全                           */
-/*  对齐 SS IsPathSafe L528-591 + SanitizePath     */
+/*  IsPathSafe L528-591 + SanitizePath     */
 /*  L593-662 + IsReservedDeviceName L508-526       */
 /**************************************************/
 
-/* 保留设备名 (对齐 SS RESERVED_NAMES L297-301, 先剥离扩展名 L509-512) */
+/* 保留设备名 (RESERVED_NAMES L297-301, 先剥离扩展名 L509-512) */
 static BOOLEAN
 WkdArc_IsReservedDeviceName(
     _In_ PCWSTR Name    /* 组件, 内部剥离扩展名 */
@@ -454,7 +454,7 @@ WkdArc_IsPathSafeW(
     )
 /*++
 Routine Description:
-    条目路径安全全量检查。对齐 SS IsPathSafe L528-591：
+    条目路径安全全量检查。IsPathSafe L528-591：
     绝对路径 / UNC / ../ / 尾部点空格 / 保留设备名 /
     非法字符 < > : " | ? * / Unicode 变体 / RTL bidi /
     嵌入 NUL / C0 控制 / ADS :: / 超长 260。
@@ -472,14 +472,14 @@ Return Value:
     if (!PathW || PathW[0] == L'\0') return FALSE;
     len = wcslen(PathW);
 
-    /* 绝对路径 / UNC 前缀 / 盘符 (对齐 SS L534-538) */
+    /* 绝对路径 / UNC 前缀 / 盘符 (L534-538) */
     if (PathW[0] == L'/' || PathW[0] == L'\\') return FALSE;
     if (len >= 2 && PathW[1] == L':') return FALSE;
     if (len >= 2 &&
         (PathW[0] == L'\\' || PathW[0] == L'/') &&
         (PathW[1] == L'\\' || PathW[1] == L'/')) return FALSE;
 
-    /* 逐组件检查 (对齐 SS L540-561) */
+    /* 逐组件检查 (L540-561) */
     i = 0;
     while (i < len) {
         SIZE_T sep = i;
@@ -497,7 +497,7 @@ Return Value:
         /* ".." 组件 (任意大小写形式) */
         if (clen == 2 && comp[0] == L'.' && comp[1] == L'.') return FALSE;
 
-        /* 尾部点/空格 — Windows 静默剥离 (对齐 SS L553-555) */
+        /* 尾部点/空格 — Windows 静默剥离 (L553-555) */
         if (clen > 0 && (comp[clen - 1] == L'.' || comp[clen - 1] == L' ')) return FALSE;
 
         /* 保留设备名 */
@@ -507,7 +507,7 @@ Return Value:
         i = sep + 1;
     }
 
-    /* 全路径非法字符 (对齐 SS L563-580) */
+    /* 全路径非法字符 (L563-580) */
     for (i = 0; i < len; i++) {
         WCHAR ch = PathW[i];
         if (ch == L'<' || ch == L'>' || ch == L':' || ch == L'"' ||
@@ -523,10 +523,10 @@ Return Value:
         if (ch < 0x20) return FALSE;   /* C0 控制 */
     }
 
-    /* 备用数据流 (对齐 SS L582-583) */
+    /* 备用数据流 (L582-583) */
     if (wcsstr(PathW, L"::") != NULL) return FALSE;
 
-    /* 超长 (对齐 SS L586-588) */
+    /* 超长 (L586-588) */
     if (len > WKD_ARC_PATH_MAX) return FALSE;
 
     return TRUE;
@@ -540,7 +540,7 @@ WkdArc_SanitizePathW(
     )
 /*++
 Routine Description:
-    路径净化。对齐 SS SanitizePath L593-662：剥离绝对前缀、
+    路径净化。SanitizePath L593-662：剥离绝对前缀、
     跳过 . 和 .. 组件、剥离尾部点空格、保留设备名加下划线、
     非法字符替换为 '_'。
 
@@ -655,7 +655,7 @@ IocArchive_IsPathTraversal(
 
 /**************************************************/
 /*               ZIP 格式结构                      */
-/*  对齐 SS L89-158 (pack(1))                      */
+/*  L89-158 (pack(1))                      */
 /**************************************************/
 
 #pragma pack(push, 1)
@@ -727,13 +727,13 @@ typedef struct _WKD_ZIP64_EOCD {
 
 #pragma pack(pop)
 
-/* 嵌套归档扩展名 (对齐 SS ARCHIVE_EXTS L1228-1231) */
+/* 嵌套归档扩展名 (ARCHIVE_EXTS L1228-1231) */
 static const WCHAR* WkdArc_ArchiveExts[] = {
     L".zip", L".rar", L".7z", L".tar", L".gz", L".bz2",
     L".xz", L".cab", L".iso", L".msi",
 };
 
-/* 扩展名精确匹配 (对齐 SS fs::path::extension ends_with 语义) */
+/* 扩展名精确匹配 (fs::path::extension ends_with 语义) */
 static BOOLEAN
 WkdArc_HasExt(
     _In_ PCWSTR LowerName,
@@ -759,7 +759,7 @@ WkdArc_IsArchiveExt(
 
 /**************************************************/
 /*               ZIP 中央目录解析                   */
-/*  对齐 SS ParseZipCentralDirectory L994-1241     */
+/*  ParseZipCentralDirectory L994-1241     */
 /**************************************************/
 
 static NTSTATUS
@@ -778,7 +778,7 @@ WkdArc_ParseZipCentralDirectory(
 
     if (Size < 22) return STATUS_SUCCESS;
 
-    /* 1. EOCD 尾部搜索 (对齐 SS L999-1030) */
+    /* 1. EOCD 尾部搜索 (L999-1030) */
     searchSize = (Size < WKD_ARC_EOCD_SEARCH + 22) ? Size : WKD_ARC_EOCD_SEARCH + 22;
     {
         ULONG start = Size - searchSize;
@@ -802,7 +802,7 @@ WkdArc_ParseZipCentralDirectory(
         ULONG64 cdSize = eocd->CentralDirSize;
         ULONG64 total = eocd->NumEntriesTotal;
 
-        /* 2. Zip64 EOCD (对齐 SS L1039-1061) */
+        /* 2. Zip64 EOCD (L1039-1061) */
         if (cdOffset == 0xFFFFFFFF || total == 0xFFFF) {
             if (eocdOff >= sizeof(WKD_ZIP64_LOCATOR)) {
                 const WKD_ZIP64_LOCATOR* loc =
@@ -821,13 +821,13 @@ WkdArc_ParseZipCentralDirectory(
             }
         }
 
-        /* 3. 中央目录边界校验 (溢出安全, 对齐 SS L1063-1069) */
+        /* 3. 中央目录边界校验 (溢出安全, L1063-1069) */
         if (cdOffset > Size || cdSize > (ULONG64)Size - cdOffset) return STATUS_SUCCESS;
 
-        /* 4. 中央目录 256MB cap (对齐 SS L1085-1094) */
+        /* 4. 中央目录 256MB cap (L1085-1094) */
         if (cdSize > WKD_ARC_MAX_CENTRAL_DIR) return STATUS_SUCCESS;
 
-        /* 5. 条目 cap (对齐 SS L1071-1077, 结构容量 512) */
+        /* 5. 条目 cap (L1071-1077, 结构容量 512) */
         Result->TotalEntryCount = (total > 0xFFFFFFFFu) ? 0xFFFFFFFFu : (ULONG)total;
         /* SS 仅截断 warning 不判 bomb; 超限仅记录不置位
            (SuspiciousEntry 保留给内容哈希命中语义) */
@@ -836,9 +836,9 @@ WkdArc_ParseZipCentralDirectory(
         centralSize = (ULONG)cdSize;
     }
 
-    /* 6. 遍历中央目录 (对齐 SS L1106-1238) */
+    /* 6. 遍历中央目录 (L1106-1238) */
     pos = centralOff;
-    /* 以中央目录结束偏移为界 (对齐 SS 用 centralDirSize 限制, 防附加数据误解析) */
+    /* 以中央目录结束偏移为界 (用 centralDirSize 限制, 防附加数据误解析) */
     while (pos + sizeof(WKD_ZIP_CDE) <= centralOff + centralSize && entryId < totalEntries) {
         const WKD_ZIP_CDE* cde;
         ULONG nameLen, extraLen, commentLen;
@@ -866,7 +866,7 @@ WkdArc_ParseZipCentralDirectory(
         memcpy(rawName, Buffer + pos + sizeof(WKD_ZIP_CDE), rawNameLen);
         rawName[rawNameLen] = '\0';
 
-        /* Zip64 extra field 0x0001 (对齐 SS L1129-1163) */
+        /* Zip64 extra field 0x0001 (L1129-1163) */
         z64Uncomp = cde->UncompressedSize;
         z64Comp = cde->CompressedSize;
         z64Local = cde->LocalHeaderOffset;
@@ -896,7 +896,7 @@ WkdArc_ParseZipCentralDirectory(
             }
         }
 
-        /* 构建条目 (对齐 SS L1167-1188) */
+        /* 构建条目 (L1167-1188) */
         e = &Result->Entries[Result->EntryCount];
         RtlZeroMemory(e, sizeof(*e));
         strncpy_s(e->Name, sizeof(e->Name), rawName, _TRUNCATE);
@@ -914,13 +914,13 @@ WkdArc_ParseZipCentralDirectory(
         if (rawNameLen > 0 && (rawName[rawNameLen - 1] == '/')) {
             e->Flags |= WKD_ARC_ENTRY_DIRECTORY;
         }
-        /* DOS 隐藏属性 (对齐 SS L1205-1209) */
+        /* DOS 隐藏属性 (L1205-1209) */
         if ((cde->ExternalAttributes & WKD_ZIP_ATTR_HIDDEN) != 0) {
             e->Flags |= WKD_ARC_ENTRY_HIDDEN;
             flags |= WkdArcFlag_HiddenEntry;
         }
 
-        /* 压缩比 (对齐 SS L1182-1187) */
+        /* 压缩比 (L1182-1187) */
         if (e->CompressedSize > 0 && !(e->Flags & WKD_ARC_ENTRY_DIRECTORY)) {
             e->SingleEntryRatio = (double)e->UncompressedSize /
                                   (double)e->CompressedSize;
@@ -929,13 +929,13 @@ WkdArc_ParseZipCentralDirectory(
             }
         }
 
-        /* 路径安全 (对齐 SS L1189-1194) */
+        /* 路径安全 (L1189-1194) */
         WkdArc_Utf8ToWide(e->Name, wideName, sizeof(wideName) / sizeof(WCHAR));
         if (wideName[0] != L'\0' && !WkdArc_IsPathSafeW(wideName)) {
             flags |= WkdArcFlag_PathTraversalAttempt;
         }
 
-        /* 嵌套归档 (对齐 SS L1226-1235) */
+        /* 嵌套归档 (L1226-1235) */
         WkdArc_FileNameLower(wideName, lowerName, sizeof(lowerName) / sizeof(WCHAR));
         if (lowerName[0] != L'\0' && WkdArc_IsArchiveExt(lowerName)) {
             e->Flags |= WKD_ARC_ENTRY_NESTED;
@@ -946,7 +946,7 @@ WkdArc_ParseZipCentralDirectory(
         if (flags != WkdArcFlag_None) Result->FlaggedCount++;
         Result->SecurityFlags |= flags;
 
-        /* 重叠条目检测 (溢出安全, 对齐 SS L1211-1224) */
+        /* 重叠条目检测 (溢出安全, L1211-1224) */
         addend = 30ull + nameLen + extraLen + z64Comp;
         entryStart = z64Local;
         entryEnd = (entryStart > (ULONG64)-1 - addend) ? (ULONG64)-1 : entryStart + addend;
@@ -964,7 +964,7 @@ WkdArc_ParseZipCentralDirectory(
         /* 记录本条目结束偏移供后续重叠检测 */
         e->DataOffset = entryEnd;
 
-        /* 累计未压缩大小 (溢出安全, 对齐 SS L2319-2323) */
+        /* 累计未压缩大小 (溢出安全, L2319-2323) */
         if (!WkdArc_SafeAdd64(Result->TotalUncompressed, z64Uncomp,
                               &Result->TotalUncompressed)) {
             Result->SecurityFlags |= WkdArcFlag_ZipBombSuspected;
@@ -1319,7 +1319,7 @@ Return Value:
 
 /**************************************************/
 /*               ZIP 条目内容提取                   */
-/*  对齐 SS ExtractZipEntry L2647-2729             */
+/*  ExtractZipEntry L2647-2729             */
 /**************************************************/
 
 NTSTATUS
@@ -1334,7 +1334,7 @@ WkdArc_ExtractEntryContent(
 /*++
 Routine Description:
     提取 ZIP 条目内容 (STORED 直拷 / DEFLATE inflate)。
-    对齐 SS ExtractZipEntry L2647-2729, 加密拒绝。
+    ExtractZipEntry L2647-2729, 加密拒绝。
 
 Arguments:
     Buffer - 整个归档 buffer。
@@ -1357,7 +1357,7 @@ Return Value:
     *OutLen = 0;
 
     if (Entry->Flags & WKD_ARC_ENTRY_ENCRYPTED) {
-        return STATUS_ENCRYPTED;   /* 对齐 SS L2653-2660 */
+        return STATUS_ENCRYPTED;   /* L2653-2660 */
     }
     if (Entry->LocalHeaderOffset + sizeof(WKD_ZIP_LFH) > Size) {
         return STATUS_INVALID_PARAMETER;
@@ -1390,7 +1390,7 @@ Return Value:
         return STATUS_NOT_SUPPORTED;   /* 其他压缩方法不支持 */
     }
 
-    /* CRC32 校验 (对齐 SS L2716-2726, 不丢弃) */
+    /* CRC32 校验 (L2716-2726, 不丢弃) */
     if (*OutLen > 0 && Entry->Crc32 != 0) {
         ULONG computed = WkdArc_Crc32(Out, *OutLen);
         if (computed != Entry->Crc32) {
@@ -1403,7 +1403,7 @@ Return Value:
 
 /**************************************************/
 /*               TAR 格式解析                       */
-/*  对齐 SS L225-257 常量 + ParseTarContents       */
+/*  L225-257 常量 + ParseTarContents       */
 /*  L1247-1447 + ScanTarArchive L1453-1733         */
 /**************************************************/
 
@@ -1433,7 +1433,7 @@ Return Value:
 #define WKD_TAR_TYPE_PAX_GLOBAL   'g'
 #define WKD_TAR_TYPE_PAX_NEXT     'x'
 
-/* GNU base-256 + POSIX 八进制 (对齐 SS L323-348) */
+/* GNU base-256 + POSIX 八进制 (L323-348) */
 static ULONG64
 WkdArc_TarParseOctal(
     _In_ const BYTE* Field,
@@ -1465,7 +1465,7 @@ WkdArc_TarParseOctal(
     }
 }
 
-/* 双校验和: 无符号 + 有符号 (对齐 SS L353-379) */
+/* 双校验和: 无符号 + 有符号 (L353-379) */
 static BOOLEAN
 WkdArc_TarVerifyChecksum(
     _In_ const BYTE* Block
@@ -1495,7 +1495,7 @@ WkdArc_TarVerifyChecksum(
     return (computed == stored) || ((ULONG)signedComputed == stored);
 }
 
-/* 全零块 = 归档结束 (对齐 SS L384-394) */
+/* 全零块 = 归档结束 (L384-394) */
 static BOOLEAN
 WkdArc_TarIsZeroBlock(
     _In_ const BYTE* Block
@@ -1510,7 +1510,7 @@ WkdArc_TarIsZeroBlock(
     return TRUE;
 }
 
-/* 定长字段取 NUL 终止串 (对齐 SS L399-407) */
+/* 定长字段取 NUL 终止串 (L399-407) */
 static VOID
 WkdArc_TarExtractString(
     _In_  const BYTE* Field,
@@ -1535,7 +1535,7 @@ WkdArc_ParseTarContents(
 /*++
 Routine Description:
     TAR 头级条目解析 + 数据位置记录。
-    对齐 SS ParseTarContents L1247-1447。
+    ParseTarContents L1247-1447。
 
 Arguments:
     Buffer - TAR 文件 buffer。
@@ -1594,7 +1594,7 @@ Return Value:
             strcpy_s(fullName, sizeof(fullName), name);
         }
 
-        /* GNU longname (对齐 SS L1313-1336) */
+        /* GNU longname (L1313-1336) */
         if (typeFlag == WKD_TAR_TYPE_LONGNAME) {
             ULONG64 nameDataBlocks = (entrySize + WKD_TAR_BLOCK_SIZE - 1) / WKD_TAR_BLOCK_SIZE;
             ULONG64 nameDataSize = nameDataBlocks * WKD_TAR_BLOCK_SIZE;
@@ -1613,7 +1613,7 @@ Return Value:
             continue;
         }
 
-        /* pax 扩展头跳过 (对齐 SS L1339-1344) */
+        /* pax 扩展头跳过 (L1339-1344) */
         if (typeFlag == WKD_TAR_TYPE_PAX_NEXT || typeFlag == WKD_TAR_TYPE_PAX_GLOBAL) {
             ULONG64 dataBlocks = (entrySize + WKD_TAR_BLOCK_SIZE - 1) / WKD_TAR_BLOCK_SIZE;
             offset += WKD_TAR_BLOCK_SIZE + dataBlocks * WKD_TAR_BLOCK_SIZE;
@@ -1643,7 +1643,7 @@ Return Value:
 
         WkdArc_Utf8ToWide(fullName, wideName, sizeof(wideName) / sizeof(WCHAR));
 
-        /* 链路检测 → SymlinkAttack (对齐 SS L1391-1407) */
+        /* 链路检测 → SymlinkAttack (L1391-1407) */
         if (typeFlag == WKD_TAR_TYPE_SYMLINK || typeFlag == WKD_TAR_TYPE_LINK) {
             CHAR linkTarget[WKD_TAR_LINKNAME_LEN + 1];
             WCHAR wideTarget[128];
@@ -1665,7 +1665,7 @@ Return Value:
             flags |= WkdArcFlag_PathTraversalAttempt;
         }
 
-        /* 类型识别 (对齐 SS L1415-1437) */
+        /* 类型识别 (L1415-1437) */
         if (!(e->Flags & WKD_ARC_ENTRY_DIRECTORY)) {
             WkdArc_FileNameLower(wideName, lowerName, sizeof(lowerName) / sizeof(WCHAR));
             if (WkdArc_IsArchiveExt(lowerName)) {
@@ -1709,7 +1709,7 @@ Return Value:
 
 /**************************************************/
 /*               GZIP 头解析                       */
-/*  对齐 SS ParseGzipContents L1739-1883           */
+/*  ParseGzipContents L1739-1883           */
 /**************************************************/
 
 #define WKD_GZIP_HEADER_MIN  10
@@ -1729,7 +1729,7 @@ WkdArc_ParseGzipContents(
 /*++
 Routine Description:
     GZIP 头解析 (FEXTRA/FNAME/FCOMMENT/FHCRC) + 尾部 ISIZE。
-    对齐 SS ParseGzipContents L1739-1883。
+    ParseGzipContents L1739-1883。
 
 Arguments:
     Buffer - GZIP 文件 buffer。
@@ -1809,7 +1809,7 @@ Return Value:
         e->SecurityFlags |= WkdArcFlag_PathTraversalAttempt;
     }
 
-    /* tar 嵌套 (对齐 SS L1873-1879) */
+    /* tar 嵌套 (L1873-1879) */
     WkdArc_FileNameLower(wideName, lowerName, sizeof(lowerName) / sizeof(WCHAR));
     if (WkdArc_HasExt(lowerName, L".tar")) {
         e->Flags |= WKD_ARC_ENTRY_NESTED;
@@ -1827,7 +1827,7 @@ Return Value:
 
 /**************************************************/
 /*               RAR4 头解析                       */
-/*  对齐 SS ParseRar4Contents L1889-2064           */
+/*  ParseRar4Contents L1889-2064           */
 /**************************************************/
 
 #define WKD_RAR4_MARKER_LEN       7
@@ -1845,7 +1845,7 @@ WkdArc_ParseRar4Contents(
     )
 /*++
 Routine Description:
-    RAR4 头级条目枚举 (不解压)。对齐 SS ParseRar4Contents L1889-2064。
+    RAR4 头级条目枚举 (不解压)。ParseRar4Contents L1889-2064。
 
 Arguments:
     Buffer - RAR4 文件 buffer。
@@ -1940,7 +1940,7 @@ Return Value:
                 flags2 |= WkdArcFlag_PathTraversalAttempt;
             }
 
-            /* 类型识别 (对齐 SS L2027-2041) */
+            /* 类型识别 (L2027-2041) */
             if (!(e->Flags & WKD_ARC_ENTRY_DIRECTORY)) {
                 WkdArc_FileNameLower(wideName, lowerName, sizeof(lowerName) / sizeof(WCHAR));
                 if (lowerName[0] != L'\0' &&
@@ -1972,7 +1972,7 @@ Return Value:
 
             offset += headSize + packSize;
         } else {
-            /* 非文件头: ADD_SIZE flag 处理 (对齐 SS L2047-2059) */
+            /* 非文件头: ADD_SIZE flag 处理 (L2047-2059) */
             ULONG64 dataSize = 0;
             if ((flags & 0x8000) != 0 && headSize >= 11 && offset + headSize + 4 <= Size) {
                 dataSize = WkdArc_ReadLE32(Buffer + offset + 7);
@@ -1986,7 +1986,7 @@ Return Value:
 
 /**************************************************/
 /*               RAR5 头解析                       */
-/*  对齐 SS ParseRar5Contents L2070-2257 +         */
+/*  ParseRar5Contents L2070-2257 +         */
 /*  ReadRar5Vint L413-428                          */
 /**************************************************/
 
@@ -2024,7 +2024,7 @@ WkdArc_ParseRar5Contents(
     )
 /*++
 Routine Description:
-    RAR5 头级条目枚举 (不解压)。对齐 SS ParseRar5Contents L2070-2257。
+    RAR5 头级条目枚举 (不解压)。ParseRar5Contents L2070-2257。
 
 Arguments:
     Buffer - RAR5 文件 buffer。
@@ -2174,7 +2174,7 @@ Return Value:
 
 /**************************************************/
 /*               内容分析                           */
-/*  对齐 SS ScanZipArchive L3575-3618 / ScanTar    */
+/*  ScanZipArchive L3575-3618 / ScanTar    */
 /*  L1592-1643 (熵/SHA256/PE/脚本)                 */
 /**************************************************/
 
@@ -2241,7 +2241,7 @@ Return Value:
         }
     }
 
-    /* 5. 内容级嵌套归档魔数检测 (对齐 SS L1624-1633):
+    /* 5. 内容级嵌套归档魔数检测 (L1624-1633):
        条目内容本身是归档 → 置 Nested + 记录 NestedFormat */
     if (Size >= 8) {
         WKD_ARCHIVE_FORMAT nestedFmt;
@@ -2256,7 +2256,7 @@ Return Value:
 
 /**************************************************/
 /*               ZipBomb 检测                      */
-/*  对齐 SS IsZipBomb L3105-3210 (5 检查)          */
+/*  IsZipBomb L3105-3210 (5 检查)          */
 /**************************************************/
 
 BOOLEAN
@@ -2335,7 +2335,7 @@ Return Value:
 
 /**************************************************/
 /*               完整性校验                         */
-/*  活: ZIP LFH 可达性 (对齐 SS VerifyIntegrity    */
+/*  活: ZIP LFH 可达性 (VerifyIntegrity    */
 /*  L2471-2641 的 LFH 检查部分)                    */
 /**************************************************/
 
@@ -2361,7 +2361,7 @@ WkdArc_VerifyIntegrityZip(
     return TRUE;
 }
 
-/* 死代码: 密码测试 (对齐 SS TestPassword L3235-3259, SS 亦恒 false) */
+/* 死代码: 密码测试 (TestPassword L3235-3259, SS 亦恒 false) */
 static BOOLEAN
 WkdArc_TestPassword(
     _In_ PCWSTR FilePath,
@@ -2376,7 +2376,7 @@ WkdArc_TestPassword(
 
 /**************************************************/
 /*               路径落地校验                       */
-/*  活: canonical 根校验 + reparse 拒绝 (对齐 SS   */
+/*  活: canonical 根校验 + reparse 拒绝 (  */
 /*  ExtractAll L2860-2929)                          */
 /**************************************************/
 
@@ -2388,7 +2388,7 @@ WkdArc_CheckPathInsideRoot(
     )
 /*++
 Routine Description:
-    判断净化路径是否安全落在输出根目录内。对齐 SS ExtractAll
+    判断净化路径是否安全落在输出根目录内。ExtractAll
     L2860-2929: canonical 根前缀校验 + reparse point 拒绝。
     活代码, 供未来隔离区/取证导出复用。
 
@@ -2436,7 +2436,7 @@ Return Value:
     return TRUE;
 }
 
-/* 死代码: 落盘提取 (对齐 SS ExtractAll L2826-2953)。
+/* 死代码: 落盘提取 (ExtractAll L2826-2953)。
    EDR 不落盘 (解压炸弹/临时污染), 功能面覆盖保留。
    canonical 校验复用 WkdArc_CheckPathInsideRoot。未接入流水线。 */
 static NTSTATUS
@@ -2455,7 +2455,7 @@ WkdArc_ExtractAllToPath(
     if (!Buffer || !OutputDir || !Result) return STATUS_INVALID_PARAMETER;
     if (Result->ArchiveFormat != WkdArcFormat_Zip &&
         Result->ArchiveFormat != WkdArcFormat_Tar) {
-        return STATUS_NOT_SUPPORTED;   /* 对齐 SS 仅 ZIP/TAR 全提取 */
+        return STATUS_NOT_SUPPORTED;   /* 仅 ZIP/TAR 全提取 */
     }
 
     content = (BYTE*)malloc(WKD_ARC_MAX_INFLATE);
@@ -2566,7 +2566,7 @@ IocArchive_IsArchive(
 /*++
 Routine Description:
     判断文件是否为支持的归档格式 (魔数优先 + 扩展名兜底)。
-    对齐 SS DetectFormat (L866-972)。
+    DetectFormat (L866-972)。
 
 Arguments:
     FilePath  - 文件完整路径。
@@ -2590,7 +2590,7 @@ Return Value:
 
 /**************************************************/
 /*               主入口                            */
-/*  对齐 SS ScanArchive L2735-2824 +               */
+/*  ScanArchive L2735-2824 +               */
 /*  ScanEngine::ScanArchive (扫描模式)             */
 /**************************************************/
 
@@ -2724,7 +2724,7 @@ Return Value:
         }
     }
 
-    /* DeepNesting (对齐 SS AnalyzeSecurity L3090-3095: 嵌套数 > 上限) */
+    /* DeepNesting (AnalyzeSecurity L3090-3095: 嵌套数 > 上限) */
     if (Result->NestedCount > WKD_ARC_MAX_NESTING) {
         Result->SecurityFlags |= WkdArcFlag_DeepNesting;
     }
@@ -2734,6 +2734,76 @@ Return Value:
 
     free(buf);
     return status;
+}
+
+/**************************************************/
+/*               IOC 结果映射                      */
+/*  对齐 IocDocument_ResultToIocScan 先例          */
+/*  (2026-09-11 接线 ImageAnalyzer 非 PE 分支激活) */
+/**************************************************/
+
+NTSTATUS
+IocArchive_ResultToIocScan(
+    _In_ PWKD_ARCHIVE_SCAN_RESULT Arc,
+    _Inout_ PIOC_SCAN_RESULT      Ioc
+    )
+/*++
+Routine Description:
+    归档扫描结果 → IOC_SCAN_RESULT 合并。Verdict 语义:
+      2 Infected (ZipBomb / 恶意条目哈希命中) → Malicious 覆盖
+        (对齐 IaApplyFinalOverride 黑名单覆盖语义: 外层文件豁免
+         不豁免内嵌载荷/炸弹);
+      1 Suspicious (路径遍历/高压缩比/加密/嵌套/重叠/链路/隐藏)
+        → 上提 Suspicious + HeuristicConfidence ≥80;
+      0 Clean → 不覆盖既有判定。
+    ThreatName 承接归档具体威胁名 (Archive.ZipBomb /
+    Archive.MaliciousEntry / Archive.PathTraversal / Archive.Suspicious,
+    非 Archive.Clean)。
+    调用注: Arc 由调用方堆分配 (WKD_ARCHIVE_SCAN_RESULT 约 200KB,
+    禁止栈上声明)。
+
+Arguments:
+    Arc - 归档扫描结果 (IocArchive_ScanFile 产出)。
+    Ioc - 输入输出 IOC 结果 (合并方向: 归档信号追加, 恶意覆盖)。
+
+Return Value:
+    NTSTATUS。
+--*/
+{
+    if (!Arc || !Ioc) return STATUS_INVALID_PARAMETER;
+    if (!Arc->IsArchive) return STATUS_SUCCESS;
+
+    switch (Arc->Verdict) {
+    case 2:
+        /* Infected: ZipBomb / MaliciousEntry (黑库闭环命中) */
+        Ioc->FinalVerdict = DefIocVerdict_Malicious;
+        Ioc->FinalConfidence = 100;
+        if (Arc->ThreatName[0] && strcmp(Arc->ThreatName, "Archive.Clean") != 0) {
+            strncpy_s(Ioc->ThreatName, sizeof(Ioc->ThreatName),
+                      Arc->ThreatName, _TRUNCATE);
+        }
+        break;
+
+    case 1:
+        /* Suspicious: 路径遍历 / 高压缩比 / 加密 / 嵌套 / 重叠 / 链路 / 隐藏 */
+        if (Ioc->FinalVerdict < DefIocVerdict_Suspicious) {
+            Ioc->FinalVerdict = DefIocVerdict_Suspicious;
+        }
+        if (Ioc->HeuristicConfidence < 80) {
+            Ioc->HeuristicConfidence = 80;
+        }
+        if (Arc->ThreatName[0] && strcmp(Arc->ThreatName, "Archive.Clean") != 0) {
+            strncpy_s(Ioc->ThreatName, sizeof(Ioc->ThreatName),
+                      Arc->ThreatName, _TRUNCATE);
+        }
+        break;
+
+    default:
+        /* Clean: 不覆盖既有判定 */
+        break;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 /**************************************************/
@@ -2812,7 +2882,7 @@ WkdArc_ParseBuffer(
     }
 }
 
-/* 支持格式列表 (对齐 SS GetSupportedFormats L978-988) */
+/* 支持格式列表 (GetSupportedFormats L978-988) */
 NTSTATUS
 WkdArc_GetSupportedFormats(
     _Out_ PWKD_ARCHIVE_FORMAT Formats,
@@ -2838,7 +2908,7 @@ WkdArc_GetSupportedFormats(
     return STATUS_SUCCESS;
 }
 
-/* 单条目安全判定 (对齐 SS CheckEntrySecurity L3212-3224) */
+/* 单条目安全判定 (CheckEntrySecurity L3212-3224) */
 NTSTATUS
 WkdArc_CheckEntrySecurity(
     _In_  PWKD_ARCHIVE_ENTRY Entry,
@@ -2873,7 +2943,7 @@ WkdArc_CheckEntrySecurity(
     return STATUS_SUCCESS;
 }
 
-/* 通配符匹配 (对齐 SS MatchesPattern L3771-3802) */
+/* 通配符匹配 (MatchesPattern L3771-3802) */
 BOOLEAN
 WkdArc_MatchesPattern(
     _In_ PCWSTR Path,
@@ -2917,7 +2987,7 @@ WkdArc_MatchesPattern(
     return FALSE;
 }
 
-/* 纯条目枚举 (对齐 SS ListContents L2372-2469) */
+/* 纯条目枚举 (ListContents L2372-2469) */
 NTSTATUS
 WkdArc_ListContents(
     _In_ PCWSTR                FilePath,
@@ -2945,7 +3015,7 @@ WkdArc_ListContents(
     return status;
 }
 
-/* 归档聚合信息 (对齐 SS GetArchiveInfo L2263-2370) */
+/* 归档聚合信息 (GetArchiveInfo L2263-2370) */
 NTSTATUS
 WkdArc_GetArchiveInfo(
     _In_  PCWSTR          FilePath,
@@ -2995,7 +3065,7 @@ WkdArc_GetArchiveInfo(
     return status;
 }
 
-/* 完整性校验 (对齐 SS VerifyIntegrity L2471-2641) */
+/* 完整性校验 (VerifyIntegrity L2471-2641) */
 NTSTATUS
 WkdArc_VerifyIntegrity(
     _In_  PCWSTR   FilePath,
@@ -3031,7 +3101,7 @@ WkdArc_VerifyIntegrity(
     return status;
 }
 
-/* 单条目内存提取 (对齐 SS ExtractEntry L2955-3003) */
+/* 单条目内存提取 (ExtractEntry L2955-3003) */
 NTSTATUS
 WkdArc_ExtractEntry(
     _In_  PCWSTR FilePath,
@@ -3090,7 +3160,7 @@ WkdArc_ExtractEntry(
     return status;
 }
 
-/* 模式匹配提取 (对齐 SS ExtractMatching L3005-3017) */
+/* 模式匹配提取 (ExtractMatching L3005-3017) */
 NTSTATUS
 WkdArc_ExtractMatching(
     _In_ PCWSTR                     FilePath,
@@ -3155,7 +3225,7 @@ WkdArc_ExtractMatching(
     return status;
 }
 
-/* 流式提取 (对齐 SS ExtractStreaming L3019-3045) */
+/* 流式提取 (ExtractStreaming L3019-3045) */
 NTSTATUS
 WkdArc_ExtractStreaming(
     _In_ PCWSTR                      FilePath,
@@ -3229,7 +3299,7 @@ WkdArc_ExtractStreaming(
     return status;
 }
 
-/* 快速预检 (对齐 SS QuickSecurityCheck L3344-3391) */
+/* 快速预检 (QuickSecurityCheck L3344-3391) */
 NTSTATUS
 WkdArc_QuickSecurityCheck(
     _In_  PCWSTR FilePath,
@@ -3262,7 +3332,7 @@ WkdArc_QuickSecurityCheck(
     return status;
 }
 
-/* 内核扫描请求 (对齐 SS HandleKernelScanRequest L3304-3342) */
+/* 内核扫描请求 (HandleKernelScanRequest L3304-3342) */
 NTSTATUS
 WkdArc_HandleKernelScanRequest(
     _In_ PCWSTR                     FilePath,
@@ -3327,14 +3397,14 @@ WkdArc_HandleKernelScanRequest(
         free(content);
     }
 
-    /* ZipBomb 亦判不 clean (对齐 SS L3337-3339) */
+    /* ZipBomb 亦判不 clean (L3337-3339) */
     if (WkdArc_IsZipBomb(&result, len)) *AllClean = FALSE;
 
     free(buf);
     return status;
 }
 
-/* 聚合安全分析 (对齐 SS AnalyzeSecurity L3051-3103) */
+/* 聚合安全分析 (AnalyzeSecurity L3051-3103) */
 NTSTATUS
 WkdArc_AnalyzeSecurity(
     _In_ PCWSTR                 FilePath,

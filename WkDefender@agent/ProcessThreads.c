@@ -218,7 +218,7 @@ WptIsThreadStartUnbacked(
 /*++
 Routine Description:
     精确判定线程起始地址是否落在无背衬可执行区域。
-    对齐 SS IsThreadStartUnbacked (ReflectiveDLLDetector.cpp L1390-1425):
+    IsThreadStartUnbacked (ReflectiveDLLDetector.cpp L1390-1425):
       NtQueryInformationThread=9 取起始地址 → Toolhelp 定位所属进程 →
       VirtualQueryEx 查区域 (MEM_COMMIT + 可执行 + MEM_PRIVATE)。
 
@@ -248,7 +248,7 @@ Return Value:
     CloseHandle(hThread);
     if (start == 0) return FALSE;
 
-    /* 定位所属进程 (对齐 SS Toolhelp 定位) */
+    /* 定位所属进程 (Toolhelp 定位) */
     hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnap == INVALID_HANDLE_VALUE) return FALSE;
     te.dwSize = sizeof(te);
@@ -263,7 +263,7 @@ Return Value:
     CloseHandle(hSnap);
     if (pid == 0) return FALSE;
 
-    /* 查询起始地址所在区域类型/保护 (对齐 SS L1413-1424) */
+    /* 查询起始地址所在区域类型/保护 (L1413-1424) */
     hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!hProcess) return FALSE;
 
@@ -282,7 +282,7 @@ Return Value:
 /*   调用栈无背衬帧统计 (SS CountUnbackedCallStack) */
 /**************************************************/
 
-/* dbghelp (StackWalk64/SymXxx) 非线程安全, 进程级全局串行 (对齐 SS DbgHelpMutex L334-337) */
+/* dbghelp (StackWalk64/SymXxx) 非线程安全, 进程级全局串行 (DbgHelpMutex L334-337) */
 static CRITICAL_SECTION g_WptDbgHelpCs;
 static INIT_ONCE        g_WptDbgHelpOnce = INIT_ONCE_STATIC_INIT;
 
@@ -300,7 +300,7 @@ WptInitDbgHelpCs(
 static VOID
 WptEnsureDbgHelpLock(VOID)
 {
-    /* 无竞态一次性初始化 (对齐 SS static std::mutex 的线程安全语义) */
+    /* 无竞态一次性初始化 (static std::mutex 的线程安全语义) */
     InitOnceExecuteOnce(&g_WptDbgHelpOnce, WptInitDbgHelpCs, NULL, NULL);
 }
 
@@ -312,7 +312,7 @@ WptCountUnbackedCallStackFrames(
 /*++
 Routine Description:
     统计线程调用栈中未落任何已加载模块的帧数。
-    对齐 SS CountUnbackedCallStackFrames (ReflectiveDLLDetector.cpp L1427-1508):
+    CountUnbackedCallStackFrames (ReflectiveDLLDetector.cpp L1427-1508):
       挂起线程 (RAII 保证 Resume) → GetThreadContext → StackWalk64 →
       逐帧模块判定 (未模块帧计数)。
 
@@ -347,7 +347,7 @@ Return Value:
                          THREAD_QUERY_INFORMATION, FALSE, Tid);
     if (!hThread) return 0;
 
-    /* 定位所属进程 (对齐 SS Toolhelp) */
+    /* 定位所属进程 (Toolhelp) */
     hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnap != INVALID_HANDLE_VALUE) {
         te.dwSize = sizeof(te);
@@ -372,12 +372,12 @@ Return Value:
         return 0;
     }
 
-    /* 预枚举模块一次 (对齐 SS IsAddressInAnyModule 缓存) */
+    /* 预枚举模块一次 (IsAddressInAnyModule 缓存) */
     modCount = WptEnumerateModules(pid, modules, WPT_MAX_MODULES);
 
-    /* 挂起线程 — 保证所有出口 Resume (对齐 SS ScopedThreadSuspend RAII) */
+    /* 挂起线程 — 保证所有出口 Resume (ScopedThreadSuspend RAII) */
     if (SuspendThread(hThread) == (DWORD)-1) {
-        /* 保护/关键线程不可挂起 → 不走栈 (对齐 SS L1456-1460) */
+        /* 保护/关键线程不可挂起 → 不走栈 (L1456-1460) */
         CloseHandle(hProcess);
         CloseHandle(hThread);
         return 0;
@@ -401,11 +401,11 @@ Return Value:
         frame.AddrFrame.Mode = AddrModeFlat;
         frame.AddrStack.Mode = AddrModeFlat;
 
-        /* dbghelp 全局串行 (对齐 SS DbgHelpMutex L1488) */
+        /* dbghelp 全局串行 (DbgHelpMutex L1488) */
         WptEnsureDbgHelpLock();
         EnterCriticalSection(&g_WptDbgHelpCs);
 
-        for (i = 0; i < 64; i++) {   /* 对齐 SS kMaxFrames=64 */
+        for (i = 0; i < 64; i++) {   /* kMaxFrames=64 */
             WCHAR frameMod[64];
             if (!StackWalk64(machineType, hProcess, hThread, &frame, &ctx,
                              NULL, SymFunctionTableAccess64, SymGetModuleBase64,
@@ -425,7 +425,7 @@ Return Value:
     }
 
     if (suspended) {
-        ResumeThread(hThread);   /* 对齐 SS ScopedThreadSuspend dtor */
+        ResumeThread(hThread);   /* ScopedThreadSuspend dtor */
     }
 
     CloseHandle(hProcess);
@@ -443,7 +443,7 @@ Return Value:
 /*
  * WptGetThreadContext — 读取线程上下文 (含 WoW64)。
  *
- * 对齐 SS GetThreadContextInternal (ThreadHijackDetector.cpp L1310-1415):
+ * GetThreadContextInternal (ThreadHijackDetector.cpp L1310-1415):
  *   32 位线程 (WoW64) 用 Wow64GetThreadContext 取 WOW64_CONTEXT 并投影到
  *   64 位结构 (否则 GetThreadContext 返回的是 ntdll wow64 转换栈的上下文,
  *   看不到攻击者的 32 位劫持状态)。
@@ -534,7 +534,7 @@ WptGetThreadContext(
 /*
  * WptGetThreadStackBounds — 读取线程 TEB 栈边界 (StackBase/StackLimit)。
  *
- * 对齐 SS GetThreadStackBounds (ThreadHijackDetector.cpp L463-526):
+ * GetThreadStackBounds (ThreadHijackDetector.cpp L463-526):
  *   NtQueryInformationThread(ThreadBasicInformation=0) 取 TebBaseAddress →
  *   ReadProcessMemory 读 NT_TIB 栈边界。
  *     x64: StackBase@+0x08, StackLimit@+0x10
@@ -621,7 +621,7 @@ WptGetThreadStackBounds(
 
     CloseHandle(hProc);
 
-    /* Reject 明显非法值 (对齐 SS L524-525): 零/颠倒/内核页/超用户空间 */
+    /* Reject 明显非法值 (L524-525): 零/颠倒/内核页/超用户空间 */
     if (ok) {
         if (*StackBase <= *StackLimit ||
             *StackBase <= 0x10000 ||
@@ -634,7 +634,7 @@ WptGetThreadStackBounds(
 
 /*
  * WptIsAddressInRwxPrivate — 地址区域 RWX 私有判定。
- * 对齐 SS IsAddressInRWXPrivate (ThreadHijackDetector.cpp L410-438) 的
+ * IsAddressInRWXPrivate (ThreadHijackDetector.cpp L410-438) 的
  * VirtualQueryEx 路径: MEM_PRIVATE + PAGE_EXECUTE*。
  */
 static BOOLEAN
@@ -661,7 +661,7 @@ WptIsAddressInRwxPrivate(
 
 /*
  * WptHasShellcodeAt — RIP 处内存壳码判定。
- * 对齐 SS HasShellcodeAtAddress (ThreadHijackDetector.cpp L321-387):
+ * HasShellcodeAtAddress (ThreadHijackDetector.cpp L321-387):
  *   校验用户态地址范围 → ReadProcessMemory 读 256 字节 →
  *   委托 IocDetectShellcode 做 T1_SC_* 特征匹配
  *   (NOP sled / GetPC / API hash / syscall stub / ROP 链),
@@ -679,7 +679,7 @@ WptHasShellcodeAt(
     MEMORY_BASIC_INFORMATION mbi;
     BOOLEAN isPrivate = FALSE;
 
-    /* 用户态地址合法性 + 读长度防回绕 (对齐 SS L345-347) */
+    /* 用户态地址合法性 + 读长度防回绕 (L345-347) */
     if (address < 0x10000 ||
         address > 0x7FFFFFFFFFFFULL ||
         address > (0x7FFFFFFFFFFFULL - sizeof(buffer))) {
@@ -701,7 +701,7 @@ WptHasShellcodeAt(
     }
     CloseHandle(hProc);
 
-    if (rd < 20) return FALSE;   /* 过短不足以判定 (对齐 SS L356) */
+    if (rd < 20) return FALSE;   /* 过短不足以判定 (L356) */
 
     return (IocDetectShellcode(buffer, rd, isPrivate) != 0);
 }
@@ -709,7 +709,7 @@ WptHasShellcodeAt(
 /*
  * WptValidateThread — 综合验证线程上下文 → 风险分。
  *
- * 对齐 SS ValidateThreadInternal (ThreadHijackDetector.cpp L889-1081) +
+ * ValidateThreadInternal (ThreadHijackDetector.cpp L889-1081) +
  * CalculateRiskScore (L531-551):
  *   unbacked RIP +40 / shellcode +25 / RWX 私有 +15 / 栈翻转 +15 /
  *   段异常 +30 / 调试寄存器 +10 / 调用栈无背衬帧(>1) +25 / 跨进程 +20。
@@ -738,7 +738,7 @@ WptValidateThread(
     Val->ThreadId = Tid;
     if (Tid == 0) return STATUS_INVALID_PARAMETER;
 
-    /* 定位所属进程 (对齐 SS Toolhelp) */
+    /* 定位所属进程 (Toolhelp) */
     hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnap != INVALID_HANDLE_VALUE) {
         te.dwSize = sizeof(te);
@@ -755,7 +755,7 @@ WptValidateThread(
     Val->OwnerPid = pid;
     if (pid == 0) return STATUS_NOT_FOUND;
 
-    /* 预枚举模块一次 (对齐 SS IsAddressInModule 缓存) */
+    /* 预枚举模块一次 (IsAddressInModule 缓存) */
     modCount = WptEnumerateModules(pid, modules, WPT_MAX_MODULES);
 
     /* 上下文读取 */
@@ -807,7 +807,7 @@ WptValidateThread(
         risk += 30;
     }
 
-    /* 调试寄存器 (DR7 使能位, 对齐 SS HasActiveDebugRegistersInternal) */
+    /* 调试寄存器 (DR7 使能位, HasActiveDebugRegistersInternal) */
     Val->HasHardwareBreakpoints = (Val->Ctx.Dr7 & 0xFF) != 0;
     if (Val->HasHardwareBreakpoints) {
         risk += 10;
@@ -831,7 +831,7 @@ WptValidateThread(
                          Val->StackPivoted ||
                          !Val->RipIsBacked;
 
-    /* 劫持方式判定 (对齐 SS DetectHijackInternal L1556-1567) */
+    /* 劫持方式判定 (DetectHijackInternal L1556-1567) */
     if (Val->RipHasShellcode) {
         Val->HijackType = WkdHijack_RipModification;
     } else if (Val->StackPivoted) {
@@ -854,13 +854,13 @@ WptValidateThread(
 /*   RestoreContext                                */
 /**************************************************/
 
-#define WPT_MAX_BASELINES   8192    /* 基线表 cap (对齐 SS kMaxBaselineThreads=16384, 保守减半) */
+#define WPT_MAX_BASELINES   8192    /* 基线表 cap (kMaxBaselineThreads=16384, 保守减半) */
 static WKD_THREAD_BASELINE g_WptBaselines[WPT_MAX_BASELINES];
 static volatile LONG       g_WptBaselineCount = 0;
 
 /*
  * WptScanProcess — 主动扫描进程全部线程。
- * 对齐 SS ScanProcessInternal (ThreadHijackDetector.cpp L1665-1740):
+ * ScanProcessInternal (ThreadHijackDetector.cpp L1665-1740):
  *   Toolhelp 枚举线程 → 逐线程 WptValidateThread → 收集 compromised 线程。
  * ※ 死代码: 与事件驱动架构冲突, 定位未来主动扫描任务, 当前无调用者。
  */
@@ -893,7 +893,7 @@ WptScanProcess(
             WKD_THREAD_VALIDATION val;
             if (NT_SUCCESS(WptValidateThread(te.th32ThreadID, FALSE, TRUE, &val))) {
                 /* 起始地址无背衬补充 (激活 WptIsThreadStartUnbacked 调用点,
-                 * 对齐 SS ValidateThreadStartInternal 的 APC/Early-Bird 维度) */
+                 * ValidateThreadStartInternal 的 APC/Early-Bird 维度) */
                 if (WptIsThreadStartUnbacked(te.th32ThreadID)) {
                     val.IsCompromised = TRUE;
                     val.RiskScore = max(val.RiskScore, 40);
@@ -916,7 +916,7 @@ WptScanProcess(
 
 /*
  * WptScanAllProcesses — 主动扫描全系统进程。
- * 对齐 SS ScanAllProcesses (ThreadHijackDetector.cpp L2533-2579)。
+ * ScanAllProcesses (ThreadHijackDetector.cpp L2533-2579)。
  * 汇总计数 (Compromised 数组不填满: 全系统线程可能超上限)。
  * ※ 死代码: 同上。
  */
@@ -957,7 +957,7 @@ WptScanAllProcesses(
 
 /*
  * WptEstablishBaseline — 建立线程上下文基线。
- * 对齐 SS EstablishBaselineInternal (ThreadHijackDetector.cpp L2060-2129):
+ * EstablishBaselineInternal (ThreadHijackDetector.cpp L2060-2129):
  *   上下文快照 + GetThreadTimes 创建时间 (TID 复用锚, 防同 TID 线程继承旧基线)。
  * 基线表 cap 8192 (WPT_MAX_BASELINES)。
  * ※ 死代码: 基线唯一来源是 agent 周期扫描 (驱动 SetContext 事件无旧上下文),
@@ -981,7 +981,7 @@ WptEstablishBaseline(
     /* 上下文快照 */
     if (!WptGetThreadContext(Tid, &ctx)) return FALSE;
 
-    /* 创建时间 (TID 复用锚, 对齐 SS GetThreadTimes) */
+    /* 创建时间 (TID 复用锚, GetThreadTimes) */
     RtlZeroMemory(&base, sizeof(base));
     hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, Tid);
     if (hThread) {
@@ -1070,7 +1070,7 @@ WptClearBaseline(
 
 /*
  * WptRestoreContext — 从基线恢复线程上下文。
- * 对齐 SS RestoreContextInternal (ThreadHijackDetector.cpp L1948-2025):
+ * RestoreContextInternal (ThreadHijackDetector.cpp L1948-2025):
  *   拒绝恢复自身 → 查基线 → OpenThread(SET_CONTEXT|SUSPEND_RESUME|GET_CONTEXT)
  *   → 挂起 (保证恢复) → SetThreadContext (含 CONTEXT_DEBUG_REGISTERS,
  *   基线 DR 值覆盖, 防遗留硬件断点) → 恢复线程。
@@ -1089,7 +1089,7 @@ WptRestoreContext(
     BOOLEAN restored = FALSE;
     CONTEXT ctx;
 
-    /* 拒绝恢复自身 (对齐 SS L1951-1954) */
+    /* 拒绝恢复自身 (L1951-1954) */
     if (Tid == 0 || Tid == GetCurrentThreadId()) return FALSE;
 
     if (!WptGetBaseline(Tid, &base)) return FALSE;
@@ -1099,7 +1099,7 @@ WptRestoreContext(
         FALSE, Tid);
     if (!hThread) return FALSE;
 
-    /* RAII 挂起: 所有出口恢复 (对齐 SS ScopedThreadSuspend) */
+    /* RAII 挂起: 所有出口恢复 (ScopedThreadSuspend) */
     if (SuspendThread(hThread) == (DWORD)-1) {
         CloseHandle(hThread);
         return FALSE;
@@ -1131,10 +1131,10 @@ WptRestoreContext(
 
 /*
  * WptTerminateAttacker — 终止攻击者进程 (线程劫持响应)。
- * 对齐 SS TerminateAttackerInternal (ThreadHijackDetector.cpp L2027-2054)。
+ * TerminateAttackerInternal (ThreadHijackDetector.cpp L2027-2054)。
  * 迁移后委托 ProcessManager_KillProcess (处置引擎核心)。
  * 语义变化: 旧实现硬编码豁免 PID{4,8,16}; 新核心豁免 {0,4,self} + 关键性判定
- *   (CRITICAL_PROCESSES 名称 + 系统二进制目录双重校验, 对齐 SS IsProcessCritical)。
+ *   (CRITICAL_PROCESSES 名称 + 系统二进制目录双重校验, IsProcessCritical)。
  *   PID 8/16 (System Idle/Registry) 在旧实现下被豁免, 新核心下取决于名称/路径判定。
  * ※ 死代码: 依赖 remediation 通道 (WkD 第2层同步阻塞已覆盖事前拦截,
  *   主动终止是可选处置), 当前无调用者。
@@ -1156,11 +1156,11 @@ WptTerminateAttacker(
 /*
  * WptCompareContexts — 对比两个上下文快照, 提取 RIP/RSP/DR7 变化。
  *
- * 对齐 SS CompareContextsInternal (ThreadHijackDetector.cpp L1417-1490):
+ * CompareContextsInternal (ThreadHijackDetector.cpp L1417-1490):
  *   - RIP 变化: 新旧模块对照 (WptResolveStartModule), 新 RIP 无背衬 → 可疑
  *   - RSP 变化: 无符号 delta > 1MB → 栈翻转 → 可疑
  *   - DR7 变化: 新 DR7 != 0 → 硬件断点 → 可疑
- * ※ 死代码: 供 SetContext 前后对比 (对齐 SS OnSetContextThreadInternal),
+ * ※ 死代码: 供 SetContext 前后对比 (OnSetContextThreadInternal),
  *   当前无调用者。
  */
 _Use_decl_annotations_
@@ -1185,10 +1185,10 @@ WptCompareContexts(
     RtlZeroMemory(Changes, sizeof(WKD_CONTEXT_CHANGE) * MaxChanges);
     *ChangeCount = 0;
 
-    /* 模块表预枚举 (对齐 SS GetModuleForAddress 每次枚举) */
+    /* 模块表预枚举 (GetModuleForAddress 每次枚举) */
     modCount = WptEnumerateModules(OwnerPid, modules, WPT_MAX_MODULES);
 
-    /* RIP 变化 (对齐 SS L1426-1446) */
+    /* RIP 变化 (L1426-1446) */
     if (Before->Rip != After->Rip && count < MaxChanges) {
         PWKD_CONTEXT_CHANGE c = &Changes[count];
         c->Type = WkdCtxMod_InstructionPointer;
@@ -1211,7 +1211,7 @@ WptCompareContexts(
         count++;
     }
 
-    /* RSP 变化 (栈翻转 >1MB, 对齐 SS L1449-1470) */
+    /* RSP 变化 (栈翻转 >1MB, L1449-1470) */
     if (Before->Rsp != After->Rsp && count < MaxChanges) {
         PWKD_CONTEXT_CHANGE c = &Changes[count];
         c->Type = WkdCtxMod_StackPointer;
@@ -1227,7 +1227,7 @@ WptCompareContexts(
         count++;
     }
 
-    /* DR7 变化 (硬件断点, 对齐 SS L1473-1482) */
+    /* DR7 变化 (硬件断点, L1473-1482) */
     if (Before->Dr7 != After->Dr7 && count < MaxChanges) {
         PWKD_CONTEXT_CHANGE c = &Changes[count];
         c->Type = WkdCtxMod_DebugRegisters;
@@ -1251,11 +1251,11 @@ WptCompareContexts(
 
 /*
  * WptMonitoringWorkerOnce — 周期监控单次扫描。
- * 对齐 SS MonitoringThreadWorker (ThreadHijackDetector.cpp L2151-2196)
+ * MonitoringThreadWorker (ThreadHijackDetector.cpp L2151-2196)
  * 的 1s 周期遍历: 全系统线程验证 + 劫持确认。WkD 以全系统扫描
  * (WptScanAllProcesses) 替代 SS 的被监控线程集合遍历。
  * ※ 死代码: WkD 事件驱动无独立监控线程, 激活需创建专用线程周期调用
- *   (对齐 SS 1s 间隔)。
+ *   (1s 间隔)。
  */
 _Use_decl_annotations_
 NTSTATUS
@@ -1280,7 +1280,7 @@ WptMonitoringWorkerOnce(
 
 /*
  * WptCleanupBaselines — 基线表 TTL 清理。
- * 对齐 SS CleanupThreadWorker (ThreadHijackDetector.cpp L2198-2244):
+ * CleanupThreadWorker (ThreadHijackDetector.cpp L2198-2244):
  *   清理 CreateTime 超过 1h 的基线条目 (SS 用 lastChecked, WkD 基线为
  *   一次性快照, 以 CreateTime 作为时间锚)。
  * ※ 死代码: 基线表当前只写不清理, 激活需周期调用。

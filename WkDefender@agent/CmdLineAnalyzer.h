@@ -28,7 +28,7 @@
 #define WPA_CMD_SUSPICION_LONG_CMD          0x00000200
 
 //
-// 解码内容长度上限（对齐 SS CLP_MAX_DECODED_LENGTH）
+// 解码内容长度上限（CLP_MAX_DECODED_LENGTH）
 //
 #define WPA_MAX_DECODED_CHARS               4096
 

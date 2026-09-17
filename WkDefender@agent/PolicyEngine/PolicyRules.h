@@ -53,8 +53,8 @@ typedef struct _POLICY_RULE {
 /*  ※死代码条件: FileHash/RegistryPath/NetworkAddress/ */
 /*    Domain/MitreTechnique — 评估上下文对应字段恒     */
 /*    NULL (事件源未接 IOA), 条件自然不命中; InList     */
-/*    编译期拒绝 (对齐 SS RepCompileRule L1755-1757);  */
-/*    Custom 恒 FALSE (对齐 SS L2188-2195 无 handler)。 */
+/*    编译期拒绝 (RepCompileRule L1755-1757);  */
+/*    Custom 恒 FALSE (L2188-2195 无 handler)。 */
 /**************************************************/
 
 #define WKD_RULE_MAX_CONDITIONS    16      /* 对齐 RE_MAX_CONDITIONS */
@@ -62,7 +62,7 @@ typedef struct _POLICY_RULE {
 #define WKD_RULE_MAX_VALUE_LEN     255     /* 对齐 RE_MAX_VALUE_LEN */
 #define WKD_RULE_ACTION_PARAM_LEN  128
 
-/* 条件类型 (对齐 SS RE_CONDITION_TYPE, RuleEngine.h L70-85) */
+/* 条件类型 (RE_CONDITION_TYPE, RuleEngine.h L70-85) */
 typedef enum _WKD_CONDITION_TYPE {
     WkdCond_ProcessName = 0,
     WkdCond_ParentName,
@@ -80,7 +80,7 @@ typedef enum _WKD_CONDITION_TYPE {
     WkdCond_MaxValue
 } WKD_CONDITION_TYPE;
 
-/* 操作符 (对齐 SS RE_OPERATOR, RuleEngine.h L90-101) */
+/* 操作符 (RE_OPERATOR, RuleEngine.h L90-101) */
 typedef enum _WKD_OPERATOR {
     WkdOp_Equals = 0,
     WkdOp_NotEquals,
@@ -90,11 +90,11 @@ typedef enum _WKD_OPERATOR {
     WkdOp_Wildcard,             /* 显式通配 */
     WkdOp_GreaterThan,
     WkdOp_LessThan,
-    WkdOp_InList,               /* ※死代码: 编译期拒绝 (对齐 SS STATUS_NOT_SUPPORTED) */
+    WkdOp_InList,               /* ※死代码: 编译期拒绝 (STATUS_NOT_SUPPORTED) */
     WkdOp_MaxValue
 } WKD_OPERATOR;
 
-/* 动作类型 (对齐 SS RE_ACTION_TYPE, RuleEngine.h L106-117; 处置出口= VerdictEngine) */
+/* 动作类型 (RE_ACTION_TYPE, RuleEngine.h L106-117; 处置出口= VerdictEngine) */
 typedef enum _WKD_RULE_ACTION {
     WkdRuleAction_None = 0,     /* 显式无动作 */
     WkdRuleAction_Allow,        /* 免告警免加分 (白名单语义, 不做驱动放行穿透) */
@@ -108,7 +108,7 @@ typedef enum _WKD_RULE_ACTION {
     WkdRuleAction_MaxValue
 } WKD_RULE_ACTION;
 
-/* 条件结构 (对齐 SS RE_CONDITION, RuleEngine.h L122-128) */
+/* 条件结构 (RE_CONDITION, RuleEngine.h L122-128) */
 typedef struct _WKD_CONDITION {
     WKD_CONDITION_TYPE Type;
     WKD_OPERATOR       Operator;
@@ -118,13 +118,13 @@ typedef struct _WKD_CONDITION {
 } WKD_CONDITION, *PWKD_CONDITION;
 typedef const WKD_CONDITION *PCWKD_CONDITION;
 
-/* 动作结构 (对齐 SS RE_ACTION, RuleEngine.h L133-136) */
+/* 动作结构 (RE_ACTION, RuleEngine.h L133-136) */
 typedef struct _WKD_RULE_ACTION_DESC {
     WKD_RULE_ACTION Type;
     WCHAR           Parameter[WKD_RULE_ACTION_PARAM_LEN];
 } WKD_RULE_ACTION_DESC, *PWKD_RULE_ACTION_DESC;
 
-/* 编译缓存 (对齐 SS RE_COMPILED_CONDITION, RuleEngine.c L75-107; 用户态简化, 无预哈希) */
+/* 编译缓存 (RE_COMPILED_CONDITION, RuleEngine.c L75-107; 用户态简化, 无预哈希) */
 typedef struct _WKD_COMPILED_CONDITION {
     BOOLEAN IsCompiled;
     ULONG   PatternLen;         /* 字符串条件 WCHAR 长度 */
@@ -158,18 +158,18 @@ typedef struct _WKD_DETECTION_RULE {
     /* ── RuleEngine 迁移 (2026-08): 多条件 AND 组合模型 ──
      * ConditionCount>0 走条件组合评估; =0 回退便捷字段 (既有路径)。
      * CompiledConditions 在 AddRule 时由 Policy_CompileRule 填充,
-     * GetRules 输出时清零 (对齐 SS ReGetRule 清 ListEntry, RuleEngine.c L1314-1315)。 */
+     * GetRules 输出时清零 (ReGetRule 清 ListEntry, RuleEngine.c L1314-1315)。 */
     WKD_CONDITION        Conditions[WKD_RULE_MAX_CONDITIONS];
     ULONG                ConditionCount;
     WKD_RULE_ACTION_DESC Actions[WKD_RULE_MAX_ACTIONS];
     ULONG                ActionCount;
-    ULONG                Priority;           /* 低=高优先级 (对齐 SS RE_RULE.Priority) */
+    ULONG                Priority;           /* 低=高优先级 (RE_RULE.Priority) */
     BOOLEAN              StopProcessing;     /* 命中后停止评估后续规则 (对齐 SS) */
     WKD_COMPILED_CONDITION CompiledConditions[WKD_RULE_MAX_CONDITIONS];
     ULONG                CompiledConditionCount;
     BOOLEAN              IsCompiled;
-    volatile LONG64      EvaluationCount;    /* 规则级统计 (对齐 SS RE_RULE.EvaluationCount) */
-    volatile LONG64      MatchCount;         /* 规则级统计 (对齐 SS RE_RULE.MatchCount) */
+    volatile LONG64      EvaluationCount;    /* 规则级统计 (RE_RULE.EvaluationCount) */
+    volatile LONG64      MatchCount;         /* 规则级统计 (RE_RULE.MatchCount) */
 } WKD_DETECTION_RULE, *PWKD_DETECTION_RULE;
 
 #define POLICY_RUNTIME_RULES_MAX  64

@@ -16,12 +16,12 @@
 /*    借引用 (无锁防悬垂).                            */
 /*                                                   */
 /*  用户态重实现要点:                               */
-/*    - 静态环形缓冲 4096, 满员覆盖最旧 (对齐 SS       */
+/*    - 静态环形缓冲 4096, 满员覆盖最旧 (      */
 /*      头删尾插 LRU L1664)                          */
 /*    - 无锁, 单线程/未接入假设 (SS 内核 SpinLock      */
 /*      在用户态静态数据场景无并发竞争, 舍弃)          */
-/*    - ConfidenceScore clamp 0-100 (对齐 SS L1616)   */
-/*    - 技术必须已知 (对齐 SS L1629 内部 Lookup)      */
+/*    - ConfidenceScore clamp 0-100 (L1616)   */
+/*    - 技术必须已知 (L1629 内部 Lookup)      */
 /**************************************************/
 
 #include "IoaMitreMapper.h"
@@ -35,7 +35,7 @@ static ULONG g_IoaMitrePerTactic[IoATactic_Max] = { 0 };
 /**
  * 记录一次 MITRE 技术检测.
  *
- * 对齐 SS MmRecordDetection (L1583-1696):
+ * MmRecordDetection (L1583-1696):
  *   - 技术必须已加载 (IoaMitreLookupById 命中), 未知名返回 NOT_FOUND
  *     (SS L1629-1634 内部 Lookup, 失败仅忽略; wkd 返回错误更明确).
  *   - ConfidenceScore clamp 0-100 (SS L1616-1618).
@@ -69,7 +69,7 @@ IoaMitreRecordDetection(
         ConfidenceScore = 100;
     }
 
-    /* 环形槽: 满员覆盖最旧 (对齐 SS 4096 LRU 头删尾插) */
+    /* 环形槽: 满员覆盖最旧 (4096 LRU 头删尾插) */
     if (g_IoaMitreCount < IOA_MITRE_DETECTION_MAX) {
         slot = (g_IoaMitreHead + g_IoaMitreCount) % IOA_MITRE_DETECTION_MAX;
         g_IoaMitreCount++;
@@ -102,7 +102,7 @@ IoaMitreRecordDetection(
 /**
  * 查询时间窗口内的检测记录 (最新→最旧, 拷贝出).
  *
- * 对齐 SS MmGetRecentDetections (L1810-1895):
+ * MmGetRecentDetections (L1810-1895):
  *   - MaxAgeSeconds=0 表示全部 (SS L1850-1858).
  *   - 超窗口即停止 (环形内时间从新到旧, SS L1875-1880).
  *   - 拷贝出而非借引用 (SS 引用计数场景, wkd 无锁防悬垂).
@@ -152,7 +152,7 @@ IoaMitreGetRecentDetections(
         recTime = ((ULONGLONG)rec->DetectionTime.dwHighDateTime << 32)
                   | rec->DetectionTime.dwLowDateTime;
         if (recTime < cutoff) {
-            break;   /* 更旧的记录必然超窗, 停止 (对齐 SS L1875-1880) */
+            break;   /* 更旧的记录必然超窗, 停止 (L1875-1880) */
         }
         Detections[count++] = *rec;    /* 拷贝出 */
     }
@@ -166,7 +166,7 @@ IoaMitreGetRecentDetections(
 /**
  * 技术维度统计 (历史累计 + 逐战术直方图).
  *
- * 对齐 SS MM_MAPPER.Stats 思想 (L293-300), 补 wkd
+ * MM_MAPPER.Stats 思想 (L293-300), 补 wkd
  * IoaTypes.h:94 MitreMappings 从未递增的统计缺口.
  * Lookups/Hits 等计数器无消费方, 舍弃.
  *

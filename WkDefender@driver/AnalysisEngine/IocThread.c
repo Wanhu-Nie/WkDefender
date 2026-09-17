@@ -6,7 +6,7 @@
 
 #include "IocThread.h"
 #include "AnalysisEngine.h"
-#include "../Callbacks/ThreadNotify.h"
+#include "../Callbacks/ThreadNotification.h"
 #include "../Process/ProcessModuleTracker.h"     /* PsLookupWkdModuleContainingAddress（模块归属查询，替代 PEB 遍历） */
 
 #ifndef MEM_IMAGE
@@ -14,7 +14,7 @@
 #endif
 
 /**************************************************/
-/*       孤儿注入器判定 (对齐 SS 进程关系图)          */
+/*       孤儿注入器判定 (进程关系图)          */
 /*                                                  */
 /*  迁移自 ShadowStrike ProcessRelationship.c       */
 /*  PrpCalculateRelationshipScore 的                */
@@ -38,7 +38,7 @@ Routine Description:
     排除: PID 0/4 (Idle/System) 及无父进程不计孤儿。
 
     [死代码] IocObserveThread 整体依赖 AeDispatchThreadCreated 重接线
-    （ThreadNotify.c 用户决策 2026-08: 线程事件只上送 agent 不驱动评分）。
+    （ThreadNotification.c 用户决策 2026-08: 线程事件只上送 agent 不驱动评分）。
     活代码等价物: agent IoaGenealogy isOrphan (T1_GFLAG_ORPHAN) +
     IoaInjectionClassifier 注入风险分孤儿修正。
 
@@ -350,7 +350,7 @@ IocObserveThread(
 
     /*
      * 9. (新增) 远程线程快速创建（对齐 PS TnIndicator_RapidCreation 100）
-     *    IsRapidCreation 由死代码 CbpCheckRapidCreation 填充（ThreadNotify.c），
+     *    IsRapidCreation 由死代码 CbpCheckRapidCreation 填充（ThreadNotification.c），
      *    活代码链路由 agent RA_METRIC_THREAD 频率分析覆盖。
      */
     //if (WkdThread->IsRapidCreation) {
@@ -360,9 +360,9 @@ IocObserveThread(
 
     /*
      * 10. (新增) 孤儿注入器 — 源进程父进程已退出
-     *     对齐 SS PR_SCORE_ORPHANED_INJECTOR=200 修正（源节点 IsOrphan）。
+     *     PR_SCORE_ORPHANED_INJECTOR=200 修正（源节点 IsOrphan）。
      *     [死代码] 同 IocObserveThread 整体（依赖 AeDispatchThreadCreated 重接线，
-     *     ThreadNotify.c 用户决策 2026-08）; 活代码等价物:
+     *     ThreadNotification.c 用户决策 2026-08）; 活代码等价物:
      *     agent IoaInjectionClassifier 注入风险分孤儿修正。
      */
     //if (WkdThread->IsRemote && IocpIsSourceOrphan(Pair->SourceProcessId)) {

@@ -204,7 +204,7 @@ typedef union _WKD_SYSCALL_PARAMETER_BLOCK {
     // NtCreateSection 参数（SectionTracker 迁移 2026-08，7 参）。
     // 匿名可执行（ExecuteAnonymous=200）/大匿名（LargeAnonymous=80）/无背衬 Image
     // （NoBackingFile=180）/TxF 事务（Transacted=300）/DeletePending（Deleted=250）
-    // 检测的捕获点（对齐 SS SectionTracker.c SecTrackSectionCreate）。
+    // 检测的捕获点（SectionTracker.c SecTrackSectionCreate）。
     // 无进程句柄参数（FileHandle 为文件句柄）→ TargetProcessId=SourceProcessId
     // （对齐令牌类 case 回退语义）。
     struct {

@@ -11,7 +11,7 @@
 
 /**************************************************/
 /*                OID 常量定义                      */
-/*  (对齐 SS L157-170, #ifndef 防 SDK 未定义)      */
+/*  (L157-170, #ifndef 防 SDK 未定义)      */
 /**************************************************/
 
 #ifndef szOID_RSA_PSS
@@ -30,7 +30,7 @@
 /*               静态辅助函数                       */
 /**************************************************/
 
-/* 文件存在且非目录 (对齐 SS file_exists_w L89-95) */
+/* 文件存在且非目录 (file_exists_w L89-95) */
 static
 BOOLEAN
 IocCertpFileExistsW(
@@ -44,7 +44,7 @@ IocCertpFileExistsW(
     return (attrs != INVALID_FILE_ATTRIBUTES) && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-/* size_t → DWORD 溢出安全转换 (对齐 SS safe_size_to_dword L104-110) */
+/* size_t → DWORD 溢出安全转换 (safe_size_to_dword L104-110) */
 static
 BOOLEAN
 IocCertpSafeSizeToDword(
@@ -59,7 +59,7 @@ IocCertpSafeSizeToDword(
     return TRUE;
 }
 
-/* hex 字符校验 (对齐 SS is_hex_char L118-122) */
+/* hex 字符校验 (is_hex_char L118-122) */
 static
 BOOLEAN
 IocCertpIsHexChar(
@@ -71,7 +71,7 @@ IocCertpIsHexChar(
            (c >= L'a' && c <= L'f');
 }
 
-/* hex 字符 → 数值 (对齐 SS hex_char_to_value L130-135) */
+/* hex 字符 → 数值 (hex_char_to_value L130-135) */
 static
 BYTE
 IocCertpHexCharToValue(
@@ -84,7 +84,7 @@ IocCertpHexCharToValue(
     return 0;
 }
 
-/* 字节 → 小写 hex (对齐 SS kHexChars L138 + GetThumbprint 循环 L946-950) */
+/* 字节 → 小写 hex (kHexChars L138 + GetThumbprint 循环 L946-950) */
 static
 VOID
 IocCertpHexEncode(
@@ -103,7 +103,7 @@ IocCertpHexEncode(
     Hex[Count * 2] = '\0';
 }
 
-/* FILETIME(1601 100ns) → Unix 秒 (对齐 SS 信誉时间窗语义, 防下溢) */
+/* FILETIME(1601 100ns) → Unix 秒 (信誉时间窗语义, 防下溢) */
 static
 ULONG64
 IocCertpFiletimeToUnix(
@@ -121,7 +121,7 @@ IocCertpFiletimeToUnix(
     return 0;
 }
 
-/* 签名算法 OID → 友好名 (对齐 SS GetInfo L1143-1181 + GetSignatureAlgorithm
+/* 签名算法 OID → 友好名 (GetInfo L1143-1181 + GetSignatureAlgorithm
  * L1604-1650 合并映射, 含 PSS/ECDSA/DSA; 未知返回 UNKNOWN) */
 static
 PCWSTR
@@ -147,7 +147,7 @@ IocCertpMapOidToName(
     return L"UNKNOWN";
 }
 
-/* 吊销模式 → 链 flags 附加位 (对齐 SS revocation_flags_for L179-194) */
+/* 吊销模式 → 链 flags 附加位 (revocation_flags_for L179-194) */
 static
 DWORD
 IocCertpRevocationFlagsFor(
@@ -168,7 +168,7 @@ IocCertpRevocationFlagsFor(
     return CERT_CHAIN_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
 }
 
-/* 吊销模式 → 可忽略信任错误位 (对齐 SS ignorable_trust_errors_for L202-208) */
+/* 吊销模式 → 可忽略信任错误位 (ignorable_trust_errors_for L202-208) */
 static
 DWORD
 IocCertpIgnorableTrustErrorsFor(
@@ -182,7 +182,7 @@ IocCertpIgnorableTrustErrorsFor(
     return 0;
 }
 
-/* 缓冲内字节搜索 (对齐 SS std::string_view::find PEM 头 L426-427) */
+/* 缓冲内字节搜索 (std::string_view::find PEM 头 L426-427) */
 static
 BOOLEAN
 IocCertpBufferContains(
@@ -217,7 +217,7 @@ IocCert_LoadFromFile(
 /*++
 Routine Description:
     从文件加载证书 (DER/PEM/PKCS#7 容器自动识别)。
-    对齐 SS Certificate::LoadFromFile L286-382。
+    Certificate::LoadFromFile L286-382。
 
 Arguments:
     FilePath - 证书文件路径。
@@ -284,7 +284,7 @@ IocCert_LoadFromMemory(
 /*++
 Routine Description:
     从内存加载证书 (DER/PEM 自动检测)。
-    对齐 SS Certificate::LoadFromMemory L397-507。
+    Certificate::LoadFromMemory L397-507。
 
 Arguments:
     Data    - 证书数据。
@@ -349,7 +349,7 @@ IocCert_LoadFromPEM(
 /*++
 Routine Description:
     从 PEM 字符串加载证书 (校验 BEGIN/END marker)。
-    对齐 SS Certificate::LoadFromPEM L664-752。
+    Certificate::LoadFromPEM L664-752。
 
 Arguments:
     Pem     - PEM 编码证书字符串 (ASCII)。
@@ -412,7 +412,7 @@ IocCert_GetThumbprint(
 /*++
 Routine Description:
     获取证书指纹 (SHA1 20B 或 SHA256 32B, hex 字符串)。
-    对齐 SS Certificate::GetThumbprint L902-959。
+    Certificate::GetThumbprint L902-959。
 
 Arguments:
     Cert   - 证书上下文。
@@ -462,7 +462,7 @@ IocCert_GetInfo(
 /*++
 Routine Description:
     提取综合证书信息 (主题/颁发者/序列号/指纹/有效期/CA/自签名/签名算法友好名)。
-    对齐 SS Certificate::GetInfo L971-1189。
+    Certificate::GetInfo L971-1189。
 
 Arguments:
     Cert - 证书上下文。
@@ -589,7 +589,7 @@ IocCert_IsSelfSigned(
 /*++
 Routine Description:
     判断证书是否自签名 (Subject == Issuer, blob 直比)。
-    对齐 SS Certificate::IsSelfSigned L1417-1444。
+    Certificate::IsSelfSigned L1417-1444。
 
 Arguments:
     Cert - 证书上下文。
@@ -619,7 +619,7 @@ IocCert_GetBasicConstraintsPathLen(
 /*++
 Routine Description:
     获取 Basic Constraints pathLen 约束。
-    对齐 SS Certificate::GetBasicConstraintsPathLen L1454-1518。
+    Certificate::GetBasicConstraintsPathLen L1454-1518。
 
 Arguments:
     Cert - 证书上下文。
@@ -670,7 +670,7 @@ IocCert_GetSignatureAlgorithm(
 /*++
 Routine Description:
     获取签名算法友好名 (OID → "RSA-SHA256" 等)。
-    对齐 SS Certificate::GetSignatureAlgorithm L1584-1657。
+    Certificate::GetSignatureAlgorithm L1584-1657。
 
 Arguments:
     Cert   - 证书上下文。
@@ -701,7 +701,7 @@ IocCert_IsStrongSignatureAlgo(
 Routine Description:
     判定证书是否使用强签名算法。
     MD2/MD5 恒拒; SHA1 家族仅在 AllowSha1 时接受; SHA256/384/512 + RSA-PSS 恒强;
-    未知算法保守拒绝。对齐 SS Certificate::IsStrongSignatureAlgo L1529-1573。
+    未知算法保守拒绝。Certificate::IsStrongSignatureAlgo L1529-1573。
 
 Arguments:
     Cert      - 证书上下文。
@@ -756,7 +756,7 @@ IocCert_HasEKU(
 /*++
 Routine Description:
     检查证书是否含指定 Enhanced Key Usage (EKU) OID。
-    无 EKU 扩展 → any-use → TRUE (对齐 SS CRYPT_E_NOT_FOUND 语义 L2209-2213)。
+    无 EKU 扩展 → any-use → TRUE (CRYPT_E_NOT_FOUND 语义 L2209-2213)。
 
 Arguments:
     Cert - 证书上下文。
@@ -814,8 +814,8 @@ IocCert_HasKeyUsage(
 /*++
 Routine Description:
     检查证书是否含指定 Key Usage 位。
-    无 KeyUsage 扩展 → any-use → TRUE (对齐 SS L2291-2295)。
-    对齐 SS Certificate::HasKeyUsage L2267-2309。
+    无 KeyUsage 扩展 → any-use → TRUE (L2291-2295)。
+    Certificate::HasKeyUsage L2267-2309。
 
 Arguments:
     Cert  - 证书上下文。
@@ -863,7 +863,7 @@ Routine Description:
     验证证书链 (标准信任锚 + Authenticode 策略)。
     前置强签名算法校验; RevocationMode 三态映射 chain flags + ignorable errors;
     可选 hAdditionalStore 附加签发候选; 可选 RequiredEkuOid; 最终 Authenticode 策略验证。
-    对齐 SS Certificate::VerifyChain L1866-1990。
+    Certificate::VerifyChain L1866-1990。
 
 Arguments:
     Cert             - 证书上下文。
@@ -940,12 +940,12 @@ Return Value:
 
 /**************************************************/
 /*                死代码: 功能面覆盖               */
-/*  (static + 4505, 对齐 SS 行号 + 不接入原因)      */
+/*  (static + 4505, 行号 + 不接入原因)      */
 /**************************************************/
 #pragma warning(push)
 #pragma warning(disable: 4505)
 
-/* 从系统证书存储按 SHA1 指纹加载 (对齐 SS LoadFromStore L519-653)。
+/* 从系统证书存储按 SHA1 指纹加载 (LoadFromStore L519-653)。
  * Current User → Local Machine 回退; 不接入原因: 恶意根证书植入检测的未来
  * 消费点, 当前无调用者。 */
 static
@@ -1029,7 +1029,7 @@ IocCert_LoadFromStore(
     return (*OutCert != NULL);
 }
 
-/* DER 导出 (对齐 SS Export L766-799)。不接入原因: 导出工具, 无消费方。 */
+/* DER 导出 (Export L766-799)。不接入原因: 导出工具, 无消费方。 */
 static
 BOOLEAN
 IocCert_ExportDER(
@@ -1045,7 +1045,7 @@ IocCert_ExportDER(
     return TRUE;
 }
 
-/* PEM 导出 (对齐 SS ExportPEM L819-888)。不接入原因: 导出工具, 无消费方。 */
+/* PEM 导出 (ExportPEM L819-888)。不接入原因: 导出工具, 无消费方。 */
 static
 BOOLEAN
 IocCert_ExportPEM(
@@ -1083,7 +1083,7 @@ IocCert_ExportPEM(
     return ok;
 }
 
-/* SAN 提取 (对齐 SS GetSubjectAltNames L1204-1406)。
+/* SAN 提取 (GetSubjectAltNames L1204-1406)。
  * 不接入原因: 无消费方; DNS/IP/URL 分类保留 SS 三路语义。 */
 static
 BOOLEAN
@@ -1233,7 +1233,7 @@ IocCert_GetSubjectAltNames(
     return TRUE;
 }
 
-/* 裸数据验签 (对齐 SS VerifySignature L1676-1851)。
+/* 裸数据验签 (VerifySignature L1676-1851)。
  * CryptImportPublicKeyInfoEx2 导公钥 + BCrypt SHA256 + RSA PKCS1/ECDSA 分派。
  * 不接入原因: 文件签名由 WinVerifyTrust 整体覆盖, 无裸数据验签消费方。
  * 预留: SS UpdateVerifier 包级公钥签名 (RSA/ECDSA, pinned 配置公钥, 非 Authenticode
@@ -1320,7 +1320,7 @@ IocCert_VerifySignature(
     return ok;
 }
 
-/* 指定时间点链验证 (对齐 SS VerifyChainAtTime L2004-2018)。
+/* 指定时间点链验证 (VerifyChainAtTime L2004-2018)。
  * 包装 IocCert_VerifyChain 时间参数; 不接入原因: 死代码包装对齐 API 面。 */
 static
 BOOLEAN
@@ -1337,7 +1337,7 @@ IocCert_VerifyChainAtTime(
     return IocCert_VerifyChain(Cert, Mode, NULL, ChainFlags, VerifyTime, RequiredEkuOid);
 }
 
-/* 自定义信任锚链验证 (对齐 SS VerifyChainWithStore L2034-2180)。
+/* 自定义信任锚链验证 (VerifyChainWithStore L2034-2180)。
  * CertCreateCertificateChainEngine + hExclusiveRoot 绑定信任根; intermediates
  * 走 hAdditionalStore 作签发候选。不接入原因: 内部 PKI 验证未来消费点。 */
 static
@@ -1422,7 +1422,7 @@ IocCert_VerifyChainWithStore(
     return ok;
 }
 
-/* 指定 CA 验证 (对齐 SS VerifyAgainstCA L2321-2435)。
+/* 指定 CA 验证 (VerifyAgainstCA L2321-2435)。
  * 内存 store + 自定义 engine, CA 作独占根。不接入原因: 无消费方。 */
 static
 BOOLEAN
@@ -1481,7 +1481,7 @@ IocCert_VerifyAgainstCA(
     return ok;
 }
 
-/* 独立吊销查询 (对齐 SS GetRevocationStatus L2450-2572)。
+/* 独立吊销查询 (GetRevocationStatus L2450-2572)。
  * CertVerifyRevocation + CRL reason 6 细分。2026-09-02 由 static 升级导出:
  * SignatureVerifier Revoked 分支接线消费 (吊销原因细分, CertificateValidator
  * 增量迁移)。注意: CertVerifyRevocation 在网络可达时可能访问吊销分发点,
@@ -1583,7 +1583,7 @@ IocCert_GetRevocationStatus(
     }
 }
 
-/* RFC3161 时间戳令牌验证 (对齐 SS VerifyTimestampToken L2587-2682)。
+/* RFC3161 时间戳令牌验证 (VerifyTimestampToken L2587-2682)。
  * CryptVerifyTimeStampSignature + ftTime 提取 + 年份 1990-2100 校验。
  * 不接入原因: wkd 死代码仅提取 counterSign 时间, 独立令牌验证无消费方。 */
 static
@@ -1640,7 +1640,7 @@ IocCert_VerifyTimestampToken(
     return valid;
 }
 
-/* 公钥提取 (CNG blob) (对齐 SS ExtractPublicKey L2694-2783)。
+/* 公钥提取 (CNG blob) (ExtractPublicKey L2694-2783)。
  * CryptImportPublicKeyInfoEx2 + BCryptExportKey; 不依赖 SS CryptoUtils 直接导出。
  * 不接入原因: 无消费方 (密钥材料提取归密码学能力域)。 */
 static

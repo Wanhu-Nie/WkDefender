@@ -180,7 +180,7 @@ typedef NTSTATUS (NTAPI *PFN_ZwQueryInformationProcess)(
 //
 // ZwOpenThread / ZwQueryInformationThread
 // 未文档化（导出但无 WDK 头文件声明）；内核态可用 Zw 版本。
-// 抽离自 Callbacks/ThreadNotify.c 原 typedef。
+// 抽离自 Callbacks/ThreadNotification.c 原 typedef。
 //
 typedef NTSTATUS (NTAPI *PFN_ZwOpenThread)(
     _Out_ PHANDLE ThreadHandle,
@@ -195,6 +195,21 @@ typedef NTSTATUS (NTAPI *PFN_ZwQueryInformationThread)(
     _Out_writes_bytes_(ThreadInformationLength) PVOID ThreadInformation,
     _In_ ULONG ThreadInformationLength,
     _Out_opt_ PULONG ReturnLength
+    );
+
+//
+// MmCopyVirtualMemory
+// 跨进程内存拷贝（Win10 1607+ 导出；WDK 有 NTKERNELAPI 声明，但项目统一
+// 经 ExportParser 动态解析，禁止 IAT/直接符号依赖——2026-09-13）。
+//
+typedef NTSTATUS (NTAPI *PFN_MM_COPY_VIRTUAL_MEMORY)(
+    _In_ PEPROCESS FromProcess,
+    _In_ PVOID FromAddress,
+    _In_ PEPROCESS ToProcess,
+    _Out_ PVOID ToAddress,
+    _In_ SIZE_T BufferSize,
+    _In_ KPROCESSOR_MODE PreviousMode,
+    _Out_ PSIZE_T NumberOfBytesCopied
     );
 
 //
@@ -289,6 +304,7 @@ extern PFN_PsGetProcessProtection              pfnPsGetProcessProtection;
 extern PFN_PsGetProcessSignatureLevel          pfnPsGetProcessSignatureLevel;
 #endif
 extern PFN_SeGetCachedSigningLevel             pfnSeGetCachedSigningLevel;
+extern PFN_MM_COPY_VIRTUAL_MEMORY              pfnMmCopyVirtualMemory;
 
 //
 // ExLookaside* 未导出系列（特征码定位所得，见 g_ExportTable 特征码项 / CopExportBySignature）

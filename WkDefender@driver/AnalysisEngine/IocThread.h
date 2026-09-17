@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include <ntifs.h>
-#include "../Callbacks/ThreadNotify.h"
+#include "../Callbacks/ThreadNotification.h"
 #include "../Process/ProcessPairContext.h"     /* PAE_PROCESS_PAIR */
 
 //
@@ -17,7 +17,7 @@
 //   7. 受保护进程目标（新增）
 //   8. 创建者提权源（新增）
 //   9. 远程线程快速创建（新增, 死代码填充）
-//   10. 孤儿注入器 — 源进程父已退出（新增, 对齐 SS PR_SCORE_ORPHANED_INJECTOR）
+//   10. 孤儿注入器 — 源进程父已退出（新增, PR_SCORE_ORPHANED_INJECTOR）
 //
 // TargetProcess: 线程所属进程（远程线程时为目标进程）
 // Entry: 线程信息条目

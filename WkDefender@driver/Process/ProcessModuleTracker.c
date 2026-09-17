@@ -13,6 +13,7 @@
 
 #include "ProcessModuleTracker.h"
 #include "ProcessMonitor.h"     /* WKD_PROCESS / Ps* API / ModuleContext */
+#include "../Include/Process/WkdProcess.h" /* PsGetMainModuleImageBase（主模块基址查询声明，2026-09-13） */
 #include "../Common/PeParser.h"
 #include "../Common/Utils.h"
 #include <ntstrsafe.h>
@@ -273,6 +274,7 @@ PspParserSection(
     section.VirtualSize = Section->Misc.VirtualSize;
     section.VirtualAddress = Section->VirtualAddress;
     section.SizeOfRawData = Section->SizeOfRawData;
+    section.PointerToRawData = Section->PointerToRawData;
     section.Characteristics = Section->Characteristics;
 
     DaAppend(&module->Sections, &section);                /* 失败忽略：节采集尽力 */
@@ -485,7 +487,7 @@ _Use_decl_annotations_
 NTSTATUS
 PsModuleAttachProcessLocked(
     _Inout_ PWKD_PROCESS WkdProcess,
-    _Inout_ PWKD_MODULE Module,
+    _Inout_ PWKD_MODULE WkdModule,
     _In_ PVOID ImageBase,
     _Out_opt_ PWKD_MODULE_INSTANCE* Instance
     )
@@ -495,7 +497,7 @@ PsModuleAttachProcessLocked(
     PWKD_MODULE_CONTEXT context;
 
     if (!WkdProcess || !WkdProcess->ModuleContext || 
-        !ImageBase || !Module) {
+        !ImageBase || !WkdModule) {
         return STATUS_INVALID_PARAMETER;
     }
     if (Instance) *Instance = NULL;
@@ -511,13 +513,16 @@ PsModuleAttachProcessLocked(
     RtlZeroMemory(instance, sizeof(WKD_MODULE_INSTANCE));
 
     instance->ImageBase = ImageBase;
-    instance->Module = Module;
+    instance->Module = WkdModule;
     KeQuerySystemTime(&instance->LoadTime);
+    /* 2026-09-13：模块链为空时挂载的首模块即主模块（进程主映像，
+     * 进程创建后首个 Image 通知必然命中；供 PsGetMainModuleImageBase 查询） */
+    instance->MainModule = IsListEmpty(&context->ModuleList);
     InsertTailList(&context->ModuleList, &instance->ListEntry);
     InterlockedIncrement(&context->ActiveModules);
 
-    /* 视图引用（Module 由调用方传入时已 pin，此处再加视图引用） */
-    PsReferenceWkdModule(Module);
+    /* 视图引用（WkdModule 由调用方传入时已 pin，此处再加视图引用） */
+    PsReferenceWkdModule(WkdModule);
 
     if (Instance) *Instance = instance;
     return STATUS_SUCCESS;
@@ -621,8 +626,81 @@ PsLookupModuleInstanceByImageBaseLocked(
     return NULL;
 }
 
+/**************************************************/
+/*  模块实例按基址查询（非锁版，2026-09-13 新增） */
+/*  内部自持 ModuleContext 共享锁（EX_PUSH_LOCK），*/
+/*  再调用锁版原语 PsLookupModuleInstanceByImage-  */
+/*  BaseLocked 遍历 ModuleList——供无持锁上下文    */
+/*  的调用方使用（如 HollowingDetector 各阶段函数）*/
+/*  与 PsGetMainModuleImageBase 同体系。           */
+/*  允许 IRQL ≤ APC_LEVEL（EX_PUSH_LOCK 约束）。  */
+/**************************************************/
+_Use_decl_annotations_
+PWKD_MODULE_INSTANCE
+PsLookupModuleInstanceByImageBase(
+    _Inout_ PWKD_PROCESS WkdProcess,
+    _In_ PVOID ImageBase
+    )
+{
+    PWKD_MODULE_CONTEXT context;
+    PWKD_MODULE_INSTANCE instance;
+
+    if (!WkdProcess || !WkdProcess->ModuleContext || !ImageBase)
+        return NULL;
+
+    context = WkdProcess->ModuleContext;
+    WkdAcquirePushLockShared(&context->Lock);
+    instance = PsLookupModuleInstanceByImageBaseLocked(WkdProcess, ImageBase);
+    WkdReleasePushLockShared(&context->Lock);
+
+    return instance;
+}
+
+/**************************************************/
+/*  主模块基址查询（非锁版，2026-09-13 新增）      */
+/*  枚举 ModuleList 返回 MainModule==TRUE 实例的   */
+/*  映射基址；供 HollowingDetector 映像比对 /      */
+/*  入口点分析定位主映像（免 PEB attach 探测）。    */
+/*  内部自持 ModuleContext 共享锁，调用方无需持锁。 */
+/*  锁版原语（PsLookupModuleInstanceByImageBase-   */
+/*   Locked / PsLookupWkdModuleContainingAddress）  */
+/*  仍要求调用方持锁，仅限锁内上下文使用。         */
+/**************************************************/
+_Use_decl_annotations_
+NTSTATUS
+PsGetMainModuleImageBase(
+    _In_ PWKD_PROCESS WkdProcess,
+    _Out_ PVOID* ImageBase
+    )
+{
+    BOOLEAN found = FALSE;
+    PWKD_MODULE_CONTEXT context;
+    PWKD_MODULE_INSTANCE instance;
+
+    if (!WkdProcess || !WkdProcess->ModuleContext || !ImageBase) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *ImageBase = NULL;
+    
+    context = WkdProcess->ModuleContext;
+    WkdAcquirePushLockShared(&context->Lock);
+    for (PLIST_ENTRY entry = context->ModuleList.Flink;
+         entry != &context->ModuleList;
+         entry = entry->Flink) {
+        instance = CONTAINING_RECORD(entry, WKD_MODULE_INSTANCE, ListEntry);
+        if (instance->MainModule) {
+            found = TRUE;
+            *ImageBase = instance->ImageBase;
+        }
+    }
+    WkdReleasePushLockShared(&context->Lock);
+
+    if (found) return STATUS_SUCCESS;
+    else return STATUS_NOT_FOUND;
+}
+
 //
-// 地址包含查询（新增，对齐 SS TnpFindModuleForAddress，改用 WKD_MODULE 全局表替代 PEB 遍历）。
+// 地址包含查询（新增，TnpFindModuleForAddress，改用 WKD_MODULE 全局表替代 PEB 遍历）。
 // 遍历目标进程 ModuleContext->ModuleList，对每个 WKD_MODULE_INSTANCE 判定
 //   Address ∈ [ImageBase, ImageBase + Module->ImageSize)
 // 命中返回实例（Module 指针可回溯全局 WKD_MODULE 取 ImageSize/ImagePath），未命中返回 NULL。

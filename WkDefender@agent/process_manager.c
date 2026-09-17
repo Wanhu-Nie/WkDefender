@@ -795,7 +795,7 @@ NTSTATUS NTAPI NtQueryInformationProcess(HANDLE ProcessHandle, PROCESSINFOCLASS 
                                          PVOID ProcessInformation, ULONG ProcessInformationLength,
                                          PULONG ReturnLength);
 
-/* ProcessExtendedBasicInformation (对齐 SS ProcessKiller.cpp L193-211) */
+/* ProcessExtendedBasicInformation (ProcessKiller.cpp L193-211) */
 typedef struct _WKD_PROCESS_EXTENDED_BASIC_INFORMATION {
     SIZE_T Size;
     PROCESS_BASIC_INFORMATION BasicInfo;
@@ -865,7 +865,7 @@ static UINT64 g_WkNextCallbackId = 1;
 
 /*
  * WkIsProcessRunning — 进程是否存活。
- * 对齐 SS ProcessKiller.cpp L264-288：OpenProcess(SYNCHRONIZE)+WaitForSingleObject(0)
+ * ProcessKiller.cpp L264-288：OpenProcess(SYNCHRONIZE)+WaitForSingleObject(0)
  * 判活（WAIT_TIMEOUT=运行），回退 GetExitCodeProcess(STILL_ACTIVE)。
  */
 static BOOLEAN
@@ -906,7 +906,7 @@ WkIsProcessRunning(
 
 /*
  * WkGetProcessPath — 取进程完整路径。
- * 对齐 SS ProcessUtils.cpp L350-374 QueryFullImagePath：
+ * ProcessUtils.cpp L350-374 QueryFullImagePath：
  * OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) + QueryFullProcessImageNameW。
  */
 static NTSTATUS
@@ -939,7 +939,7 @@ WkGetProcessPath(
 
 /*
  * WkGetProcessName — 取进程文件名（路径 basename）。
- * 对齐 SS ProcessUtils.cpp L1607-1611。
+ * ProcessUtils.cpp L1607-1611。
  */
 static NTSTATUS
 WkGetProcessName(
@@ -969,7 +969,7 @@ WkGetProcessName(
 
 /*
  * WkGetParentProcessId — 取父进程 PID。
- * 对齐 SS ProcessUtils.cpp L1631-1649：Toolhelp TH32CS_SNAPPROCESS。
+ * ProcessUtils.cpp L1631-1649：Toolhelp TH32CS_SNAPPROCESS。
  */
 static ULONG
 WkGetParentProcessId(
@@ -998,7 +998,7 @@ WkGetParentProcessId(
 
 /*
  * WkGetChildrenInternal — 取直接子进程 PID 列表（UtHeapAlloc，调用方 UtHeapFree）。
- * 对齐 SS ProcessUtils.cpp L1659-1685。
+ * ProcessUtils.cpp L1659-1685。
  */
 static NTSTATUS
 WkGetChildrenInternal(
@@ -1051,7 +1051,7 @@ WkGetChildrenInternal(
 
 /*
  * WkGetThreadIds — 取进程全部线程 ID 列表（Toolhelp TH32CS_SNAPTHREAD）。
- * 对齐 SS ProcessKiller.cpp L312-331。
+ * ProcessKiller.cpp L312-331。
  */
 static NTSTATUS
 WkGetThreadIds(
@@ -1102,7 +1102,7 @@ WkGetThreadIds(
     return STATUS_SUCCESS;
 }
 
-/* 远程内存可读性预校验（VirtualQueryEx，对齐 SS IsRemoteRangeReadable） */
+/* 远程内存可读性预校验（VirtualQueryEx，IsRemoteRangeReadable） */
 static BOOLEAN
 WkIsRemoteRangeReadable(
     _In_ HANDLE hProcess,
@@ -1123,7 +1123,7 @@ WkIsRemoteRangeReadable(
     return FALSE;
 }
 
-/* PEB 结构（x64 读 WOW64 用 32 位投影，对齐 SS ProcessUtils.cpp L1395-1421） */
+/* PEB 结构（x64 读 WOW64 用 32 位投影，ProcessUtils.cpp L1395-1421） */
 typedef struct _WKD_PEB32 {
     BYTE Reserved1[2];
     BYTE BeingDebugged;
@@ -1164,7 +1164,7 @@ typedef struct _WKD_RTL_USER_PROCESS_PARAMETERS64 {
 
 /*
  * WkGetProcessCommandLine — 读取进程命令行。
- * 对齐 SS ProcessUtils.cpp L1348-1605：NtQueryInformationProcess(ProcessBasicInformation)
+ * ProcessUtils.cpp L1348-1605：NtQueryInformationProcess(ProcessBasicInformation)
  * 读 PEB → RTL_USER_PROCESS_PARAMETERS.CommandLine；WOW64 用 class 26 拿 32 位 PEB；
  * 长度上限 32768；读前预校验内存可读。
  */
@@ -1319,7 +1319,7 @@ WkGetProcessCommandLine(
             return STATUS_UNSUCCESSFUL;
         }
         Buf[cmdLen / sizeof(WCHAR)] = L'\0';
-        /* 截断到第一个内嵌 null（对齐 SS ProcessUtils.cpp L1595-1600） */
+        /* 截断到第一个内嵌 null（ProcessUtils.cpp L1595-1600） */
         {
             ULONG i;
             ULONG maxChars = cmdLen / sizeof(WCHAR);
@@ -1336,7 +1336,7 @@ WkGetProcessCommandLine(
 
 /*
  * WkGetProcessOwner — 取进程所有者 (Domain\User)。
- * 对齐 SS ProcessUtils.cpp L1119-1181 GetProcessSecurityInfo：OpenProcessToken +
+ * ProcessUtils.cpp L1119-1181 GetProcessSecurityInfo：OpenProcessToken +
  * GetTokenInformation(TokenUser) + LookupAccountSidW。
  */
 static NTSTATUS
@@ -1423,7 +1423,7 @@ WkCreationTimesMatch(
     return A.dwLowDateTime == B.dwLowDateTime && A.dwHighDateTime == B.dwHighDateTime;
 }
 
-/* 启用 SeDebugPrivilege（对齐 SS ProcessKiller.cpp L238-262） */
+/* 启用 SeDebugPrivilege（ProcessKiller.cpp L238-262） */
 static BOOLEAN
 WkEnableDebugPrivilege(
     VOID
@@ -1464,7 +1464,7 @@ WkIsReservedPid(
 
 /*
  * WkIsSystemBinaryDirectory — 路径是否位于系统二进制目录。
- * 对齐 SS ProcessKiller.cpp L293-301 IsSystemDirectoryPath：
+ * ProcessKiller.cpp L293-301 IsSystemDirectoryPath：
  * 小写化 + 匹配 \windows\system32\ / syswow64 / winsxs。
  * 注意：不复用 WkdIsSystemDirectory（范围过宽，会把 C:\Windows\Temp\csrss.exe 误判）。
  */
@@ -1510,7 +1510,7 @@ WkIsCriticalProcessName(
 
 /*
  * WkGetProtectionInfoInternal — 进程保护信息。
- * 对齐 SS ProcessKiller.cpp L1047-1088 GetProtectionInfoInternal：
+ * ProcessKiller.cpp L1047-1088 GetProtectionInfoInternal：
  * BreakOnTermination(29) 检测临界进程(BSOD)；PROCESS_EXTENDED_BASIC_INFORMATION(0)
  * 检测 PP / VBS Secure。
  */
@@ -1563,7 +1563,7 @@ WkGetProtectionInfoInternal(
 
 /*
  * WkGetCriticalityInternal — 进程关键性判定。
- * 对齐 SS ProcessKiller.cpp L1090-1123 GetCriticalityInternal：
+ * ProcessKiller.cpp L1090-1123 GetCriticalityInternal：
  * 名称命中禁杀名单且路径位于系统二进制目录 → Forbidden（否则 masquerade 降级+日志）；
  * BreakOnTermination → Critical；名称命中谨慎名单且系统目录 → SystemService。
  */
@@ -1623,7 +1623,7 @@ WkIsCriticalProcessInternal(
 /**************************************************/
 
 /* 每级方法先 OpenProcess 后比对 creation time，不符返回 NotFound（防 PID 复用误杀）。
- * 对齐 SS ProcessKiller.cpp L1210-1486。 */
+ * ProcessKiller.cpp L1210-1486。 */
 
 static WKD_KILL_RESULT
 WkKillStandard(
@@ -1737,7 +1737,7 @@ WkKillFreeze(
 
 /*
  * WkKillJobObject — 通过 Job 对象终止。
- * 对齐 SS ProcessKiller.cpp L1290-1323。
+ * ProcessKiller.cpp L1290-1323。
  * ※ 死代码：对已入其它 Job/提升/受保护进程 AssignProcessToJobObject 通常被拒，
  *   1-3 级几乎总能成功，保留作级别占位防 API 行为变化。
  */
@@ -1798,7 +1798,7 @@ WkKillJobObject(
 
 /*
  * WkKillTokenManipulation — 剥除目标 token 特权后终止。
- * 对齐 SS ProcessKiller.cpp L1326-1351。
+ * ProcessKiller.cpp L1326-1351。
  * ※ 死代码：SS 自身标注为无效级 —— AdjustTokenPrivileges(DisableAll) 撤销的是目标进程
  *   自身特权，不提升调用者对目标的访问权限，TerminateProcess 成败不受其影响。仅占位。
  */
@@ -1917,7 +1917,7 @@ WkKillForceNtTerminate(
 
 /*
  * WkKillKernelDriver — 内核驱动 IOCTL 终止。
- * 对齐 SS ProcessKiller.cpp L1410-1486（KillKernelDriver）。
+ * ProcessKiller.cpp L1410-1486（KillKernelDriver）。
  * ※ 死代码：依赖内核驱动 IPC 通道（SS 的 IPCManager.SendToKernel），WkD 当前用户态
  *   Agent 无等价驱动终止通道，直接返回 Failed。
  */
@@ -1977,7 +1977,7 @@ WkKillWithMethod(
 
 /*
  * WkEscalatingKill — 1→8 逐级升级终止。
- * 对齐 SS ProcessKiller.cpp L1133-1185 EscalatingKill：
+ * ProcessKiller.cpp L1133-1185 EscalatingKill：
  * 每级成功/AlreadyDead 即返回；escalateOnFailure=FALSE 则首级失败即止。
  */
 static WKD_KILL_RESULT
@@ -2026,7 +2026,7 @@ WkEscalatingKill(
 
 /*
  * WkVerifyTerminationInternal — 轮询验证进程确已终止。
- * 对齐 SS ProcessKiller.cpp L1492-1501。
+ * ProcessKiller.cpp L1492-1501。
  */
 static BOOLEAN
 WkVerifyTerminationInternal(
@@ -2046,7 +2046,7 @@ WkVerifyTerminationInternal(
 
 /*
  * WkPreserveEvidence — 杀前收集取证信息（命令行 + 所有者）。
- * 对齐 SS ProcessKiller.cpp L1503-1508 PreserveEvidence。
+ * ProcessKiller.cpp L1503-1508 PreserveEvidence。
  */
 static VOID
 WkPreserveEvidence(
@@ -2073,7 +2073,7 @@ WkPreserveEvidence(
 
 /*
  * WkBuildTreeRecursive — 递归构建进程树。
- * 对齐 SS ProcessKiller.cpp L844-856 BuildTreeRecursive：
+ * ProcessKiller.cpp L844-856 BuildTreeRecursive：
  * visited 数组防环、深度/大小上限、跳过保留 PID。
  */
 static NTSTATUS
@@ -2119,7 +2119,7 @@ WkBuildTreeRecursive(
 
 /*
  * WkGetProcessTreeInternal — 根在前（深度优先），调用方 UtHeapFree。
- * 对齐 SS ProcessKiller.cpp L833-856 GetProcessTreeInternal。
+ * ProcessKiller.cpp L833-856 GetProcessTreeInternal。
  */
 static NTSTATUS
 WkGetProcessTreeInternal(
@@ -2165,7 +2165,7 @@ WkGetProcessTreeInternal(
 
 /*
  * WkDetectWatchdogsInternal — 检测单进程 watchdog。
- * 对齐 SS ProcessKiller.cpp L880-931 DetectWatchdogs：
+ * ProcessKiller.cpp L880-931 DetectWatchdogs：
  * (1) 父子同 exe → MutualProcess； (2) 父进程下同 exe 兄弟 >1 → ParentChild。
  * 输出数组为 UtHeapAlloc（本实现单进程最多 2 条，固定分配 2 槽）。
  */
@@ -2251,7 +2251,7 @@ WkDetectWatchdogsInternal(
 
 /*
  * WkDetectWatchdogGroupsInternal — 对 PID 集合构图求连通分量，分量 >1 构成 watchdog 组。
- * 对齐 SS ProcessKiller.cpp L933-970 DetectWatchdogGroupsInternal。
+ * ProcessKiller.cpp L933-970 DetectWatchdogGroupsInternal。
  * 输出组数组为 UtHeapAlloc，调用方 ProcessManager_DetectWatchdogGroups 释放。
  */
 static NTSTATUS
@@ -2367,7 +2367,7 @@ WkDetectWatchdogGroupsInternal(
 
 /*
  * WkDefeatWatchdogGroupInternal — 瓦解 watchdog 组。
- * 对齐 SS ProcessKiller.cpp L972-1041 DefeatWatchdogGroupInternal：
+ * ProcessKiller.cpp L972-1041 DefeatWatchdogGroupInternal：
  * Phase1 全部成员先记 creation time + NtSuspendProcess 冻结（sleep 50ms）；
  * Phase2 逐成员 OpenProcess(TERMINATE|QUERY_LIMITED) 复核 creation time 不符拒绝，
  * 再 TerminateProcess(EXIT_CODE_SECURITY)。
@@ -2453,7 +2453,7 @@ WkDefeatWatchdogGroupInternal(
 
 /*
  * WkRemoveServiceInternal — 移除与进程关联的服务。
- * 对齐 SS ProcessKiller.cpp L1514-1587 RemoveServiceInternal：
+ * ProcessKiller.cpp L1514-1587 RemoveServiceInternal：
  * SCM EnumServicesStatusExW 匹配 BinaryPathName 含进程路径 → STOP + DELETE。
  * ※ 死代码：持久化清理未接入隔离/终止流程（KillOptions.CleanPersistence 默认 FALSE，
  *   且无调用者）。全量迁移仅保证功能面覆盖，接入由后续决策决定。
@@ -2545,7 +2545,7 @@ WkRemoveServiceInternal(
 
 /*
  * WkRemoveScheduledTasksInternal — 移除指向进程路径的计划任务。
- * 对齐 SS ProcessKiller.cpp L1589-1749 RemoveScheduledTasksInternal：
+ * ProcessKiller.cpp L1589-1749 RemoveScheduledTasksInternal：
  * COM ITaskService 枚举根目录任务，Action 路径含进程路径 → DeleteTask。
  * 要求调用线程 COM 已初始化（内部 CoInitializeEx(STA) + RPC_E_CHANGED_MODE 容忍）。
  * ※ 死代码：同 RemoveService。
@@ -2681,7 +2681,7 @@ done:
 
 /*
  * WkRemoveRegistryPersistenceInternal — 移除注册表持久化（Run/RunOnce/IFEO）。
- * 对齐 SS ProcessKiller.cpp L1751-1829 RemoveRegistryPersistenceInternal：
+ * ProcessKiller.cpp L1751-1829 RemoveRegistryPersistenceInternal：
  * HKLM/HKCU/Wow6432Node 的 Run/RunOnce 枚举 REG_SZ/REG_EXPAND_SZ 匹配路径删除；
  * IFEO Debugger 值匹配路径删除。
  * ※ 死代码：同 RemoveService。
@@ -2795,7 +2795,7 @@ WkRemoveRegistryPersistenceInternal(
 
 /*
  * WkRemoveProtectionInternal — 清除进程保护。
- * 对齐 SS ProcessKiller.cpp L1831-1868 RemoveProtectionInternal：
+ * ProcessKiller.cpp L1831-1868 RemoveProtectionInternal：
  * 用户态清 BreakOnTermination；PPL 剥离需驱动（※ 死代码分支）。
  */
 static BOOLEAN
@@ -2826,7 +2826,7 @@ WkRemoveProtectionInternal(
 
 /**************************************************/
 /*                 回调调用辅助                     */
-/*   快照式调用避免锁重入死锁（对齐 SS Invoke* 快照模式） */
+/*   快照式调用避免锁重入死锁（Invoke* 快照模式） */
 /**************************************************/
 
 static BOOLEAN
@@ -2935,7 +2935,7 @@ WkUnregisterCallback(
 
 /**************************************************/
 /*               KillOptions 工厂                   */
-/*  对齐 SS CreateStandard/Aggressive/MalwareKill/Forensic */
+/*  CreateStandard/Aggressive/MalwareKill/Forensic */
 /**************************************************/
 
 VOID
@@ -3084,7 +3084,7 @@ ProcessManager_KillProcessAsync(
 
 /*
  * ProcessManager_KillProcessEx — 终止进程核心。
- * 对齐 SS ProcessKiller.cpp L517-637 TerminateEx：
+ * ProcessKiller.cpp L517-637 TerminateEx：
  * reserved → criticality → 信任表 → protection → pre-callback → preserve →
  * capture creation → Escalating/Auto → verify → post-callback。
  */
@@ -3114,7 +3114,7 @@ ProcessManager_KillProcessEx(
     RtlZeroMemory(&info, sizeof(info));
     info.ProcessId = Pid;
     info.MethodUsed = Options->PreferredMethod;
-    GetSystemTimeAsFileTime((PFILETIME)&info.StartTime);   /* 对齐 SS TerminateEx 的 startTime */
+    GetSystemTimeAsFileTime((PFILETIME)&info.StartTime);   /* TerminateEx 的 startTime */
 
     if (WkIsReservedPid(Pid)) {
         info.Result = WkKillResult_Critical;
@@ -3293,7 +3293,7 @@ ProcessManager_TrustProcess(
 /*             挂起/恢复/冻结/判挂起                */
 /**************************************************/
 
-/* 对齐 SS ProcessKiller.cpp L755-793 SuspendProcessEx */
+/* ProcessKiller.cpp L755-793 SuspendProcessEx */
 WKD_SUSPEND_RESULT
 ProcessManager_SuspendProcess(
     _In_ DWORD Pid
@@ -3341,7 +3341,7 @@ ProcessManager_SuspendProcess(
     return (suspendedCount > 0) ? WkSuspendResult_PartialSuccess : WkSuspendResult_Failed;
 }
 
-/* 对齐 SS ProcessKiller.cpp L795-805 ResumeProcessEx */
+/* ProcessKiller.cpp L795-805 ResumeProcessEx */
 BOOLEAN
 ProcessManager_ResumeProcess(
     _In_ DWORD Pid
@@ -3395,7 +3395,7 @@ LONG NTAPI QueryThreadSuspendCount(HANDLE ThreadHandle, PULONG SuspendCount)
     return TRUE;
 }
 
-/* 对齐 SS ProcessUtils.cpp L1820-1856：全部线程 suspendCount>0 才算挂起 */
+/* ProcessUtils.cpp L1820-1856：全部线程 suspendCount>0 才算挂起 */
 BOOLEAN
 ProcessManager_IsProcessSuspended(
     _In_ DWORD Pid
@@ -3471,7 +3471,7 @@ ProcessManager_GetChildren(
     status = WkGetProcessTreeInternal(Pid, WK_MAX_TREE_DEPTH, &tree, &n);
     if (!NT_SUCCESS(status)) return status;
     if (n > 0 && tree[0] == Pid) {
-        /* 去掉根（对齐 SS GetChildren recursive） */
+        /* 去掉根（GetChildren recursive） */
         memmove(tree, tree + 1, (n - 1) * sizeof(ULONG));
         n--;
     }
@@ -3482,7 +3482,7 @@ ProcessManager_GetChildren(
 
 /*
  * ProcessManager_TerminateProcessTree — 进程树终止。
- * 对齐 SS ProcessKiller.cpp L639-749 TerminateTreeEx。
+ * ProcessKiller.cpp L639-749 TerminateTreeEx。
  */
 NTSTATUS
 ProcessManager_TerminateProcessTree(
@@ -3691,7 +3691,7 @@ ProcessManager_RemoveProtection(
 
 /*
  * WkRequestKernelProtectionRemoval — 请求驱动剥离 PPL。
- * 对齐 SS ProcessKiller.cpp L1872-1913 RequestKernelProtectionRemoval：
+ * ProcessKiller.cpp L1872-1913 RequestKernelProtectionRemoval：
  * 经 IPC 向驱动发 FilterMessageType_RegisterProtectedProcess(action=0) 剥离 PPL。
  * ※ 死代码：依赖内核驱动 IPC 通道（SS 的 IPCManager.SendToKernel），WkD 当前
  *   用户态 Agent 无等价驱动通道，恒返回 FALSE。
@@ -3775,7 +3775,7 @@ WkAddUnique(
 
 /*
  * ProcessManager_KillWithWatchdogs — 连 watchdog 一起终止。
- * 对齐 SS ProcessKiller.cpp L2254-2313 KillWithWatchdogs：
+ * ProcessKiller.cpp L2254-2313 KillWithWatchdogs：
  * 检测 watchdog + 展开每个成员后代树合并集合 + 逐个 TerminateEx（非树）。
  */
 NTSTATUS
@@ -3935,7 +3935,7 @@ ProcessManager_VerifyTermination(
 
 /*
  * ProcessManager_CheckResurrection — 按名+路径+创建时间检测进程复活。
- * 对齐 SS ProcessKiller.cpp L2366-2397 CheckResurrection：
+ * ProcessKiller.cpp L2366-2397 CheckResurrection：
  * 枚举进程，name/path 匹配且 creation time 晚于 SinceFileTime 即判定复活，返回新 PID。
  */
 ULONG
@@ -4011,7 +4011,7 @@ ProcessManager_ResetKillStatistics(
 
 /*
  * WkKillStatistics_GetSuccessRate — 终止成功率（成功/总尝试 * 100）。
- * 对齐 SS KillerStatistics::GetSuccessRate（ProcessKiller.cpp L435-439）。
+ * KillerStatistics::GetSuccessRate（ProcessKiller.cpp L435-439）。
  * ※ 死代码：无调用者。
  */
 double
@@ -4116,7 +4116,7 @@ WkKillMethodToString(
 /*       批量/按名/按路径终止 与 树挂起（死代码）    */
 /**************************************************/
 
-/* 枚举全部进程 PID（Toolhelp，对齐 SS ProcessUtils EnumerateProcesses） */
+/* 枚举全部进程 PID（Toolhelp，ProcessUtils EnumerateProcesses） */
 static NTSTATUS
 WkEnumerateAllProcessIds(
     _Outptr_ PULONG* Pids,
@@ -4165,7 +4165,7 @@ WkEnumerateAllProcessIds(
 
 /*
  * ProcessManager_TerminateMultiple — 批量终止。
- * 对齐 SS ProcessKiller.cpp L2157-2163 TerminateMultiple。
+ * ProcessKiller.cpp L2157-2163 TerminateMultiple。
  * ※ 死代码：无调用者。
  */
 NTSTATUS
@@ -4198,7 +4198,7 @@ ProcessManager_TerminateMultiple(
 
 /*
  * ProcessManager_TerminateByName — 按名终止全部同名进程。
- * 对齐 SS ProcessKiller.cpp L2165-2175 TerminateByName。
+ * ProcessKiller.cpp L2165-2175 TerminateByName。
  * ※ 死代码：无调用者。
  */
 NTSTATUS
@@ -4238,7 +4238,7 @@ ProcessManager_TerminateByName(
 
 /*
  * ProcessManager_TerminateByPath — 按路径终止全部匹配进程。
- * 对齐 SS ProcessKiller.cpp L2177-2192 TerminateByPath。
+ * ProcessKiller.cpp L2177-2192 TerminateByPath。
  * ※ 死代码：无调用者。
  */
 NTSTATUS
@@ -4278,7 +4278,7 @@ ProcessManager_TerminateByPath(
 
 /*
  * ProcessManager_SuspendTree — 挂起整棵进程树。
- * 对齐 SS ProcessKiller.cpp L2226-2230 SuspendTree。
+ * ProcessKiller.cpp L2226-2230 SuspendTree。
  * ※ 死代码：无调用者。
  */
 BOOLEAN
@@ -4302,7 +4302,7 @@ ProcessManager_SuspendTree(
 
 /*
  * ProcessManager_ResumeTree — 恢复整棵进程树。
- * 对齐 SS ProcessKiller.cpp L2232-2236 ResumeTree。
+ * ProcessKiller.cpp L2232-2236 ResumeTree。
  * ※ 死代码：无调用者。
  */
 BOOLEAN
@@ -4324,7 +4324,7 @@ ProcessManager_ResumeTree(
     return all;
 }
 
-/* 对齐 SS IsKernelModeAvailable：WkD 当前无驱动终止/剥离通道，恒 FALSE */
+/* IsKernelModeAvailable：WkD 当前无驱动终止/剥离通道，恒 FALSE */
 BOOLEAN
 ProcessManager_IsKernelModeAvailable(
     VOID
@@ -4333,7 +4333,7 @@ ProcessManager_IsKernelModeAvailable(
     return FALSE;
 }
 
-/* 对齐 SS GetVersion：处置引擎版本 */
+/* GetVersion：处置引擎版本 */
 PCWSTR
 WkKillGetVersion(
     VOID

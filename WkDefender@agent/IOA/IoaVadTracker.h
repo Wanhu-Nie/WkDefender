@@ -5,7 +5,7 @@
 /**************************************************/
 /*                                                    */
 /*  职责：进程 VAD（虚拟地址描述符）快照对比 + 怀疑度  */
-/*    评分。对齐 SS VadTracker.c（重功能实现非复制）。  */
+/*    评分。VadTracker.c（重功能实现非复制）。  */
 /*                                                    */
 /*  落点：agent IOA/（仿 IoaHeapSprayDetect feature    */
 /*    模块风格）。复用 MsEnumerateRegions（Memory/     */
@@ -20,7 +20,7 @@
 /*      ProtectionMismatch 40)。                        */
 /*    - 跨快照时序判定：CompareSnapshots 补动态         */
 /*      RW→RX(+70)/新 RWX(+100)/新 UnbackedExec(+80)    */
-/*      （对齐 SS VadpCompareSnapshots L2481-2545）。    */
+/*      （VadpCompareSnapshots L2481-2545）。    */
 /*    - wkd 补真实现（SS 仅评分表预留分值、分析函数     */
 /*      从未置位）：OverlapWithImage(60, MsBuild         */
 /*      ModuleSet 模块集重叠) + ShellcodePattern(90,     */
@@ -54,18 +54,18 @@ extern "C" {
 #include "IoaPersistQueue.h"   /* IOA_ALERT (IoaVad_AllocAlert 返回类型) */
 
 //
-// 常量（对齐 SS VadTracker.h：VAD_SNAPSHOT_MAX_ENTRIES / 怀疑度阈值）
+// 常量（VadTracker.h：VAD_SNAPSHOT_MAX_ENTRIES / 怀疑度阈值）
 //
 #define WKD_VAD_MAX_REGIONS_PER_PROCESS   16384
 #define WKD_VAD_SNAPSHOT_MAX_ENTRIES      4096
 #define WKD_VAD_SUSPICIOUS_REGION_THRESHOLD 100
 /* 注: SS 定义 VAD_SUSPICIOUS_REGION_THRESHOLD=100 但 VadpQueryMemoryRegions 计数
-   实际用 score>0 (L1950), 阈值常量未被使用; wkd 对齐 SS 亦用 >0 计数 */
+   实际用 score>0 (L1950), 阈值常量未被使用; wkd 亦用 >0 计数 */
 #define WKD_VAD_LARGE_REGION_THRESHOLD    (16 * 1024 * 1024)   /* 16MB */
 #define WKD_VAD_SUSPICIOUS_BASE_LOW       0x10000
 
 //
-// 可疑标志（对齐 SS VAD_SUSPICION_*，agent 可实现子集）
+// 可疑标志（VAD_SUSPICION_*，agent 可实现子集）
 //
 #define WKD_VAD_SUSPICION_RWX                 0x00000001  // 100 分
 #define WKD_VAD_SUSPICION_UNBACKED_EXEC       0x00000002  // 80 分
@@ -80,7 +80,7 @@ extern "C" {
  * WKD_VAD_SUSPICION_HIDDEN_REGION 0x100  (100 分, 需检测"区域不在 VAD 中") */
 
 //
-// 区域快照条目（对齐 SS VAD_SNAPSHOT_ENTRY + VAD_REGION 子集）
+// 区域快照条目（VAD_SNAPSHOT_ENTRY + VAD_REGION 子集）
 //
 typedef struct _WKD_VAD_REGION_ENTRY {
     ULONG_PTR   BaseAddress;
@@ -104,18 +104,18 @@ typedef struct _WKD_VAD_SNAPSHOT {
     WKD_VAD_REGION_ENTRY Regions[WKD_VAD_SNAPSHOT_MAX_ENTRIES];
     ULONG  TotalSuspicionScore;
     ULONG  SuspiciousRegionCount;
-    /* 进程级统计（对齐 SS VAD_PROCESS_CONTEXT 统计字段） */
+    /* 进程级统计（VAD_PROCESS_CONTEXT 统计字段） */
     ULONG  RWXRegionCount;         /* 命中 RWX 的区域数 */
     ULONG  UnbackedExecuteCount;   /* 未备份可执行区域数 */
     SIZE_T TotalPrivateSize;       /* MEM_PRIVATE 总尺寸 */
     SIZE_T TotalMappedSize;        /* MEM_MAPPED 总尺寸 */
     SIZE_T TotalImageSize;         /* MEM_IMAGE 总尺寸 */
     SIZE_T TotalExecutableSize;    /* 可执行区域总尺寸 */
-    LARGE_INTEGER SnapshotTime;    /* 快照构建时间（对齐 SS SnapshotTime） */
+    LARGE_INTEGER SnapshotTime;    /* 快照构建时间（SnapshotTime） */
 } WKD_VAD_SNAPSHOT, *PWKD_VAD_SNAPSHOT;
 
 //
-// 变更类型（对齐 SS VAD_CHANGE_TYPE）
+// 变更类型（VAD_CHANGE_TYPE）
 //
 typedef enum _WKD_VAD_CHANGE_TYPE {
     WkdVadChange_RegionCreated = 1,
@@ -134,7 +134,7 @@ typedef struct _WKD_VAD_CHANGE {
     ULONG       OldProtection;
     ULONG       NewProtection;
     ULONG       SuspicionFlags;   /* 时序判定结果：WKD_VAD_SUSPICION_RECENT_RW_TO_RX / _RWX / _UNBACKED_EXEC */
-    ULONG       SuspicionScore;   /* 纯变更语义分（对齐 SS 事件分, 非区域静态分）:
+    ULONG       SuspicionScore;   /* 纯变更语义分（事件分, 非区域静态分）:
                                      ProtectionChanged 0+70+100 / Created UnbackedExec=80 / 其余 0 */
     LARGE_INTEGER Timestamp;      /* 变更检出时间 */
 } WKD_VAD_CHANGE, *PWKD_VAD_CHANGE;
@@ -144,7 +144,7 @@ typedef struct _WKD_VAD_CHANGE {
 /**************************************************/
 
 //
-// 单区域怀疑度分析（对齐 SS VadpAnalyzeRegionSuspicion L2063 +
+// 单区域怀疑度分析（VadpAnalyzeRegionSuspicion L2063 +
 // VadpCalculateSuspicionScore L2135）
 //
 BOOL
@@ -165,7 +165,7 @@ IoaVad_SnapshotProcess(
     );
 
 //
-// 快照对比（对齐 SS VadpCompareSnapshots L2364 merge-compare）
+// 快照对比（VadpCompareSnapshots L2364 merge-compare）
 // 两次快照按 BaseAddress 排序后合并比较，输出变更事件。
 // 返回变更数。
 //
@@ -193,7 +193,7 @@ IoaVad_GetSuspiciousRegions(
 /**************************************************/
 
 //
-// 区域过滤器（对齐 SS VAD_REGION_FILTER）：返回 TRUE 命中
+// 区域过滤器（VAD_REGION_FILTER）：返回 TRUE 命中
 //
 typedef BOOLEAN (*WKD_VAD_REGION_FILTER)(
     _In_  const WKD_VAD_REGION_ENTRY* Region,
@@ -201,18 +201,18 @@ typedef BOOLEAN (*WKD_VAD_REGION_FILTER)(
     );
 
 //
-// 全局统计（对齐 SS VAD_STATISTICS，快照构建/对比时累计）
+// 全局统计（VAD_STATISTICS，快照构建/对比时累计）
 //
 typedef struct _WKD_VAD_STATS {
     ULONG64 TotalScans;           /* 快照构建次数 */
-    ULONG64 TotalRegions;         /* 累计区域计数（对齐 SS TotalRegions） */
-    ULONG64 SuspiciousRegions;    /* 累计可疑区域计数（score>0, 对齐 SS L1950） */
+    ULONG64 TotalRegions;         /* 累计区域计数（TotalRegions） */
+    ULONG64 SuspiciousRegions;    /* 累计可疑区域计数（score>0, L1950） */
     ULONG64 ProtectionChanges;    /* 累计保护变化事件 */
     ULONG64 RWXDetections;        /* 累计 RWX 区域计数 */
 } WKD_VAD_STATS, *PWKD_VAD_STATS;
 
 //
-// 地址 → 区域查找（对齐 SS VadpFindRegion/VadGetRegionInfo，快照已按 BaseAddress 排序）
+// 地址 → 区域查找（VadpFindRegion/VadGetRegionInfo，快照已按 BaseAddress 排序）
 //
 BOOL
 IoaVad_FindRegion(
@@ -222,7 +222,7 @@ IoaVad_FindRegion(
     );
 
 //
-// 过滤器枚举（对齐 SS VadEnumerateRegions，返回 value copies）
+// 过滤器枚举（VadEnumerateRegions，返回 value copies）
 //
 ULONG
 IoaVad_EnumerateRegions(
@@ -253,7 +253,7 @@ IoaVad_GetStatistics(
     );
 
 //
-// VAD 变更告警构造（对齐 SS 回调/变更队列 → wkd ALPC/告警链）。
+// VAD 变更告警构造（回调/变更队列 → wkd ALPC/告警链）。
 // ※ 死代码：接线点未接入，未来由 IoaEngine 阶段6 或 VAD 快照线程
 //   对高危变更调用后 IoaPersistQueueEnqueue + StPersistAlert 入队。
 //

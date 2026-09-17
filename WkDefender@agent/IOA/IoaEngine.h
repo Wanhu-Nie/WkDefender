@@ -66,7 +66,7 @@ IoaObserve(
     );
 
 /*
- * 实时内存监控事件处理 (对齐 SS ReflectiveDLLDetector
+ * 实时内存监控事件处理 (ReflectiveDLLDetector
  *   OnMemoryAllocation / OnProtectionChange, cpp L1835-1901)。
  * RWX 分配 / RW→RX 保护变更 + PE 预判 → 定向扫描触发。
  * ※ 死代码: 依赖驱动 Sm (NtAllocateVirtualMemory/NtProtectVirtualMemory) 启用 +

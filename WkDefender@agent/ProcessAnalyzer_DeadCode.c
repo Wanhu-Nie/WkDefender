@@ -12,6 +12,7 @@
 #include "IOA/IoaTypes.h"
 #include "IOC/IocScanner.h"
 #include "IOC/IocProcessEnrich.h"
+#include "Include/Process/InjectionDetector.h"   /* IpeDetectProcessHollowing (2026-09-15 镂空迁出至 Process\ProcessHollowingDetector.c) */
 #include "IOC/PEAnalyzer/PeAnalyzer.h"
 #include "Memory/MemoryScan.h"
 #include "ProcessThreads.h"

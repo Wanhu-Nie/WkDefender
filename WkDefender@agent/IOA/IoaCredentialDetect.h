@@ -16,7 +16,7 @@
 /*  待接通: 接入阶段由 IoaObserve 解析目标进程名       */
 /*  (WKD_PROCESS.ImageFileName) 后调用。         */
 /*                                                  */
-/*  评分 (对齐 SS BehaviorConstants):                */
+/*  评分 (BehaviorConstants):                */
 /*    LSASS/凭据目标打开(VM_READ|QUERY) +70 T1003.001 */
 /*    SAM +65 T1003.002, 凭据存储 +40 T1555           */
 /*    Token 窃取/复制 +20 T1134                       */
@@ -27,7 +27,7 @@
 #include "IoaTypes.h"
 
 /**************************************************/
-/*   SS BehaviorEventType 语义常量 (对齐 SS L485-662) */
+/*   SS BehaviorEventType 语义常量 (L485-662) */
 /**************************************************/
 
 #define WKD_EVT_PROCESS_OPEN        3       /* ProcessOpen */
@@ -39,7 +39,7 @@
 #define WKD_EVT_TOKEN_DUPLICATE     705     /* TokenDuplicate */
 
 /**************************************************/
-/*   评分常量 (对齐 SS BehaviorConstants)           */
+/*   评分常量 (BehaviorConstants)           */
 /**************************************************/
 
 #define WKD_CRED_LSASS_SCORE        70      /* SS LSASS_ACCESS_SCORE */
@@ -47,7 +47,7 @@
 #define WKD_CRED_STORE_SCORE        40      /* SS CREDENTIAL_STORE_SCORE */
 #define WKD_CRED_TOKEN_SCORE        20      /* Token 操纵 */
 
-/* ProcessOpen 敏感访问位 (对齐 SS L1205: VM_READ|QUERY_INFORMATION) */
+/* ProcessOpen 敏感访问位 (L1205: VM_READ|QUERY_INFORMATION) */
 #define WKD_CRED_OPEN_MASK          (PROCESS_VM_READ | PROCESS_QUERY_INFORMATION)
 
 /**************************************************/

@@ -593,7 +593,7 @@ BOOL MsPatternIndexSearch(
 
 /*====================================================================*/
 /*  模式运行时管理 — SS MemoryScanner 迁移（死代码）         */
-/*  对齐 SS MsEnablePattern（L1296-1338）/ MsRemovePattern（L1196-1292）  */
+/*  MsEnablePattern（L1296-1338）/ MsRemovePattern（L1196-1292）  */
 /*====================================================================*/
 
 /* 按 PatternId 定位模式（Patterns 数组下标 = PatternId-1，PatternId 复核防空洞） */
@@ -609,7 +609,7 @@ static PMS_PATTERN MsPatternFindById(
 
 /*++
  * MsPatternIndexSetEnabled
- *   临时启用/禁用模式（对齐 SS MsEnablePattern：Enable=FALSE → Disabled 标记，搜索跳过；
+ *   临时启用/禁用模式（MsEnablePattern：Enable=FALSE → Disabled 标记，搜索跳过；
  *   已逻辑删除的模式拒绝恢复）。
  *   ※ 死代码: 运行时规则管理接线（wkd 默认以 yara_rules 表重建覆盖）。
  *--*/
@@ -627,7 +627,7 @@ BOOL MsPatternIndexSetEnabled(
 
 /*++
  * MsPatternIndexRemovePattern
- *   逻辑删除模式（对齐 SS MsRemovePattern 语义：搜索跳过 + SetEnabled 不可恢复）。
+ *   逻辑删除模式（MsRemovePattern 语义：搜索跳过 + SetEnabled 不可恢复）。
  *   ※ 死代码: wkd 数组实现保持连续性，不释放 Bytes/Mask（归 Index 所有，
  *     由 MsPatternIndexDestroy 统一回收）；下次 MsImportFromYaraRules 整体重建
  *     时自然排除，与 SS 链表删除 + 置 AhoCorasickReady=0 触发重建机制语义等价。

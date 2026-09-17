@@ -134,7 +134,7 @@ IocZeroDay_IsHeapSprayPattern(
     _Out_opt_ PULONG Value
     )
 {
-    /* 对齐 SS HspIsKnownSprayPattern DWORD 表 + wkd 原有 0x0E0E0E0E:
+    /* HspIsKnownSprayPattern DWORD 表 + wkd 原有 0x0E0E0E0E:
      *   SS: {0x0C0C0C0C, 0x0D0D0D0D, 0x0A0A0A0A, 0x41414141, 0x42424242,
      *        0x90909090, 0x04040404, 0x06060606, 0x07070707, 0x08080808} */
     static const ULONG sprayValues[] = {
@@ -326,7 +326,7 @@ IocZeroDay_CalculateRepetitionScore(
 /*++
 Routine Description:
     重复度评分 — 主字节频率 (0-40) + 最长游程 (0-30) + 低多样性 (0-30)。
-    对齐 SS HspCalculateRepetitionScore (HeapSpray.c L1931-2009)。
+    HspCalculateRepetitionScore (HeapSpray.c L1931-2009)。
     评分越高说明内容越重复 (堆喷越可疑)。
 
 Arguments:
@@ -400,7 +400,7 @@ IocZeroDay_ContainsNopSled(
 Routine Description:
     NOP 等价字节连续滑道检测。0x90/0x0C/0x0D/0x0A 视为 NOP 等价
     (0x0C0C/0x0D0D/0x0A0A 为常见堆喷着陆垫字节), 连续 ≥16 判定。
-    对齐 SS HspContainsNopSled (HeapSpray.c L2466-2503)。
+    HspContainsNopSled (HeapSpray.c L2466-2503)。
 
 Arguments:
     Buf - 内容缓冲。
@@ -442,7 +442,7 @@ IocZeroDay_IsKnownSprayPattern(
 Routine Description:
     已知堆喷模式 — 重复 DWORD 值表 (0x0C0C0C0C 等 11 值) 任一命中,
     或任意单字节 ≥90% 重复 (256 字节样本 90%+ 同一字节即喷样)。
-    对齐 SS HspIsKnownSprayPattern (HeapSpray.c L2403-2460)。
+    HspIsKnownSprayPattern (HeapSpray.c L2403-2460)。
 
 Arguments:
     Buf - 内容缓冲。
@@ -497,7 +497,7 @@ IocZeroDay_DetectSprayType(
     )
 /*++
 Routine Description:
-    堆喷类型分类。判定顺序 (对齐 SS HspDetectSprayType L2015-2154):
+    堆喷类型分类。判定顺序 (HspDetectSprayType L2015-2154):
       NOP sled (>80% NOP/0x0C/0x0D) → JIT (0x3C909090 DWORD 掩码) →
       StringSpray (可打印 ASCII >90%) → BSTR (长度前缀 Unicode) →
       ObjectSpray (≥80% 字节呈现用户态指针)。
@@ -618,7 +618,7 @@ Routine Description:
     IocDetectShellcode (活代码, 避免重复实现); 再补 SS 独有
     6 模式: JMP ESP / CALL ESP / PUSH ESP RET / FS:[0x30] /
     GS:[0x60] / x64 syscall stub / ROR-13 API hash。
-    对齐 SS HspContainsShellcodeSignatures (HeapSpray.c L2509-2642)。
+    HspContainsShellcodeSignatures (HeapSpray.c L2509-2642)。
 
 Arguments:
     Buf - 内容缓冲。

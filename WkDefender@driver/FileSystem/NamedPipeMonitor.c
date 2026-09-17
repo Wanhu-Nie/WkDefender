@@ -1,13 +1,13 @@
 ﻿/**************************************************/
 /*  NamedPipeMonitor 命名管道 C2/横向移动监控        */
-/*  迁移自 SS NamedPipeMonitor.c（重功能实现）       */
+/*  NamedPipeMonitor.c（重功能实现）       */
 /*                                                   */
 /*  活代码：分类引擎（C2 表/系统管道冒充/熵）+ 限速   */
 /*          + boot 窗口 + 统计 + 阻断判定            */
 /*  死代码：管道跟踪表 + LRU + 连接检测（见分区注释） */
 /**************************************************/
 
-#include "NamedPipeMonitor.h"
+#include "FileSystem.h"   /* 内部私有头（2026-09-13 重构）：include 公共头 + 内部结构 */
 #include <ntstrsafe.h>
 
 /**************************************************/
@@ -20,7 +20,7 @@
 /*                      内部结构                   */
 /**************************************************/
 
-/* 已知 C2 管道模式项（对齐 SS NPM_KNOWN_PATTERN） */
+/* 已知 C2 管道模式项（NPM_KNOWN_PATTERN） */
 typedef struct _WKD_NPM_KNOWN_PATTERN {
     PCWSTR             Pattern;
     USHORT             PatternLengthBytes;      /* 不含 NUL */
@@ -29,13 +29,13 @@ typedef struct _WKD_NPM_KNOWN_PATTERN {
     ULONG              BaseThreatScore;
 } WKD_NPM_KNOWN_PATTERN, *PWKD_NPM_KNOWN_PATTERN;
 
-/* 系统管道→预期创建者映射（对齐 SS NPM_SYSTEM_PIPE_MAP） */
+/* 系统管道→预期创建者映射（NPM_SYSTEM_PIPE_MAP） */
 typedef struct _WKD_NPM_SYSTEM_PIPE_MAP {
     PCWSTR PipeName;
     PCSTR  ExpectedCreators[4];
 } WKD_NPM_SYSTEM_PIPE_MAP, *PWKD_NPM_SYSTEM_PIPE_MAP;
 
-/* 已知 C2 管道模式表（对齐 SS g_KnownC2Patterns 39 条） */
+/* 已知 C2 管道模式表（g_KnownC2Patterns 39 条） */
 static const WKD_NPM_KNOWN_PATTERN g_WkdNpmC2Patterns[] = {
     /* CobaltStrike */
     { L"MSSE-",         8,  1, WkdNpmClass_C2_CobaltStrike, 90 },
@@ -89,7 +89,7 @@ static const WKD_NPM_KNOWN_PATTERN g_WkdNpmC2Patterns[] = {
     { L"evil",          6,  2, WkdNpmClass_Suspicious, 50 },
 };
 
-/* 系统管道→预期创建者映射表（对齐 SS g_SystemPipeMappings 20 条，T1036 防御） */
+/* 系统管道→预期创建者映射表（g_SystemPipeMappings 20 条，T1036 防御） */
 static const WKD_NPM_SYSTEM_PIPE_MAP g_WkdNpmSystemPipes[] = {
     /* LSASS 专属 */
     { L"lsass",             { "lsass.exe", NULL } },
@@ -131,11 +131,11 @@ static const WKD_NPM_SYSTEM_PIPE_MAP g_WkdNpmSystemPipes[] = {
 static volatile LONG g_NpmState = WKD_NPM_STATE_UNINITIALIZED;
 static WKD_NPM_STATISTICS g_NpmStats;
 
-/* boot 期窗口（对齐 SS ShadowFsIsBootPhase）：系统启动后 120s 内跳过分析，
+/* boot 期窗口（ShadowFsIsBootPhase）：系统启动后 120s 内跳过分析，
  * 防 csrss/lsass/services 早期管道洪泛挂起。窗口结束后原子锁死为 0。 */
 static volatile LONG g_NpmBootPhaseActive = FALSE;
 
-/* 速率限制（1s 窗口 CAS，对齐 SS NpmCheckRateLimit） */
+/* 速率限制（1s 窗口 CAS，NpmCheckRateLimit） */
 static LARGE_INTEGER g_NpmRateWindowStart;
 static volatile LONG g_NpmRateWindowCount;
 
@@ -225,7 +225,7 @@ static const USHORT g_WkdNpmLog2Table[257] = {
     7953
 };
 
-/* 定点 log2：>256 通过右移缩小后查表插值（对齐 SS NpmLog2Fixed） */
+/* 定点 log2：>256 通过右移缩小后查表插值（NpmLog2Fixed） */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 static USHORT
 WkdNpmLog2Fixed(
@@ -245,7 +245,7 @@ WkdNpmLog2Fixed(
 }
 
 /*
- * Shannon 熵（定点 ×1024，仅统计 ASCII 0-127，对齐 SS NpmCalculateEntropy）：
+ * Shannon 熵（定点 ×1024，仅统计 ASCII 0-127，NpmCalculateEntropy）：
  *   H*1024 = log2(N)*1024 - (1/N) * Σ freq[i]*log2(freq[i])*1024
  */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -289,7 +289,7 @@ WkdNpmCalculateEntropy(
 /*                管道分类 / 验证                  */
 /**************************************************/
 
-/* ANSI 大小写不敏感相等（对齐 SS NpmImageNameEquals） */
+/* ANSI 大小写不敏感相等（NpmImageNameEquals） */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 static BOOLEAN
 WkdNpmImageNameEquals(
@@ -317,7 +317,7 @@ WkdNpmImageNameEquals(
 }
 
 /*
- * 管道分类（对齐 SS NpmClassifyPipe）：
+ * 管道分类（NpmClassifyPipe）：
  *   先精确/前缀/包含匹配 39 条 C2 模式；未命中则高熵判定
  *   （熵>4.2bit 且名长≥8 → HighEntropy，Score=55+(熵-4300)/100 cap 85）。
  */
@@ -384,7 +384,7 @@ WkdNpmClassifyPipe(
 }
 
 /*
- * 系统管道冒充验证（对齐 SS NpmValidateSystemPipe，T1036）：
+ * 系统管道冒充验证（NpmValidateSystemPipe，T1036）：
  *   管道名匹配系统表且创建者匹配预期 → Validated；名匹配但创建者不符 → Spoofed。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -419,10 +419,10 @@ WkdNpmValidateSystemPipe(
 
 /*
  * WkdNpmPreCreateNamedPipe — 命名管道创建分析（纯分类引擎）。
- * 内部编排（对齐 SS NpMonPreCreateNamedPipe 语义）：
+ * 内部编排（NpMonPreCreateNamedPipe 语义）：
  *   Phase 1 系统管道验证（限速豁免）→ Spoofed 直接返回并计数；
  *   Phase 2 速率限制 → C2 模式/熵分类 → 计数。
- * 阻断/上送/评分由接入层（Filter.c FspPreCreatePipe）决策。
+ * 阻断/上送/评分由接入层（Filter.c CbpPreCreateNotifyCallbackPipe）决策。
  */
 _Use_decl_annotations_
 WKD_NPM_PIPE_CLASS
@@ -454,7 +454,7 @@ WkdNpmPreCreateNamedPipe(
         InterlockedIncrement64(&g_NpmStats.SpoofedSystemPipes);
         InterlockedIncrement64(&g_NpmStats.SuspiciousPipesDetected);
         if (OutThreatScore) {
-            *OutThreatScore = 95;   /* 对齐 SS 冒充阻断分 */
+            *OutThreatScore = 95;   /* 冒充阻断分 */
         }
         return WkdNpmClass_SpoofedSystem;
     }
@@ -505,7 +505,7 @@ WkdNpmIsBlockworthy(
     if (Classification == WkdNpmClass_SpoofedSystem) {
         return TRUE;
     }
-    /* 已知 C2 管道且威胁分达标：阻断（对齐 SS threatScore >= 90） */
+    /* 已知 C2 管道且威胁分达标：阻断（threatScore >= 90） */
     if (Classification >= WkdNpmClass_C2_CobaltStrike &&
         Classification <= WkdNpmClass_C2_Generic &&
         ThreatScore >= 90) {
@@ -641,7 +641,7 @@ WkdNpmIsActive(
 /**************************************************/
 /*  死代码分区：管道跟踪表 + LRU + 连接检测          */
 /*                                                   */
-/*  功能面完整落位（对齐 SS NPM_PIPE_ENTRY +         */
+/*  功能面完整落位（NPM_PIPE_ENTRY +         */
 /*  NpmTrackPipe + NpmEvictLruEntries），未接入：     */
 /*    - wkd 管道事件一次性上送 agent（消息总线覆盖）， */
 /*      agent 因果图承担跨进程关联，内核无消费方；    */
@@ -698,7 +698,7 @@ static LIST_ENTRY g_NpmLruList;
 static EX_PUSH_LOCK g_NpmLruLock;
 static volatile LONG g_NpmTotalEntries;
 
-/* DJB2 哈希（大小写不敏感，对齐 SS NpmHashPipeName） */
+/* DJB2 哈希（大小写不敏感，NpmHashPipeName） */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 static ULONG
 WkdNpmHashPipeName(
@@ -734,7 +734,7 @@ WkdNpmAllocateEntry(
     return entry;
 }
 
-/* 创建跟踪（去重 + LRU 插入；对齐 SS NpmTrackPipe）。死代码：接入层未调用。 */
+/* 创建跟踪（去重 + LRU 插入；NpmTrackPipe）。死代码：接入层未调用。 */
 _IRQL_requires_(PASSIVE_LEVEL)
 static NTSTATUS
 WkdNpmTrackPipe(
@@ -825,7 +825,7 @@ WkdNpmTrackPipe(
     return STATUS_SUCCESS;
 }
 
-/* LRU 淘汰（对齐 SS NpmEvictLruEntries：LRU 锁收集 → 桶锁移除）。死代码。 */
+/* LRU 淘汰（NpmEvictLruEntries：LRU 锁收集 → 桶锁移除）。死代码。 */
 _IRQL_requires_(PASSIVE_LEVEL)
 static VOID
 WkdNpmEvictLruEntries(
@@ -881,12 +881,12 @@ WkdNpmOnPipeConnected(
     return STATUS_NOT_IMPLEMENTED;
 }
 
-/* 周期清理常量（对齐 SS NPM_CLEANUP_INTERVAL_MS / NPM_PIPE_IDLE_TIMEOUT_100NS）。
+/* 周期清理常量（NPM_CLEANUP_INTERVAL_MS / NPM_PIPE_IDLE_TIMEOUT_100NS）。
  * SS 亦仅在 .h 预留，.c 未实现周期清理线程（LRU 仅容量超限驱逐）；wkd 同标死代码。 */
 #define WKD_NPM_CLEANUP_INTERVAL_MS      120000
 #define WKD_NPM_PIPE_IDLE_TIMEOUT_100NS  (-(LONGLONG)300 * 10000000LL)   /* 5 min */
 
-/* 独立条目释放（对齐 SS NpmFreeEntry）。死代码：由 TrackCleanup / EvictLruEntries 消费。 */
+/* 独立条目释放（NpmFreeEntry）。死代码：由 TrackCleanup / EvictLruEntries 消费。 */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 static VOID
 WkdNpmFreeEntry(
@@ -898,7 +898,7 @@ WkdNpmFreeEntry(
     }
 }
 
-/* 跟踪表初始化（对齐 SS NpMonInitialize 的哈希表 + LRU 段）。死代码：
+/* 跟踪表初始化（NpMonInitialize 的哈希表 + LRU 段）。死代码：
  * 接入前提——WkdNpmTrackPipe 激活时在 WkdNpmInitialize 调用。 */
 _IRQL_requires_(PASSIVE_LEVEL)
 static NTSTATUS
@@ -917,7 +917,7 @@ WkdNpmTrackInitialize(
     return STATUS_SUCCESS;
 }
 
-/* 跟踪表清理（对齐 SS NpMonShutdown 的哈希表排空 + LRU 释放）。死代码。 */
+/* 跟踪表清理（NpMonShutdown 的哈希表排空 + LRU 释放）。死代码。 */
 _IRQL_requires_(PASSIVE_LEVEL)
 static VOID
 WkdNpmTrackCleanup(

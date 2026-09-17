@@ -671,7 +671,7 @@ typedef struct _ATTACK_TEMPLATE {
  * 威胁类别 — 战术/攻击类别维度，对齐 FSM_ATTACK_CLASS 的
  * 8 类攻击类别 + 家族兜底类别 (Ransomware/Malware/Exploit)。
  * 推断优先: T3Tactic.ConfirmedClass → FsmClass 映射；
- * 回退: 检测名子串 (ransom→Ransomware 等, 对齐 SS InferCategory)。
+ * 回退: 检测名子串 (ransom→Ransomware 等, InferCategory)。
  */
 typedef enum _DEF_THREAT_CATEGORY {
     DefThreatCat_None                = 0,
@@ -693,7 +693,7 @@ typedef enum _DEF_THREAT_CATEGORY {
 
 /*
  * 置信度级别 — 五级置信度。
- * 由多引擎一致率推导 (对齐 SS AggregateEngineDetections 的
+ * 由多引擎一致率推导 (AggregateEngineDetections 的
  * agreement ratio: ≥0.9 Confirmed / ≥0.7 High / ≥0.5 Medium / else Low)。
  */
 typedef enum _DEF_CONFIDENCE_LEVEL {
@@ -705,7 +705,7 @@ typedef enum _DEF_CONFIDENCE_LEVEL {
 } DEF_CONFIDENCE_LEVEL, *PDEF_CONFIDENCE_LEVEL;
 
 /*
- * 响应动作 — 统一处置动作 (对齐 SS ResponseAction, 剔除 Log/Remediate/
+ * 响应动作 — 统一处置动作 (ResponseAction, 剔除 Log/Remediate/
  * Rollback 冗余项)。由 Verdict 严重度映射推荐, 由响应分发执行。
  */
 typedef enum _DEF_RESPONSE_ACTION {
@@ -761,7 +761,7 @@ typedef enum _WKD_HEAP_SPRAY_TYPE {
 } WKD_HEAP_SPRAY_TYPE, *PWKD_HEAP_SPRAY_TYPE;
 
 /*
- * 检测标志 (对齐 SS HS_DETECTION_FLAGS, 位序一致)。
+ * 检测标志 (HS_DETECTION_FLAGS, 位序一致)。
  */
 #define WKD_HSF_NONE                0x00000000
 #define WKD_HSF_HIGH_ALLOC_RATE     0x00000001   /* 高分配率 (HsFlag_HighAllocationRate) */
@@ -774,30 +774,30 @@ typedef enum _WKD_HEAP_SPRAY_TYPE {
 #define WKD_HSF_JIT_PATTERN         0x00000080   /* JIT 模式 (HsFlag_JitPattern) */
 
 /*
- * 堆喷分析结果 (对齐 SS HS_SPRAY_RESULT)。
+ * 堆喷分析结果 (HS_SPRAY_RESULT)。
  * 值语义, 栈返回, 无需释放 (SS 池分配 + HsFreeResult 在 wkd 废弃)。
  */
 typedef struct _WKD_HEAP_SPRAY_RESULT {
-    BOOLEAN             SprayDetected;          /* 对齐 SS SprayDetected */
-    WKD_HEAP_SPRAY_TYPE Type;                   /* 对齐 SS Type */
-    ULONG               Flags;                  /* 对齐 SS Flags (WKD_HSF_*) */
-    ULONG               ConfidenceScore;        /* 对齐 SS ConfidenceScore [0,1000] */
-    ULONG               ProcessId;              /* 对齐 SS ProcessId */
-    ULONG               AllocationCount;        /* 对齐 SS AllocationCount */
-    ULONG64             TotalSize;              /* 对齐 SS TotalSize */
-    ULONG64             AverageSize;            /* 对齐 SS AverageSize */
-    ULONG               AllocationsPerSecond;   /* 对齐 SS AllocationsPerSecond */
-    UCHAR               DominantPattern[64];    /* 对齐 SS DominantPattern */
-    ULONG               DominantPatternSize;    /* 对齐 SS DominantPatternSize */
-    ULONG               PatternRepetitions;     /* 对齐 SS PatternRepetitions */
-    ULONG               UniquePatterns;         /* 对齐 SS UniquePatterns */
-    ULONG               AlignedCount;           /* 对齐 SS AlignedCount (页对齐) */
-    ULONG_PTR           LowestAddress;          /* 对齐 SS LowestAddress */
-    ULONG_PTR           HighestAddress;         /* 对齐 SS HighestAddress */
-    SIZE_T              AddressSpan;            /* 对齐 SS AddressSpan (Highest - Lowest) */
-    LARGE_INTEGER       FirstAllocation;        /* 对齐 SS FirstAllocation */
-    LARGE_INTEGER       LastAllocation;         /* 对齐 SS LastAllocation */
-    ULONG               DurationMs;             /* 对齐 SS DurationMs */
+    BOOLEAN             SprayDetected;          /* SprayDetected */
+    WKD_HEAP_SPRAY_TYPE Type;                   /* Type */
+    ULONG               Flags;                  /* Flags (WKD_HSF_*) */
+    ULONG               ConfidenceScore;        /* ConfidenceScore [0,1000] */
+    ULONG               ProcessId;              /* ProcessId */
+    ULONG               AllocationCount;        /* AllocationCount */
+    ULONG64             TotalSize;              /* TotalSize */
+    ULONG64             AverageSize;            /* AverageSize */
+    ULONG               AllocationsPerSecond;   /* AllocationsPerSecond */
+    UCHAR               DominantPattern[64];    /* DominantPattern */
+    ULONG               DominantPatternSize;    /* DominantPatternSize */
+    ULONG               PatternRepetitions;     /* PatternRepetitions */
+    ULONG               UniquePatterns;         /* UniquePatterns */
+    ULONG               AlignedCount;           /* AlignedCount (页对齐) */
+    ULONG_PTR           LowestAddress;          /* LowestAddress */
+    ULONG_PTR           HighestAddress;         /* HighestAddress */
+    SIZE_T              AddressSpan;            /* AddressSpan (Highest - Lowest) */
+    LARGE_INTEGER       FirstAllocation;        /* FirstAllocation */
+    LARGE_INTEGER       LastAllocation;         /* LastAllocation */
+    ULONG               DurationMs;             /* DurationMs */
 } WKD_HEAP_SPRAY_RESULT, *PWKD_HEAP_SPRAY_RESULT;
 
 

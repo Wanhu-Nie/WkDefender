@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <math.h>   /* log() */
 
-/* 提取阈值 (对齐 SS 常量表) */
+/* 提取阈值 (常量表) */
 #define IOC_STR_MIN_ASCII_LEN      4    /* SS kMinAsciiStringLength=4 */
 #define IOC_STR_MAX_SCAN_STR       8192 /* SS kMaxStringLength=8192 */
 #define IOC_STR_MIN_BASE64_LEN     16   /* SS kMinBase64Length=16 */
@@ -36,14 +36,14 @@ typedef struct _IOC_STR_KW {
     IOC_STR_CATEGORY Cat;
 } IOC_STR_KW;
 
-/* ROT 命中关键词 (对齐 SS kRotKeywords 12 条子集) */
+/* ROT 命中关键词 (kRotKeywords 12 条子集) */
 static const char* const g_IocStrCmdKeywords[] = {
     "powershell", "cmd.exe", "cmd /c", "wmic", "rundll32", "mshta",
     "regsvr32", "certutil", "bitsadmin", "powershell.exe", "invoke-", "schtasks"
 };
 #define IOC_STR_CMD_KW_COUNT  (sizeof(g_IocStrCmdKeywords)/sizeof(g_IocStrCmdKeywords[0]))
 
-/* 敏感 API 名 (对齐 SS kKnownAPIs 子集, 供 APIName 分类) */
+/* 敏感 API 名 (kKnownAPIs 子集, 供 APIName 分类) */
 static const char* const g_IocStrKnownApis[] = {
     "VirtualAlloc", "VirtualProtect", "WriteProcessMemory", "CreateRemoteThread",
     "ReadProcessMemory", "NtCreateThread", "SetWindowsHookEx", "QueueUserAPC",
@@ -334,7 +334,7 @@ Routine Description:
 
     简化迁移说明：
       - 宽字符串 (UTF-16LE) 提取: 与 ASCII 合并为单通道 (读字节流, 宽串
-        的低字节落在 ASCII 通道被提取, 语义等价但不去重) — 对齐 SS 独立
+        的低字节落在 ASCII 通道被提取, 语义等价但不去重) — 独立
         ExtractWideStrings 的细节未全量。
       - 多字节 XOR / 栈字符串 / C2 关键词独立表: 见 StringExtractor.h。
 
@@ -374,7 +374,7 @@ Return Value:
     if (Data == NULL || Size == 0) return STATUS_SUCCESS;
     if (Agg) Agg->StrExtRan = TRUE;
 
-    /* 前 16MB 扫描 (对齐 SS kMaxScanAddress 的保守静态扫描) */
+    /* 前 16MB 扫描 (kMaxScanAddress 的保守静态扫描) */
     maxScan = Size > (16ULL * 1024 * 1024) ? (16ULL * 1024 * 1024) : Size;
 
     for (i = 0; i < maxScan; i++) {

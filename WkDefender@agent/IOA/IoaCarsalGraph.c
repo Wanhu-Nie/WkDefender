@@ -669,7 +669,7 @@ Return Value:
 }
 
 /**************************************************/
-/*       关系查询 API (对齐 SS 进程关系图)            */
+/*       关系查询 API (进程关系图)            */
 /*                                                  */
 /*  迁移自 ShadowStrike ProcessRelationship.c       */
 /*  PrGetNodeInfo / PrGetRelationships /            */
@@ -691,7 +691,7 @@ IoaGqGetNodeInfo(
     )
 /*++
 Routine Description:
-    进程节点信息查询 (对齐 SS PrGetNodeInfo)。
+    进程节点信息查询 (PrGetNodeInfo)。
 
 Arguments:
     Mgr    — 因果图实例。
@@ -744,7 +744,7 @@ IoaGqGetRelationships(
     )
 /*++
 Routine Description:
-    进程关系列表查询 (对齐 SS PrGetRelationships)。
+    进程关系列表查询 (PrGetRelationships)。
     返回该节点全部出边 + 入边 (可过滤边类型), 拷贝语义。
 
 Arguments:
@@ -824,7 +824,7 @@ IoaGqGetProcessChildren(
     )
 /*++
 Routine Description:
-    进程子节点查询 (对齐 SS PrGetChildren)。
+    进程子节点查询 (PrGetChildren)。
     通过谱系节点 ChildrenHead 遍历直接子进程。
 
 Arguments:
@@ -883,7 +883,7 @@ IoaGqGetStatistics(
     )
 /*++
 Routine Description:
-    因果图统计查询 (对齐 SS PrGetStatistics)。
+    因果图统计查询 (PrGetStatistics)。
 
 Arguments:
     Mgr — 因果图实例。

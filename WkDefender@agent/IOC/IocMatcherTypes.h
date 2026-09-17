@@ -18,7 +18,7 @@
 typedef enum _IOC_MATCH_MODE {
     IocMatchMode_Exact = 0,         // 精确匹配
     IocMatchMode_Wildcard,           // 通配符 (*, ?)
-    IocMatchMode_Regex,              // 正则表达式（对齐 SS 枚举，SS 亦未实现，仅预留）
+    IocMatchMode_Regex,              // 正则表达式（枚举，SS 亦未实现，仅预留）
     IocMatchMode_CIDR,               // CIDR 网段 (192.168.0.0/16)
     IocMatchMode_Subdomain,          // 子域名 (*.example.com)
     IocMatchMode_MaxValue
@@ -48,7 +48,7 @@ typedef enum _IOC_MATCH_TYPE {
     IocType_ProcessName,
     IocType_CommandLine,
     IocType_JA3,
-    IocType_YARA,                        /* 对齐 SS 枚举；YARA 判定由 IocYaraScanner 承担，此处仅预留 */
+    IocType_YARA,                        /* 枚举；YARA 判定由 IocYaraScanner 承担，此处仅预留 */
     IocType_Custom,
     IocType_MaxValue
 } IOC_MATCH_TYPE, *PIOC_MATCH_TYPE;

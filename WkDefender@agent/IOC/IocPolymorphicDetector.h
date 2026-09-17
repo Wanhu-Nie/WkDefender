@@ -18,7 +18,7 @@
 
 /**************************************************/
 /*               多态引擎类型                       */
-/*  对齐 SS PolyEngineType                         */
+/*  PolyEngineType                         */
 /**************************************************/
 
 typedef enum _WKD_POLY_ENGINE {
@@ -47,7 +47,7 @@ typedef struct _WKD_POLY_RESULT {
     ULONG               NopRatio;        /* NOP 占比 x100 (如 15=15%) */
     ULONG               AnalysisTimeMs;
 
-    /* 模糊哈希 (CTPH "blockSize:sig1:sig2" 最大 109+1, 对齐 SS kMaxResultLength=148) */
+    /* 模糊哈希 (CTPH "blockSize:sig1:sig2" 最大 109+1, kMaxResultLength=148) */
     CHAR                FuzzyHash[128];
 } WKD_POLY_RESULT, *PWKD_POLY_RESULT;
 
@@ -57,7 +57,7 @@ typedef struct _WKD_POLY_RESULT {
 
 /*++
 Routine Description:
-    快速预检代码是否可能为多态/加密 (对齐 SS IsPotentiallyPolymorphic):
+    快速预检代码是否可能为多态/加密 (IsPotentiallyPolymorphic):
     熵>=6.5 / NOP 占比>15% / XOR 解密循环模式。
 
 Arguments:
@@ -95,7 +95,7 @@ IocPoly_AnalyzeBuffer(
 
 /*++
 Routine Description:
-    XOR 解密循环检测 (对齐 SS DetectXORLoop)。
+    XOR 解密循环检测 (DetectXORLoop)。
     XOR [reg], imm / XOR [reg], reg + 循环跳转 (E2/75)。
 
 Arguments:

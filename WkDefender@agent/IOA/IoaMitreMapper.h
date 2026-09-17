@@ -742,7 +742,7 @@ static const IOA_TECHNIQUE_ENTRY g_IoaTechniqueTable[] = {
 /*           技术 ID → 表项 精确查找                 */
 /*                                                   */
 /*  线性查 g_IoaTechniqueTable.StringId, 返回表项     */
-/*  指针一次取全字段 (对齐 SS MmLookupTechnique       */
+/*  指针一次取全字段 (MmLookupTechnique       */
 /*  L1308; wkd 用户态静态表无需 O(1) 哈希).          */
 /**************************************************/
 
@@ -764,7 +764,7 @@ IoaMitreLookupById(
 /**************************************************/
 /*           技术→战术 反查                         */
 /*                                                   */
-/*  对齐 SS ActpGetPhaseForTechnique (L1534-1554).   */
+/*  ActpGetPhaseForTechnique (L1534-1554).   */
 /*  入参 "T1055.001" → 截断基技术 "T1055" → 查表.    */
 /*  未命中: TacticId=NULL, BaseScore=10 (SS 默认).   */
 /**************************************************/
@@ -787,7 +787,7 @@ IoaMitreLookupTactic(
     }
 
     *TacticId = NULL;
-    *BaseScore = 10;    /* 对齐 SS ActpGetPhaseForTechnique 默认 base=10 */
+    *BaseScore = 10;    /* ActpGetPhaseForTechnique 默认 base=10 */
 
     /* 截断子技术: "T1055.001" → "T1055" */
     while (TechniqueId[len] != 0 && TechniqueId[len] != L'.' && len < 15) {
@@ -808,7 +808,7 @@ IoaMitreLookupTactic(
 /**************************************************/
 /*           技术名/StringId → 表项 查找 (死代码)     */
 /*                                                   */
-/*  对齐 SS MmLookupByName (L1380). 无当前消费方,     */
+/*  MmLookupByName (L1380). 无当前消费方,     */
 /*  供未来攻击链叙事/报告按名称反查技术.              */
 /**************************************************/
 
@@ -858,7 +858,7 @@ static const IOA_DANGEROUS_COMBO g_IoaDangerousCombos[] = {
 /**************************************************/
 /*           按战术枚举技术 (死代码)                 */
 /*                                                   */
-/*  对齐 SS MmGetTechniquesByTactic (L1719).         */
+/*  MmGetTechniquesByTactic (L1719).         */
 /*  返回该战术下技术 StringId 数组, 无当前消费方.     */
 /**************************************************/
 

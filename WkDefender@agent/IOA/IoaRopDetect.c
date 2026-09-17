@@ -18,7 +18,7 @@
 #include "../IOC/PEAnalyzer/PeAnalyzer.h"    /* 唯一公共入口 */
 
 /**************************************************/
-/*            寄存器位图 (对齐 SS REG_* L190-205)   */
+/*            寄存器位图 (REG_* L190-205)   */
 /**************************************************/
 #define WKD_ROP_REG_RAX   0x0001
 #define WKD_ROP_REG_RCX   0x0002
@@ -38,7 +38,7 @@
 #define WKD_ROP_REG_R15   0x8000
 
 /**************************************************/
-/*  危险 gadget 模式表 (对齐 SS RoppInitializeDangerousPatterns 12 条) */
+/*  危险 gadget 模式表 (RoppInitializeDangerousPatterns 12 条) */
 /**************************************************/
 static const BYTE kRopXchgEsp32[]      = { 0x94 };
 static const BYTE kRopXchgRsp64[]      = { 0x48, 0x94 };
@@ -73,7 +73,7 @@ static const WKD_ROP_DANGEROUS_PATTERN g_RopDangerousPatterns[] = {
 /**************************************************/
 
 //
-// FNV-1a 地址哈希 (对齐 SS RoppHashAddress L1821)。
+// FNV-1a 地址哈希 (RoppHashAddress L1821)。
 //
 static
 ULONG
@@ -93,7 +93,7 @@ IoaRopHashAddress(
 }
 
 //
-// 解码 ModR/M+SIB+disp 指令后缀长度 (对齐 SS RoppDecodeModRMLength L2064)。
+// 解码 ModR/M+SIB+disp 指令后缀长度 (RoppDecodeModRMLength L2064)。
 // 返回自 ModR/M 字节起的总长度; 0 = 非法。
 //
 static
@@ -134,7 +134,7 @@ IoaRopDecodeModRMLength(
 }
 
 //
-// 分类潜在 gadget (对齐 SS RoppClassifyGadget L2136)。
+// 分类潜在 gadget (RoppClassifyGadget L2136)。
 // 完整解码 FF 前缀 JMP/CALL reg/mem (ModR/M+SIB+disp)。
 //
 static
@@ -179,7 +179,7 @@ IoaRopClassifyGadget(
 }
 
 //
-// gadget 语义分析 (对齐 SS RoppAnalyzeGadgetSemantics L2224):
+// gadget 语义分析 (RoppAnalyzeGadgetSemantics L2224):
 // PUSH/POP/MOV/XCHG 的寄存器/内存/栈影响位图。
 //
 static
@@ -243,7 +243,7 @@ IoaRopAnalyzeGadgetSemantics(
 }
 
 //
-// gadget 危险度评分 (对齐 SS RoppCalculateDangerScore L2333), cap 100。
+// gadget 危险度评分 (RoppCalculateDangerScore L2333), cap 100。
 //
 static
 ULONG
@@ -256,7 +256,7 @@ IoaRopCalculateDangerScore(
     ULONG i;
 
     if (Gadget == NULL) return 0;
-    UNREFERENCED_PARAMETER(Detector);   /* 危险模式表为全局, 对齐 SS DangerousPatterns 成员语义 */
+    UNREFERENCED_PARAMETER(Detector);   /* 危险模式表为全局, DangerousPatterns 成员语义 */
 
     switch (Gadget->Type) {
     case WkdRopGadget_Syscall:
@@ -287,7 +287,7 @@ IoaRopCalculateDangerScore(
     if (Gadget->Semantics.WritesMemory) score += 15;
     if (Gadget->Semantics.RegistersModified & WKD_ROP_REG_RSP) score += 40;
 
-    /* 危险模式命中加分 (对齐 SS DangerousPatterns 循环 L2382) */
+    /* 危险模式命中加分 (DangerousPatterns 循环 L2382) */
     for (i = 0; i < RTL_NUMBER_OF(g_RopDangerousPatterns); i++) {
         if (Gadget->Size >= g_RopDangerousPatterns[i].Length &&
             memcmp(Gadget->Bytes, g_RopDangerousPatterns[i].Bytes,
@@ -300,7 +300,7 @@ IoaRopCalculateDangerScore(
 }
 
 //
-// 速率限制 (对齐 SS RoppCheckRateLimit L3398): 1s 窗口计数。
+// 速率限制 (RoppCheckRateLimit L3398): 1s 窗口计数。
 //
 static
 BOOLEAN
@@ -320,7 +320,7 @@ IoaRopCheckRateLimit(
 }
 
 //
-// 栈 pivot 检测 (对齐 SS RoppDetectStackPivot L3023): SP 越出 [StackLimit, StackBase]。
+// 栈 pivot 检测 (RoppDetectStackPivot L3023): SP 越出 [StackLimit, StackBase]。
 //
 static
 BOOLEAN
@@ -342,7 +342,7 @@ IoaRopDetectStackPivot(
 }
 
 //
-// 模块分布统计登记 (对齐 SS ROP_DETECTION_RESULT.ModuleBreakdown; SS 字段未填充, agent 补)。
+// 模块分布统计登记 (ROP_DETECTION_RESULT.ModuleBreakdown; SS 字段未填充, agent 补)。
 //
 static
 VOID
@@ -372,7 +372,7 @@ IoaRopRecordModuleBreakdown(
 }
 
 //
-// 攻击分类 (对齐 SS RoppClassifyAttack L3060): 链条目 gadget 类型计数。
+// 攻击分类 (RoppClassifyAttack L3060): 链条目 gadget 类型计数。
 // StackPivot 优先 → syscall→SROP → ROP/JOP/COP → Mixed。
 //
 static
@@ -417,7 +417,7 @@ IoaRopClassifyChain(
 }
 
 //
-// 置信度/严重度评分 (对齐 SS RoppCalculateConfidence L3132):
+// 置信度/严重度评分 (RoppCalculateConfidence L3132):
 // 链长≥10/5/3→90/70/50 + pivot+20; 危险 gadget 平均分→severity; privileged→≥80;
 // dangerScore≥50 gadget≥3→+20; SROP→≥90 / StackPivot→≥80。
 //
@@ -468,7 +468,7 @@ IoaRopScoreChain(
 }
 
 //
-// 载荷推断 (对齐 SS RoppInferPayload L3206):
+// 载荷推断 (RoppInferPayload L3206):
 // 寄存器位图 RCX/RDX/R8/R9 ≥3 → 多参 API 调用; REG_RSP → pivot; Syscall → 直调链。
 //
 static
@@ -532,7 +532,7 @@ IoaRopInferChainPayload(
 }
 
 //
-// 链检测 (对齐 SS RoppDetectChain L2912): 栈槽值 → 可执行模块判定 (MsIsAddrInModuleSet)
+// 链检测 (RoppDetectChain L2912): 栈槽值 → 可执行模块判定 (MsIsAddrInModuleSet)
 // → gadget 库查找 → 连续链 ≥MinChainLength。
 //
 static
@@ -649,7 +649,7 @@ IoaRop_ClassifyAttack(
     )
 /*++
 Routine Description:
-    攻击分类（对齐 SS RoppClassifyAttack L3062）：syscall→SROP；
+    攻击分类（RoppClassifyAttack L3062）：syscall→SROP；
     RET 多→ROP；JMP 多→JOP；CALL 多→COP；混合→Mixed。
 --*/
 {
@@ -819,7 +819,7 @@ Routine Description:
         }
     }
 
-    /* 3. 链判定（对齐 SS MinChainLength=3） */
+    /* 3. 链判定（MinChainLength=3） */
     if (Result->MaxConsecutiveRet >= 3 || Result->GadgetCount >= 3) {
         Result->ChainDetected = TRUE;
     }
@@ -847,7 +847,7 @@ IoaRop_Initialize(
     )
 /*++
 Routine Description:
-    初始化 ROP 检测器状态（对齐 SS RopInitialize L553）。
+    初始化 ROP 检测器状态（RopInitialize L553）。
     Detector 须调用方堆分配（约 500KB+）。初始化锁/配置/统计/速率限制。
 --*/
 {
@@ -885,7 +885,7 @@ IoaRop_Shutdown(
     )
 /*++
 Routine Description:
-    关闭检测器，释放锁资源（对齐 SS RopShutdown L701）。
+    关闭检测器，释放锁资源（RopShutdown L701）。
 --*/
 {
     if (Detector == NULL || Detector->Signature != WKD_ROP_DETECTOR_SIGNATURE) return;
@@ -908,7 +908,7 @@ IoaRop_ScanModuleForGadgets(
     )
 /*++
 Routine Description:
-    扫描模块内存镜像的可执行节构建 gadget 库（对齐 SS RopScanModuleForGadgets L816）。
+    扫描模块内存镜像的可执行节构建 gadget 库（RopScanModuleForGadgets L816）。
     ModuleData 须为模块内存镜像 buffer（节数据按 VirtualAddress 布局，对齐 SS
     ModuleBase+sectionVa 扫模块内存）；ModuleBase 为加载基址（栈槽值匹配）。
     未来调用方可用 MsReadMemory 读整个 SizeOfImage 得到镜像。
@@ -957,7 +957,7 @@ Routine Description:
             type = IoaRopClassifyGadget(ModuleData + va + offset, vs - offset, &gadgetSize);
             if (type == WkdRopGadget_Unknown || gadgetSize == 0) continue;
 
-            /* 回溯构建 2-16 字节 gadget（对齐 SS L959-983） */
+            /* 回溯构建 2-16 字节 gadget（L959-983） */
             maxBackScan = min(WKD_ROP_GADGET_MAX_SIZE, offset);
             for (backScan = 0; backScan <= maxBackScan; backScan++) {
                 ULONG totalSize = backScan + gadgetSize;
@@ -1005,7 +1005,7 @@ IoaRop_AddGadget(
     )
 /*++
 Routine Description:
-    单条 gadget 入库（对齐 SS RopAddGadget L1015）：
+    单条 gadget 入库（RopAddGadget L1015）：
     语义分析 + 危险度评分 + 哈希入桶（FNV-1a, 1024 桶）。
 --*/
 {
@@ -1061,7 +1061,7 @@ IoaRop_LookupGadget(
     )
 /*++
 Routine Description:
-    按地址查库拷贝 gadget（对齐 SS RopLookupGadget L1099）。
+    按地址查库拷贝 gadget（RopLookupGadget L1099）。
     拷贝出避免生命周期依赖。
 --*/
 {
@@ -1101,7 +1101,7 @@ IoaRop_AnalyzeStackBuffer(
     )
 /*++
 Routine Description:
-    栈缓冲地址驱动分析（对齐 SS RopAnalyzeStackBuffer L1357）：
+    栈缓冲地址驱动分析（RopAnalyzeStackBuffer L1357）：
     栈槽值 → 查 gadget 库 → 连续链判定。值 <0x10000 跳过（对齐 SS）。
     Result 堆分配，调用方 IoaRop_FreeResult。
     ※ 死代码：需已构建 gadget 库（IoaRop_ScanModuleForGadgets 死代码）。
@@ -1174,7 +1174,7 @@ Routine Description:
                 result->ChainDetected = TRUE;
             }
         } else {
-            /* 非库内地址打断链（对齐 SS L1464-1475） */
+            /* 非库内地址打断链（L1464-1475） */
             consecutiveGadgets = 0;
         }
         if (result->ChainLength >= Detector->Config.MaxChainLength) break;
@@ -1203,7 +1203,7 @@ IoaRop_AnalyzeStack(
     )
 /*++
 Routine Description:
-    线程栈完整分析（对齐 SS RopAnalyzeStack L1173）：
+    线程栈完整分析（RopAnalyzeStack L1173）：
       WptGetThreadContext(Rsp→CurrentSp) → WptGetThreadStackBounds(TEB 栈界) →
       MsReadMemory(读 min(4KB, 可用栈)) → MsBuildModuleSet(模块判定) →
       pivot 检测 → 链检测 → 分类/评分/载荷推断。
@@ -1243,7 +1243,7 @@ Routine Description:
         free(result);
         return STATUS_UNSUCCESSFUL;
     }
-    /* 无 CurrentSp 时默认 StackLimit（对齐 SS L2620） */
+    /* 无 CurrentSp 时默认 StackLimit（L2620） */
     if (currentSp == 0 && stackLimit != 0) currentSp = stackLimit;
 
     if (stackBase == 0 || currentSp == 0) {
@@ -1286,11 +1286,11 @@ Routine Description:
     IoaRopDetectChain(Detector, (const ULONG_PTR*)stackBuf,
                       bytesRead / sizeof(ULONG_PTR), &moduleSet, result);
 
-    /* 对齐 SS RoppCleanupAnalysisContext L2648 安全擦除后再释放 */
+    /* RoppCleanupAnalysisContext L2648 安全擦除后再释放 */
     RtlSecureZeroMemory(stackBuf, bytesRead);
     free(stackBuf);   /* MsReadMemory 用 malloc, 用 free 释放 */
 
-    /* 分类/评分/载荷（对齐 SS L1303-1315） */
+    /* 分类/评分/载荷（L1303-1315） */
     if (result->ChainDetected) {
         result->AttackType = IoaRopClassifyChain(result);
         IoaRopScoreChain(result);
@@ -1314,7 +1314,7 @@ IoaRop_ValidateCallStack(
     )
 /*++
 Routine Description:
-    调用栈完整性验证（对齐 SS RopValidateCallStack L1496）：
+    调用栈完整性验证（RopValidateCallStack L1496）：
       链检测 → IsValid=FALSE + confidence；pivot → 70。
     与 WptValidateThread（T1055.003 线程劫持语义）互补：本函数为 ROP 链语义。
 --*/
@@ -1365,7 +1365,7 @@ IoaRop_FreeResult(
     )
 /*++
 Routine Description:
-    释放堆分配的检测结果（对齐 SS RopFreeResult L1574）。
+    释放堆分配的检测结果（RopFreeResult L1574）。
     agent 无链表, Result 为单块 malloc 分配。
 --*/
 {
@@ -1380,7 +1380,7 @@ IoaRop_GetStatistics(
     )
 /*++
 Routine Description:
-    读取检测器统计（对齐 SS RopGetStatistics L1755）。
+    读取检测器统计（RopGetStatistics L1755）。
 --*/
 {
     if (Detector == NULL || Detector->Signature != WKD_ROP_DETECTOR_SIGNATURE ||

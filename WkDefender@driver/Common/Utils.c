@@ -22,7 +22,7 @@ static PVOID WkdNtoskrnlBase = NULL;
 //
 // LOLBin文件名列表
 //
-// 2026-08 补全：对齐 SS BepIsLolBin（BehaviorEngine.c L4856）补 esentutl/
+// 2026-08 补全：BepIsLolBin（BehaviorEngine.c L4856）补 esentutl/
 // expand/extrac32/findstr/ie4uinit/makecab/mmc/pubprn/replace/rpcping/
 // schtasks/scriptrunner 12 项。不迁 SS 的 cmd.exe/powershell.exe/pwsh.exe
 // （普通命令/脚本宿主走独立行为标志，避免误报加分）。
@@ -589,6 +589,43 @@ UtpResolveSystemRoot(
     return status;
 }
 
+_Use_decl_annotations_
+NTSTATUS
+CoDowncaseUnicodeString(
+    _Out_ PUNICODE_STRING* Dst,
+    _In_ PCUNICODE_STRING Src
+    ) 
+{
+    NTSTATUS status;
+    PUNICODE_STRING downcase;
+
+    if (!Dst || !CoCheckUnicodeStringValidity(Src)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Dst = NULL;
+
+    downcase = ExAllocatePoolZero(
+        NonPagedPoolNx, sizeof(UNICODE_STRING), 'usBd');
+    if (!downcase) return STATUS_NO_MEMORY;
+
+    downcase->Length = 0;
+    downcase->MaximumLength = Src->Length + sizeof(WCHAR);
+    downcase->Buffer = ExAllocatePoolZero(
+        NonPagedPoolNx, downcase->MaximumLength, 'usBf');
+    if (!downcase->Buffer) { status = STATUS_NO_MEMORY; goto Cleanup; }
+
+    status = RtlDowncaseUnicodeString(&downcase, Src, FALSE);
+    if (!NT_SUCCESS(status)) { goto Cleanup; }
+
+    *Dst = downcase;
+    return STATUS_SUCCESS;
+
+Cleanup:
+    if (downcase->Buffer) ExFreePoolWithTag(downcase->Buffer, 'usBf');
+    if (downcase) ExFreePoolWithTag(downcase, 'usBd');
+    return status;
+}
+
 //
 // 将 NT 路径转换为标准 DOS 路径
 //
@@ -905,7 +942,7 @@ WkdValidateSignature(
 }
 
 //
-// 计算熵值（Shannon 整数熵 ×1000，对齐 SS MmMonitorCalculateEntropy）
+// 计算熵值（Shannon 整数熵 ×1000，MmMonitorCalculateEntropy）
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 ULONG
@@ -979,7 +1016,7 @@ Return Value:
 }
 
 //
-// 跨进程内存读取（对齐 SS MmpReadProcessMemory）
+// 跨进程内存读取（MmpReadProcessMemory）
 //
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
@@ -992,7 +1029,7 @@ WkdReadProcessMemory(
 /*++
 Routine Description:
     附加到目标进程读取指定地址的内存（SEH 保护）。
-    对齐 SS MmpReadProcessMemory（MemoryMonitor.c），由 AmsiBypassDetector
+    MmpReadProcessMemory（MemoryMonitor.c），由 AmsiBypassDetector
     的 AbdpReadProcessMemory（原 static、PAGE_SIZE 上限）迁出扩展为通用工具。
 Arguments:
     ProcessId - 目标进程 PID。
@@ -1431,4 +1468,15 @@ CoReadKernelRegionSafe(
     }
 
     return STATUS_SUCCESS;
+}
+
+_Use_decl_annotations_
+VOID
+CoFreeUnicodeStringSafe(
+    PUNICODE_STRING String
+    )
+{
+    if (!String) return;
+    if (String->Buffer) ExFreePool(String->Buffer);
+    ExFreePool(String);
 }

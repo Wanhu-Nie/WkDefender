@@ -132,15 +132,15 @@ static const struct {
     /* ── 注册表（0x0Bxx） ── */
     { TsIndicator_Registry_SuspiciousMod,       AeThreatSeverityMedium },
 
-    /* ── WSL/容器逃逸（0x0Cxx，迁移自 SS WSLMonitor） ── */
-    { TsIndicator_Wsl_EscapeToHost,             AeThreatSeverityCritical },  // 对齐 SS 80 分
-    { TsIndicator_Wsl_CredentialAccess,         AeThreatSeverityCritical },  // 对齐 SS 85 分
-    { TsIndicator_Wsl_DriverAccess,             AeThreatSeverityHigh },      // 对齐 SS 60 分
+    /* ── WSL/容器逃逸（0x0Cxx，WSLMonitor） ── */
+    { TsIndicator_Wsl_EscapeToHost,             AeThreatSeverityCritical },  // 80 分
+    { TsIndicator_Wsl_CredentialAccess,         AeThreatSeverityCritical },  // 85 分
+    { TsIndicator_Wsl_DriverAccess,             AeThreatSeverityHigh },      // 60 分
     { TsIndicator_Wsl_System32Access,           AeThreatSeverityLow },       // SS 无分仅记录
 
     /* ── 文件行为（0x0Exx，FBE/PreSetInfo 迁移 2026-08）。
      *   修复 AeReportIndicatorPair severity=0 查表返回 0 静默丢弃缺陷；
-     *   HardLink/ShadowDelete 已接线 FspPreSetInformation 强信号阻断上报。 ── */
+     *   HardLink/ShadowDelete 已接线 FsPreSetInformationNotifyCallback 强信号阻断上报。 ── */
     { TsIndicator_File_Write,                   AeThreatSeverityMedium },
     { TsIndicator_File_Rename,                  AeThreatSeverityLow },
     { TsIndicator_File_Delete,                  AeThreatSeverityMedium },

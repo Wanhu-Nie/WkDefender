@@ -32,7 +32,7 @@ typedef struct _WPA_TOKEN_HASH_BUCKET {
 /**************************************************/
 
 //
-// UAC 绕过模式表（对齐 SS g_UACBypassPatterns:333-443, 10 模式）
+// UAC 绕过模式表（g_UACBypassPatterns:333-443, 10 模式）
 // 分值: PM_SUSPICION_MEDIUM=45 / HIGH=70 / CRITICAL=90
 //
 static const WPA_UAC_PATTERN g_WpaUacBypassPatterns[] = {
@@ -51,7 +51,7 @@ static const WPA_UAC_PATTERN g_WpaUacBypassPatterns[] = {
 #define WPA_UAC_PATTERN_COUNT (sizeof(g_WpaUacBypassPatterns) / sizeof(g_WpaUacBypassPatterns[0]))
 
 //
-// 已知合法提权进程名单（对齐 SS g_LegitimateElevationProcesses:450-466, 15 条）
+// 已知合法提权进程名单（g_LegitimateElevationProcesses:450-466, 15 条）
 //
 static const PCWSTR g_WpaLegitimateProcesses[] = {
     L"consent.exe",
@@ -75,7 +75,7 @@ static const PCWSTR g_WpaLegitimateProcesses[] = {
     (sizeof(g_WpaLegitimateProcesses) / sizeof(g_WpaLegitimateProcesses[0]))
 
 //
-// 攻击类型字符串（对齐 SS TapAttackTypeStrings:476-486）
+// 攻击类型字符串（TapAttackTypeStrings:476-486）
 //
 static const PCWSTR g_WpaAttackTypeStrings[] = {
     L"None",
@@ -90,7 +90,7 @@ static const PCWSTR g_WpaAttackTypeStrings[] = {
 };
 
 //
-// 完整性级别字符串（对齐 SS TapIntegrityLevelStrings:488-497）
+// 完整性级别字符串（TapIntegrityLevelStrings:488-497）
 //
 static const PCWSTR g_WpaIntegrityLevelStrings[] = {
     L"Untrusted",
@@ -104,7 +104,7 @@ static const PCWSTR g_WpaIntegrityLevelStrings[] = {
 };
 
 //
-// 提权类型字符串（对齐 SS PM_ESCALATION_TYPE 顺序）
+// 提权类型字符串（PM_ESCALATION_TYPE 顺序）
 //
 static const PCWSTR g_WpaEscalationTypeStrings[] = {
     L"None",
@@ -141,9 +141,9 @@ static struct {
     CRITICAL_SECTION EventLock;
     LONG             EventCount;
 
-    LONG EscalationsDetected;       /* 对齐 SS PM_STATISTICS.EscalationsDetected */
-    LONG LegitimateEscalations;     /* 对齐 SS PM_STATISTICS.LegitimateEscalations */
-    LONG BlockedEscalations;        /* 对齐 SS PM_STATISTICS.BlockedEscalations (monitor-only 未消费) */
+    LONG EscalationsDetected;       /* PM_STATISTICS.EscalationsDetected */
+    LONG LegitimateEscalations;     /* PM_STATISTICS.LegitimateEscalations */
+    LONG BlockedEscalations;        /* PM_STATISTICS.BlockedEscalations (monitor-only 未消费) */
     LONG BaselinesCaptured;
     LONG BaselinesRemoved;
 
@@ -199,7 +199,7 @@ WpaIsWellKnownSid(
 }
 
 //
-// 分析组 SID（对齐 SS TapIsSidAdmin/System/Service/NetworkService/LocalService）
+// 分析组 SID（TapIsSidAdmin/System/Service/NetworkService/LocalService）
 // 注意: 此处 IsSystem/IsService 为 SID 语义（token 是否含对应 SID）。
 //
 static VOID
@@ -259,7 +259,7 @@ WpaAnalyzeGroups(
 
 //
 // 查询令牌特权 → 位图 + Has* 标志 + 启用计数
-// 对齐 SS PmpConvertPrivilegesToFlags:2528 (仅计 SE_PRIVILEGE_ENABLED)
+// PmpConvertPrivilegesToFlags:2528 (仅计 SE_PRIVILEGE_ENABLED)
 //
 static VOID
 WpaQueryPrivileges(
@@ -379,7 +379,7 @@ WpaQueryIntegrityLevel(
 }
 
 //
-// 全量令牌采集（对齐 SS TapQueryTokenInformation:1935-2086 +
+// 全量令牌采集（TapQueryTokenInformation:1935-2086 +
 // PmpCaptureTokenState:2362 的 IsSystem/IsService 行为化判定）
 // 仅采集不检测。PrivilegeBitmap 可选输出。
 //
@@ -427,7 +427,7 @@ WpaCaptureTokenInfo(
         }
     }
 
-    /* 统计信息（含 AuthId + TokenId + 特权/组总数, 对齐 SS TapQueryTokenInformation:1958-1967） */
+    /* 统计信息（含 AuthId + TokenId + 特权/组总数, TapQueryTokenInformation:1958-1967） */
     size = sizeof(stats);
     if (GetTokenInformation(hToken, TokenStatistics, &stats, size, &size)) {
         Info->AuthenticationId = stats.AuthenticationId;
@@ -436,7 +436,7 @@ WpaCaptureTokenInfo(
         Info->GroupCount = stats.GroupCount;
     }
 
-    /* 特权（位图 + 启用计数, 对齐 SS PmpConvertPrivilegesToFlags） */
+    /* 特权（位图 + 启用计数, PmpConvertPrivilegesToFlags） */
     WpaQueryPrivileges(hToken,
         &Info->PrivilegeBitmap,
         &Info->EnabledPrivileges,
@@ -486,7 +486,7 @@ WpaCaptureTokenInfo(
         }
     }
 
-    /* 虚拟化（对齐 SS TapQueryTokenInformation TokenVirtualizationEnabled） */
+    /* 虚拟化（TapQueryTokenInformation TokenVirtualizationEnabled） */
     {
         DWORD virt = 0;
         size = sizeof(virt);
@@ -495,7 +495,7 @@ WpaCaptureTokenInfo(
         }
     }
 
-    /* 沙箱惰性（对齐 SS TokenSandBoxInert） */
+    /* 沙箱惰性（TokenSandBoxInert） */
     {
         DWORD inert = 0;
         size = sizeof(inert);
@@ -504,7 +504,7 @@ WpaCaptureTokenInfo(
         }
     }
 
-    /* AppContainer（对齐 SS TokenIsAppContainer） */
+    /* AppContainer（TokenIsAppContainer） */
     {
         DWORD appc = 0;
         size = sizeof(appc);
@@ -524,7 +524,7 @@ WpaCaptureTokenInfo(
 /**************************************************/
 
 //
-// 行为化 SYSTEM/服务判定（对齐 SS PmpCaptureTokenState:2442-2451）
+// 行为化 SYSTEM/服务判定（PmpCaptureTokenState:2442-2451）
 // System = Session0 + System 完整性；Service = Session0 + elevated + 非System。
 //
 static BOOLEAN
@@ -632,7 +632,7 @@ WpaInsertBaseline(
 /**************************************************/
 
 //
-// 攻击检测（对齐 SS TapDetectAttackType:2558-2647）
+// 攻击检测（TapDetectAttackType:2558-2647）
 // Baseline 为 NULL 时仅做无条件检测。
 //
 static ULONG
@@ -682,7 +682,7 @@ WpaDetectAttackType(
             return WpaAttack_Impersonation;
         }
 
-        /* 组数激增（SID 注入, 对齐 SS TaDetectTokenManipulation:1227-1231） */
+        /* 组数激增（SID 注入, TaDetectTokenManipulation:1227-1231） */
         if (Current->GroupCount > Baseline->OriginalGroupCount + 5) {
             return WpaAttack_SIDInjection;
         }
@@ -709,7 +709,7 @@ WpaDetectAttackType(
 }
 
 //
-// 令牌攻击评分（对齐 SS TapCalculateSuspicionScore:2651-2750）
+// 令牌攻击评分（TapCalculateSuspicionScore:2651-2750）
 //
 static ULONG
 WpaCalculateSuspicionScore(
@@ -781,7 +781,7 @@ WpaCalculateSuspicionScore(
 /**************************************************/
 
 //
-// 提权类型判定（对齐 SS PmpDetermineEscalationType:2648-2707）
+// 提权类型判定（PmpDetermineEscalationType:2648-2707）
 // 优先级: AuthId→TokenManipulation, 跨会话→CrossSession,
 // 完整性跳级→TokenElevation/ExploitKernel/IntegrityIncrease,
 // 特权增→DriverLoad/ExploitKernel/PrivilegeEnable。
@@ -837,7 +837,7 @@ WpaDetermineEscalationType(
 }
 
 //
-// 提权评分（对齐 SS PmpCalculateSuspicionScore:2710-2819）
+// 提权评分（PmpCalculateSuspicionScore:2710-2819）
 //
 static ULONG
 WpaCalculateEscalationScore(
@@ -925,7 +925,7 @@ WpaCalculateEscalationScore(
 }
 
 //
-// 合法提权判定（对齐 SS PmpIsLegitimateEscalation:2822-2865）
+// 合法提权判定（PmpIsLegitimateEscalation:2822-2865）
 //
 static BOOLEAN
 WpaIsLegitimateEscalation(
@@ -963,7 +963,7 @@ WpaIsLegitimateEscalation(
 }
 
 //
-// UAC 绕过检测（对齐 SS PmpDetectUACBypass:2868-2942, 10 模式）
+// UAC 绕过检测（PmpDetectUACBypass:2868-2942, 10 模式）
 // CommandLinePattern 为死代码字段（SS 亦不比对命令行）。
 //
 BOOLEAN
@@ -1024,7 +1024,7 @@ WpaDetectUACBypass(
 }
 
 //
-// 创建提权事件并入队（对齐 SS PmpAllocateEvent/PmpInsertEvent）
+// 创建提权事件并入队（PmpAllocateEvent/PmpInsertEvent）
 //
 static PWPA_ESCALATION_EVENT
 WpaCreateEscalationEvent(
@@ -1066,18 +1066,18 @@ WpaCreateEscalationEvent(
     evt->SuspicionScore = WpaCalculateEscalationScore(evt, Baseline);
     if (WpaIsLegitimateEscalation(evt, Baseline)) {
         evt->Flags |= WPA_EVENT_FLAG_LEGITIMATE;
-        InterlockedIncrement(&g_WpaAnalyzer.LegitimateEscalations);   /* 对齐 SS L1617 */
+        InterlockedIncrement(&g_WpaAnalyzer.LegitimateEscalations);   /* L1617 */
     }
     if (evt->SuspicionScore >= g_WpaAnalyzer.Config.MinAlertScore) {
         evt->Flags |= WPA_EVENT_FLAG_ALERTABLE;
     }
 
-    /* BLOCKED 判定（对齐 SS PmCheckForEscalation:1630-1635, monitor-only 未消费） */
+    /* BLOCKED 判定（PmCheckForEscalation:1630-1635, monitor-only 未消费） */
     if (g_WpaAnalyzer.Config.BlockHighRiskEscalation &&
         evt->SuspicionScore >= g_WpaAnalyzer.Config.BlockThresholdScore &&
         !(evt->Flags & WPA_EVENT_FLAG_LEGITIMATE)) {
         evt->Flags |= WPA_EVENT_FLAG_BLOCKED;
-        InterlockedIncrement(&g_WpaAnalyzer.BlockedEscalations);      /* 对齐 SS L1634 */
+        InterlockedIncrement(&g_WpaAnalyzer.BlockedEscalations);      /* L1634 */
     }
 
     /* 入队（超上限移除最旧） */
@@ -1124,7 +1124,7 @@ WpaTokenAnalyzerInitialize(
     InitializeListHead(&g_WpaAnalyzer.EventList);
     InitializeCriticalSection(&g_WpaAnalyzer.EventLock);
 
-    /* 默认配置（对齐 SS PmInitialize:805-813） */
+    /* 默认配置（PmInitialize:805-813） */
     g_WpaAnalyzer.Config.EnableIntegrityMonitoring = TRUE;
     g_WpaAnalyzer.Config.EnablePrivilegeMonitoring = TRUE;
     g_WpaAnalyzer.Config.EnableUACBypassDetection = TRUE;
@@ -1192,7 +1192,7 @@ WpaAnalyzeToken(
     hr = WpaCaptureTokenInfo(ProcessId, Info, NULL);
     if (FAILED(hr)) return hr;
 
-    /* 攻击检测（无基线时仅无条件检测, 对齐 SS TaAnalyzeToken:970-980） */
+    /* 攻击检测（无基线时仅无条件检测, TaAnalyzeToken:970-980） */
     Info->DetectedAttack = WpaDetectAttackType(Info, NULL);
 
     /* 评分 */
@@ -1224,7 +1224,7 @@ WpaDetectTokenManipulation(
     hr = WpaAnalyzeToken(ProcessId, &current);
     if (FAILED(hr)) return hr;
 
-    /* 取基线快照（修复旧版恒传 NULL 缺陷, 对齐 SS TaDetectTokenManipulation:1155） */
+    /* 取基线快照（修复旧版恒传 NULL 缺陷, TaDetectTokenManipulation:1155） */
     bl = WpaLookupBaseline(ProcessId);
     if (bl != NULL) {
         RtlZeroMemory(&baseline, sizeof(baseline));
@@ -1383,7 +1383,7 @@ WpaCheckForEscalation(
 
     baseline = WpaLookupBaseline(ProcessId);
     if (baseline == NULL) {
-        /* 无基线自动补录（对齐 SS PmCheckForEscalation:1423-1432） */
+        /* 无基线自动补录（PmCheckForEscalation:1423-1432） */
         hr = WpaRecordBaseline(ProcessId, NULL, NULL, NULL);
         return FAILED(hr) ? hr : S_FALSE;
     }
@@ -1460,7 +1460,7 @@ WpaCheckForEscalation(
         return S_FALSE;
     }
 
-    /* 精化类型（对齐 SS PmpDetermineEscalationType 优先级） */
+    /* 精化类型（PmpDetermineEscalationType 优先级） */
     type = WpaDetermineEscalationType(
         baseline->OriginalIntegrityLevel, info.IntegrityLevel,
         baseline->OriginalPrivileges, privBitmap,
@@ -1523,7 +1523,7 @@ WpaOnProcessTerminated(
 /**************************************************/
 
 //
-// 权限/组增量对比（对齐 SS TapComparePrivileges:3023/TapCompareGroups:3105）
+// 权限/组增量对比（TapComparePrivileges:3023/TapCompareGroups:3105）
 // ※死代码: WPA_TOKEN_INFO 不含特权数组/组 SID 数组, 仅按聚合字段近似。
 // 保留 SS 语义: 返回 TRUE = 有增量变化。
 //
@@ -1556,7 +1556,7 @@ WpaComparePrivilegeDelta(
 }
 
 //
-// 组 SID 增量对比（对齐 SS TapCompareGroups:3105-3175）
+// 组 SID 增量对比（TapCompareGroups:3105-3175）
 // ※近似: WPA_TOKEN_INFO 不含组 SID 数组, 仅按 GroupCount 差值近似增减;
 // 细粒度 (具体哪些 SID 增减) 需结构补组数组。WpaCompareTokens 已用
 // IsService/IsNetworkService/IsLocalService 状态 + 此组数增量覆盖组变化。
@@ -1642,7 +1642,7 @@ WpaCompareTokens(
         return S_OK;
     }
 
-    /* 服务/网络服务/本地服务状态变化（对齐 SS TaCompareTokens:1367-1372） */
+    /* 服务/网络服务/本地服务状态变化（TaCompareTokens:1367-1372） */
     if (Original->IsService != Current->IsService ||
         Original->IsNetworkService != Current->IsNetworkService ||
         Original->IsLocalService != Current->IsLocalService) {
@@ -1656,13 +1656,13 @@ WpaCompareTokens(
         return S_OK;
     }
 
-    /* 特权增量（对齐 SS TapComparePrivileges, 近似） */
+    /* 特权增量（TapComparePrivileges, 近似） */
     if (WpaComparePrivilegeDelta(Original, Current, &addedPriv, &removedPriv)) {
         *Changed = TRUE;
         return S_OK;
     }
 
-    /* 组增量（对齐 SS TapCompareGroups, 近似） */
+    /* 组增量（TapCompareGroups, 近似） */
     if (WpaCompareGroupSet(Original, Current, &addedGroups, &removedGroups)) {
         *Changed = TRUE;
         return S_OK;
@@ -1674,7 +1674,7 @@ WpaCompareTokens(
         return S_OK;
     }
 
-    /* TokenId 变化（同一 AuthId 下令牌被替换, 对齐 SS TaCompareTokens:1377-1381） */
+    /* TokenId 变化（同一 AuthId 下令牌被替换, TaCompareTokens:1377-1381） */
     if (Original->TokenId.LowPart != Current->TokenId.LowPart ||
         Original->TokenId.HighPart != Current->TokenId.HighPart) {
         *Changed = TRUE;
@@ -1697,7 +1697,7 @@ WpaGetEscalationEvents(
     )
 /*++
 Routine Description:
-    出队全部提权事件（对齐 SS PmGetEvents, 拷贝值+释放队内块）。
+    出队全部提权事件（PmGetEvents, 拷贝值+释放队内块）。
     调用者持有出队项拷贝, 无需额外释放。
 
 Arguments:
@@ -1739,7 +1739,7 @@ WpaClearEscalationEvents(
     )
 /*++
 Routine Description:
-    清空全部提权事件队列（对齐 SS PmClearEvents）。
+    清空全部提权事件队列（PmClearEvents）。
 
 Return Value:
     S_OK。
@@ -1768,7 +1768,7 @@ WpaQueryProcessEscalation(
     )
 /*++
 Routine Description:
-    查询进程是否已发生提权（对齐 SS PmQueryProcessEscalation:1918-1959）。
+    查询进程是否已发生提权（PmQueryProcessEscalation:1918-1959）。
 
 Arguments:
     ProcessId             - 目标进程 ID。
@@ -1805,7 +1805,7 @@ WpaGetConfig(
     )
 /*++
 Routine Description:
-    获取引擎配置（对齐 SS PmGetConfiguration）。
+    获取引擎配置（PmGetConfiguration）。
 
 Return Value:
     S_OK / E_INVALIDARG。
@@ -1824,7 +1824,7 @@ WpaSetConfig(
     )
 /*++
 Routine Description:
-    设置引擎配置（对齐 SS PmSetConfiguration）。
+    设置引擎配置（PmSetConfiguration）。
 
 Return Value:
     S_OK / E_INVALIDARG。
@@ -1843,8 +1843,8 @@ WpaGetStatistics(
     )
 /*++
 Routine Description:
-    获取引擎统计（对齐 SS PmGetStatistics:1964-1996）。
-    计数经 InterlockedCompareExchange 原子读取（对齐 SS 语义）。
+    获取引擎统计（PmGetStatistics:1964-1996）。
+    计数经 InterlockedCompareExchange 原子读取（语义）。
 
 Arguments:
     Stats - 接收统计快照。
@@ -1875,7 +1875,7 @@ WpaCleanupStaleBaselines(
     )
 /*++
 Routine Description:
-    清理过期基线（对齐 SS PmpCleanupStaleBaselines:3001, 进程消失则置终止标记）。
+    清理过期基线（PmpCleanupStaleBaselines:3001, 进程消失则置终止标记）。
     ※死代码: wkd 进程退出回调 (ProcessExit 事件) 已触发 WpaOnProcessTerminated
       立即清理; 此为 SS 周期兜底迁移, 无周期触发源。置终止标记后基线不再被
       WpaLookupBaseline/WpaCheckForEscalation 使用, 由进程退出路径移除释放。

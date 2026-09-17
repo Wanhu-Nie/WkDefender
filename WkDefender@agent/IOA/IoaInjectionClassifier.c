@@ -5,14 +5,13 @@
 #include "IoaInjectionClassifier.h"
 #include "../WkDefenderHeader.h"   /* WKD_SEC_SUSPICION_TRANSACTED 等统一协议头 */
 #include "../Common/Exempts/Exempts.h"   /* 统一豁免门面 (Exempts 重构 #67, 注入豁免原 IocInjectionWhitelist) */
-#include "../IOC/IocProcessEnrich.h"   /* IpeDetectProcessHollowing */
-#include "../IOC/PEAnalyzer/PeAnalyzer.h"
 #include "../Common/FileUtils.h"
 #include "../IOC/IocScanner.h"         /* IocScanner_ComputeBufferSha256 (死代码 payload 哈希) */
-#include "../Memory/MemoryScan.h"      /* MsGetRegionInfo / MsScanRegionAt (定向确认) */
+#include "../Memory/MemoryScan.h"      /* MmGetMemoryRegionInformation / MsScanRegionAt (定向确认) */
 #include "../ProcessThreads.h"         /* WptValidateThread / WptIsThreadStartUnbacked (线程上下文验证) */
 #include "Tier1/T1ShellcodeDetect.h"   /* IocDetectShellcode (壳码字节模式) */
 #include "IoaProcessPair.h"            /* IoaPairResolveNodeIds (pair 键 PID 化反查) */
+#include "../Include/Process/InjectionDetector.h"   /* IoaRecordModuleLoad / IoaConfirmDllInjectionByModule (2026-09-15 迁出至 Process\DllInjectionDetector.c) */
 
 /* 前向声明: static 统计变量定义于本文件后半部 (L1878 附近),
  * 此处先声明供前部函数使用 (C89 要求先声明后使用)。 */
@@ -50,8 +49,8 @@ static volatile LONG64 g_IoaInjStatsDetected;
 #define IOA_ATOM_MAX_GLOBAL             0xFFFF      /* 全局原子表结束 */
 #define IOA_ATOM_NAME_MAX               256         /* 原子内容最大 wchar 数 (255 + null) */
 #define IOA_ATOM_ENTROPY_THRESHOLD      6500       /* CoEntropyBinary bits*1000 (6.5 bits, 替换 SS 香农熵 6.5) */
-#define IOA_ATOM_SIZE_THRESHOLD         64          /* 尺寸可疑阈值 (对齐 SS suspiciousAtomSizeThreshold) */
-#define IOA_ATOM_CORRELATION_WINDOW_MS  5000        /* 关联时间窗 (死代码周期路径用, 对齐 SS 5000ms) */
+#define IOA_ATOM_SIZE_THRESHOLD         64          /* 尺寸可疑阈值 (suspiciousAtomSizeThreshold) */
+#define IOA_ATOM_CORRELATION_WINDOW_MS  5000        /* 关联时间窗 (死代码周期路径用, 5000ms) */
 
 /* 可疑 API 名字符串 (对齐 ShadowStrike CheckSuspiciousStrings 8 token) */
 static const PCWSTR g_IoaAtomSuspiciousTokens[] = {
@@ -93,7 +92,7 @@ typedef struct _IOA_ATOM_API_ADDRS {
 } IOA_ATOM_API_ADDRS;
 static IOA_ATOM_API_ADDRS g_IoaAtomApiAddrs;
 
-/* 已知安全原子 (系统窗口类, 对齐 SS InitializeKnownSafeAtoms 14 项)。
+/* 已知安全原子 (系统窗口类, InitializeKnownSafeAtoms 14 项)。
  * RegisterClass 产生的窗口类原子是正常系统状态, 不应判可疑, 扫描时跳过。 */
 static const PCWSTR g_IoaAtomSafeNames[] = {
     L"Button", L"ComboBox", L"Edit", L"ListBox",
@@ -114,7 +113,7 @@ static BOOLEAN g_IoaAtomSafeResolved = FALSE;
 
 /*
  * IoaAtomResolveApiAddresses — 惰性解析原子检索 API 地址 (一次性)。
- * 对齐 SS ResolveApiAddresses (cpp L439-458)。
+ * ResolveApiAddresses (cpp L439-458)。
  */
 static
 VOID
@@ -145,7 +144,7 @@ IoaAtomResolveApiAddresses(
 
 /*
  * IoaAtomResolveSafeAtoms — 解析已知安全原子值 (惰性, 一次性)。
- * 对齐 SS InitializeKnownSafeAtoms (cpp L623-647): 用 GlobalFindAtomW 解析
+ * InitializeKnownSafeAtoms (cpp L623-647): 用 GlobalFindAtomW 解析
  * 系统窗口类名字对应的原子值; 未注册时为 0 (窗口类可能随窗口站延迟注册)。
  */
 static
@@ -269,7 +268,7 @@ IoaAtomAnalyzeContent(
     }
 
     /* 壳码字节模式 (WkD IocDetectShellcode 6 类, 替换 SS 16 条字节签名;
-     * 判定: 非 X64 家族 ≥2 或含 APIHASH/SYSCALL/ROP_CHAIN, 对齐 SS "≥2 家族") */
+     * 判定: 非 X64 家族 ≥2 或含 APIHASH/SYSCALL/ROP_CHAIN, "≥2 家族") */
     scFlags = IocDetectShellcode((const UCHAR*)Name, byteLen, FALSE);
     scFamily = (ULONG64)scFlags & ~(ULONG64)T1_SC_X64;
     if ((ULONG)__popcnt64(scFamily) >= 2 ||
@@ -615,8 +614,8 @@ Arguments:
     Type         - 注入类型。
     DataDword    - 数据层位图 (用于事件数统计)。
     UnbackedStart- 起始地址无文件支撑。
-    HasExecProtect - 目标内存 EXECUTE 保护 (对齐 SS INJ_CHAIN_FLAG_HAS_EXECUTE)。
-    HasWrite     - 进程对含写边 (对齐 SS INJ_CHAIN_FLAG_HAS_WRITE)。
+    HasExecProtect - 目标内存 EXECUTE 保护 (INJ_CHAIN_FLAG_HAS_EXECUTE)。
+    HasWrite     - 进程对含写边 (INJ_CHAIN_FLAG_HAS_WRITE)。
     TotalSize    - 当前事件操作大小 (SS Chain->TotalSize 的当前事件近似)。
     SourceName   - 源进程名 (白名单减分)。
     TargetName   - 目标进程名。
@@ -631,17 +630,17 @@ Return Value:
     /* 基础分 (对齐 ShadowStrike, 仅保留有检测路径的类型) */
     switch (Type) {
     case WkdInjection_ProcessHollowing:   confidence = 95; break;
-    case WkdInjection_ProcessDoppelganging:confidence = 90; break;  /* TxF 变体, 对齐 SS T1055.013 */
+    case WkdInjection_ProcessDoppelganging:confidence = 90; break;  /* TxF 变体, T1055.013 */
     case WkdInjection_ReflectiveDLL:      confidence = 90; break;
     case WkdInjection_ThreadHijacking:    confidence = 85; break;
     case WkdInjection_APC:                confidence = 80; break;
     case WkdInjection_EarlyBird:          confidence = 80; break;
-    case WkdInjection_AtomBombing:        confidence = 80; break;  /* 对齐 SS CalculateConfidence AtomBombing 基准 */
+    case WkdInjection_AtomBombing:        confidence = 80; break;  /* CalculateConfidence AtomBombing 基准 */
     case WkdInjection_SectionMapping:     confidence = 80; break;
     case WkdInjection_DLLInjection:       confidence = 75; break;
     case WkdInjection_RemoteThread:       confidence = 70; break;
     case WkdInjection_DirectSyscallThread:confidence = 70; break;
-    case WkdInjection_PeInjection:        confidence = 70; break;  /* 对齐 SS InjTechPeInjection=70 (InjectionDetector.c:2397-2400) */
+    case WkdInjection_PeInjection:        confidence = 70; break;  /* InjTechPeInjection=70 (InjectionDetector.c:2397-2400) */
     case WkdInjection_ShellcodeInjection: confidence = 65; break;
     default:                              confidence = 60; break;
     }
@@ -656,7 +655,7 @@ Return Value:
         confidence += 10;
     }
 
-    /* 注入原语维度 (对齐 SS InjpCalculateSuspicionScore 调整段,
+    /* 注入原语维度 (InjpCalculateSuspicionScore 调整段,
      * InjectionDetector.c:2415-2429, 0-100 尺度):
      *   INJ_CHAIN_FLAG_HAS_EXECUTE +5 / HAS_WRITE +3 / TotalSize>64KB +3 */
     if (HasExecProtect)      confidence += 5;
@@ -699,16 +698,16 @@ Return Value:
 
     switch (Type) {
     case WkdInjection_ProcessHollowing:   risk = 95; break;
-    case WkdInjection_ProcessDoppelganging:risk = 90; break;  /* 对齐 SS 镂空家族 */
+    case WkdInjection_ProcessDoppelganging:risk = 90; break;  /* 镂空家族 */
     case WkdInjection_ReflectiveDLL:      risk = 90; break;
     case WkdInjection_ThreadHijacking:    risk = 80; break;
     case WkdInjection_APC:                risk = 75; break;
     case WkdInjection_EarlyBird:          risk = 75; break;
-    case WkdInjection_AtomBombing:        risk = 85; break;  /* 对齐 SS ATOM_BOMBING_SCORE=85 */
+    case WkdInjection_AtomBombing:        risk = 85; break;  /* ATOM_BOMBING_SCORE=85 */
     case WkdInjection_RemoteThread:       risk = 70; break;
     case WkdInjection_DirectSyscallThread:risk = 70; break;
     case WkdInjection_SectionMapping:     risk = 65; break;
-    case WkdInjection_PeInjection:        risk = 70; break;  /* 对齐 SS InjTechPeInjection=70 */
+    case WkdInjection_PeInjection:        risk = 70; break;  /* InjTechPeInjection=70 */
     case WkdInjection_ShellcodeInjection: risk = 65; break;
     default:                              risk = 60; break;
     }
@@ -878,7 +877,7 @@ Return Value:
      *    PageProtection (内存事件轨, 数据源门控)。顺序: Reflective/DLL 分支在前已
      *    捕获有远程线程场景 (LoadLibrary 落在 kernel32 可执行但不被误抢);
      *    PEInjection 是"无远程线程的 Write+Alloc+Exec" 兜底特化 (Shellcode 的可执行
-     *    细分), 对齐 SS InjpMatchPatternToTechnique 的通用 PE 注入兜底。
+     *    细分), InjpMatchPatternToTechnique 的通用 PE 注入兜底。
      */
     if (hasAlloc && hasWrite && HasExecProtect) {
         return WkdInjection_PeInjection;
@@ -898,298 +897,6 @@ Return Value:
 #undef EDGE_HAS
 }
 
-/**************************************************/
-/*       DLL 注入模块窗口确认 (对齐 ShadowStrike     */
-/*       DetectRemoteThreadInjectionImpl)           */
-/**************************************************/
-
-#define IOA_MOD_BUCKETS         64
-#define IOA_MOD_WINDOW_MS       1000    /* 关联时间窗 (对齐 LOAD_CORRELATION_WINDOW_MS) */
-#define IOA_MOD_CACHE_MAX       512     /* 全局缓存上限 (防无界增长) */
-
-typedef struct _IOA_MODULE_LOAD_REC {
-    LIST_ENTRY   ListEntry;
-    ULONG        ProcessId;
-    LARGE_INTEGER LoadTime;             /* FILETIME 100ns 单位 */
-    WCHAR        ModulePath[260];
-} IOA_MODULE_LOAD_REC, *PIOA_MODULE_LOAD_REC;
-
-typedef struct _IOA_MOD_CACHE {
-    SRWLOCK     Lock;
-    LIST_ENTRY  Buckets[IOA_MOD_BUCKETS];
-    ULONG       Count;
-} IOA_MOD_CACHE;
-
-static IOA_MOD_CACHE g_IoaModCache;
-static BOOLEAN g_IoaModCacheInit = FALSE;
-
-/* 惰性初始化缓存桶 */
-static
-VOID
-IoaModCacheEnsureInit(
-    VOID
-    )
-{
-    ULONG i;
-
-    if (!g_IoaModCacheInit) {
-        InitializeSRWLock(&g_IoaModCache.Lock);
-        for (i = 0; i < IOA_MOD_BUCKETS; i++) {
-            InitializeListHead(&g_IoaModCache.Buckets[i]);
-        }
-        g_IoaModCache.Count = 0;
-        g_IoaModCacheInit = TRUE;
-    }
-}
-
-/* 淘汰超过关联时间窗的记录 (调用方持锁) */
-static
-VOID
-IoaModCacheEvictLocked(
-    _In_ LARGE_INTEGER Now
-    )
-{
-    ULONG i;
-
-    for (i = 0; i < IOA_MOD_BUCKETS; i++) {
-        PLIST_ENTRY entry = g_IoaModCache.Buckets[i].Flink;
-
-        while (entry != &g_IoaModCache.Buckets[i]) {
-            PIOA_MODULE_LOAD_REC rec =
-                CONTAINING_RECORD(entry, IOA_MODULE_LOAD_REC, ListEntry);
-            PLIST_ENTRY next = entry->Flink;
-            LONGLONG ageUs = (Now.QuadPart - rec->LoadTime.QuadPart) / 10;
-
-            if (ageUs < 0 || ageUs > (LONGLONG)IOA_MOD_WINDOW_MS * 1000) {
-                RemoveEntryList(entry);
-                g_IoaModCache.Count--;
-                HeapFree(GetProcessHeap(), 0, rec);
-            }
-            entry = next;
-        }
-    }
-}
-
-NTSTATUS
-IoaRecordModuleLoad(
-    _In_ ULONG ProcessId,
-    _In_ PCWSTR ModulePath,
-    _In_ LARGE_INTEGER LoadTime
-    )
-/*++
-Routine Description:
-    记录一次模块加载, 供 DLL 注入模块窗口确认使用。
-
-    数据源状态: 当前驱动 ImageLoad 事件未接入 IOA 流水线
-    (见 process_manager.c WkdMessage_ImageLoaded / EventParser),
-    本函数尚无调用者。接入后缓存即被填充, IoaConfirmDllInjectionByModule
-    自动生效。
-
-Arguments:
-    ProcessId  - 加载进程 PID。
-    ModulePath - 模块完整路径。
-    LoadTime   - 加载时间 (FILETIME 100ns)。
-
-Return Value:
-    STATUS_SUCCESS / STATUS_INVALID_PARAMETER / STATUS_INSUFFICIENT_RESOURCES。
---*/
-{
-    PIOA_MODULE_LOAD_REC rec;
-    LARGE_INTEGER now;
-
-    if (!ModulePath) {
-        return STATUS_INVALID_PARAMETER;
-    }
-    IoaModCacheEnsureInit();
-
-    rec = (PIOA_MODULE_LOAD_REC)HeapAlloc(GetProcessHeap(), 0, sizeof(*rec));
-    if (!rec) {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    RtlZeroMemory(rec, sizeof(*rec));
-    rec->ProcessId = ProcessId;
-    rec->LoadTime = LoadTime;
-    wcsncpy_s(rec->ModulePath, ARRAYSIZE(rec->ModulePath), ModulePath, _TRUNCATE);
-
-    GetSystemTimeAsFileTime((PFILETIME)&now);
-
-    AcquireSRWLockExclusive(&g_IoaModCache.Lock);
-    IoaModCacheEvictLocked(now);
-    InsertHeadList(&g_IoaModCache.Buckets[ProcessId % IOA_MOD_BUCKETS],
-                   &rec->ListEntry);
-    g_IoaModCache.Count++;
-    if (g_IoaModCache.Count > IOA_MOD_CACHE_MAX) {
-        /* 超过上限: 淘汰最老桶的一条记录 */
-        ULONG k;
-        for (k = 0; k < IOA_MOD_BUCKETS; k++) {
-            if (!IsListEmpty(&g_IoaModCache.Buckets[k])) {
-                PLIST_ENTRY tail = g_IoaModCache.Buckets[k].Blink;
-                PIOA_MODULE_LOAD_REC oldest =
-                    CONTAINING_RECORD(tail, IOA_MODULE_LOAD_REC, ListEntry);
-                RemoveEntryList(tail);
-                g_IoaModCache.Count--;
-                HeapFree(GetProcessHeap(), 0, oldest);
-                break;
-            }
-        }
-    }
-    ReleaseSRWLockExclusive(&g_IoaModCache.Lock);
-
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-IoaConfirmDllInjectionByModule(
-    _In_ ULONG TargetProcessId,
-    _Inout_ PULONG Confidence,
-    _Inout_ PULONG RiskScore
-    )
-/*++
-Routine Description:
-    远程线程 DLL 注入的模块窗口确认 (对齐 ShadowStrike
-    DetectRemoteThreadInjectionImpl, T1055.001)。
-
-    当目标进程在关联时间窗 (1s) 内加载了未信任 (非系统目录) 模块时,
-    将 DLL 注入置信度提升至确认级 (≥90), 风险分提升至 ≥85。
-
-    数据源状态: 模块缓存由 IoaRecordModuleLoad 填充; 当前为空时本函数
-    返回 STATUS_NOT_FOUND 且不改变判定, 不引入误报。
-
-Arguments:
-    TargetProcessId  - 注入目标进程 PID。
-    Confidence - [in,out] 注入置信度 [0,100]。
-    RiskScore  - [in,out] 注入风险分 [0,100]。
-
-Return Value:
-    STATUS_SUCCESS — 模块确认命中, 置信度/风险分已提升。
-    STATUS_NOT_FOUND — 缓存空或无窗口内未信任模块, 判定未改变。
---*/
-{
-    ULONG bucket;
-    PLIST_ENTRY entry;
-    LARGE_INTEGER now;
-    BOOLEAN confirmed = FALSE;
-
-    if (!Confidence || !RiskScore) {
-        return STATUS_INVALID_PARAMETER;
-    }
-    if (!g_IoaModCacheInit) {
-        return STATUS_NOT_FOUND;
-    }
-
-    GetSystemTimeAsFileTime((PFILETIME)&now);
-
-    /* 只读遍历 (共享锁下不做淘汰; 过期清理由写路径 IoaRecordModuleLoad 负责) */
-    AcquireSRWLockShared(&g_IoaModCache.Lock);
-
-    bucket = TargetProcessId % IOA_MOD_BUCKETS;
-    for (entry = g_IoaModCache.Buckets[bucket].Flink;
-         entry != &g_IoaModCache.Buckets[bucket];
-         entry = entry->Flink) {
-        PIOA_MODULE_LOAD_REC rec =
-            CONTAINING_RECORD(entry, IOA_MODULE_LOAD_REC, ListEntry);
-        LONGLONG ageUs;
-
-        if (rec->ProcessId != TargetProcessId) {
-            continue;
-        }
-        ageUs = (now.QuadPart - rec->LoadTime.QuadPart) / 10;
-        if (ageUs < 0 || ageUs > (LONGLONG)IOA_MOD_WINDOW_MS * 1000) {
-            continue;
-        }
-        /* 非系统目录模块 = 未信任, 构成注入载荷确认 */
-        if (!WkdIsSystemDirectory(rec->ModulePath)) {
-            confirmed = TRUE;
-            break;
-        }
-    }
-    ReleaseSRWLockShared(&g_IoaModCache.Lock);
-
-    if (confirmed) {
-        if (*Confidence < 90) {
-            *Confidence = 90;
-        }
-        if (*RiskScore < 85) {
-            *RiskScore = 85;
-        }
-        return STATUS_SUCCESS;
-    }
-    return STATUS_NOT_FOUND;
-}
-
-/**************************************************/
-/*    反射 DLL 精确确认 (SS AnalyzeCandidate 迁移)  */
-/**************************************************/
-
-_Use_decl_annotations_
-BOOLEAN
-IoaConfirmReflectiveLoading(
-    ULONG TargetProcessId,
-    ULONG_PTR StartRoutine
-    )
-/*++
-Routine Description:
-    反射 DLL 精确确认 — 事件驱动定向验证。
-    分类器以 UNBACKED_START 近似判定 ReflectiveDLL; 本函数用线程入口地址定向确认:
-      MsGetRegionInfo 定位入口区域 → 私有可执行 → MsScanRegionAt 定向扫描 →
-      确认隐藏无背衬 PE (WkdMemThreat_PEInjection 且 !PeInPeb)。
-    对齐 SS AnalyzeCandidate 的内存扫描确认阶段 (ReflectiveDLLDetector.cpp L2403-2418,
-      hasThreadStartingHere → Confirmed)。
-
-Arguments:
-    TargetProcessId    - 目标进程 PID。
-    StartRoutine - 远程线程入口地址 (ThreadCreate 载荷 StartRoutine)。
-
-Return Value:
-    TRUE = 确认隐藏无背衬 PE (反射加载); FALSE = 不可验证/未确认。
-    不可验证时返回 FALSE, 不改变原近似判定, 不引入误报。
---*/
-{
-    WKD_MEMORY_REGION region;
-    PWKD_MEM_SCAN_RESULT scan;
-    ULONG i;
-    BOOLEAN confirmed = FALSE;
-
-    if (TargetProcessId <= 4 || StartRoutine == 0) return FALSE;
-
-    /* 入口所在区域: 私有可执行 → 候选无背衬加载 (对齐 SS FindUnbackedExecutable) */
-    if (!MsGetRegionInfo(TargetProcessId, StartRoutine, &region)) return FALSE;
-    if (region.Type != WkdMemType_Private || !region.IsExecutable) return FALSE;
-
-    /* 定向扫描入口所在区域 (对齐 SS DispatchAsyncScan 的定向版本, MsScanRegionAt) */
-    scan = (PWKD_MEM_SCAN_RESULT)malloc(sizeof(WKD_MEM_SCAN_RESULT));
-    if (scan == NULL) return FALSE;
-
-    if (NT_SUCCESS(MsScanRegionAt(TargetProcessId, region.BaseAddress,
-                                  region.RegionSize, scan))) {
-        for (i = 0; i < scan->ThreatsFound; i++) {
-            if (scan->Threats[i].Type == WkdMemThreat_PEInjection &&
-                !scan->Threats[i].PeInPeb) {
-                /* 深度 PE 验证 (对齐 SS ValidatePEImpl, WpeAnalyzePEDeep):
-                   节表/数据目录/熵/SHA256 分级, 确认有效隐藏 PE (反射加载);
-                   深度验证不可用时保留 MsScanRegionAt 的区域级确认。 */
-                confirmed = TRUE;
-                {
-                    WKD_PE_DEEP_INFO deep;
-                    HANDLE hProc = OpenProcess(
-                        PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-                        FALSE, TargetProcessId);
-                    if (hProc != NULL) {
-                        if (SUCCEEDED(WpeAnalyzePEDeep(hProc,
-                                scan->Threats[i].PeImageBase, &deep))) {
-                            confirmed = deep.IsValidPE;
-                        }
-                        CloseHandle(hProc);
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    free(scan);
-    return confirmed;
-}
 
 /**************************************************/
 /*    线程劫持定向确认 (SS ValidateThread 迁移)     */
@@ -1204,14 +911,14 @@ IoaConfirmThreadHijacking(
     )
 /*++
 Routine Description:
-    线程劫持定向确认 — 事件驱动定向验证 (对齐 SS ValidateThreadInternal,
+    线程劫持定向确认 — 事件驱动定向验证 (ValidateThreadInternal,
     ThreadHijackDetector.cpp L889-1081 + CalculateRiskScore L531-551)。
     分类器/时序确认 (阶段4.5b) 判出劫持候选后, 用本函数读取目标线程上下文
     定向验证: RIP 无背衬 / 栈翻转 / 段异常 / 调试寄存器 / RWX, 输出
     IsCompromised。复用 ProcessThreads 的 WptValidateThread (含 WoW64 /
     TEB 栈边界), 壳码复用 IocDetectShellcode。
 
-    对齐 IoaConfirmReflectiveLoading 的"不可验证回退"模式: 无法读取上下文
+    对齐 PspDetermineReflectiveLoading 的"不可验证回退"模式: 无法读取上下文
     时返回 FALSE, 不改变原判定, 不引入误报。
 
     ※ 死代码: 供阶段4.5b 闭合深化与 IoaAnalyzeProcessInjection Step2
@@ -1285,7 +992,7 @@ Return Value:
 
     dataDword = BM_DATA_U64(&PairCtx->InteractionBitmap);
 
-    /* 统计 (供 IoaGetInjectionStatistics, 对齐 SS InjGetStatistics) */
+    /* 统计 (供 IoaGetInjectionStatistics, InjGetStatistics) */
     InterlockedIncrement64(&g_IoaInjStatsTotalCalls);
 
     /* 事件参数提取 (线程创建类事件含注入分析载荷; 内存事件携带保护/大小) */
@@ -1308,7 +1015,7 @@ Return Value:
         if (payload->InjectIndicators & WKD_MSG_INJECT_SUSPENDED_START) {
             hasSuspended = TRUE;
         }
-        /* MemoryProtection 已上送未消费 (对齐 SS InjTechPeInjection: Alloc+Write+EXECUTE,
+        /* MemoryProtection 已上送未消费 (InjTechPeInjection: Alloc+Write+EXECUTE,
          * InjectionDetector.c:2293-2296): 线程入口点可执行保护 → PE 注入判定信号,
          * 激活 IoaIsExecutableProtection (原死代码)。 */
         if (IoaIsExecutableProtection(payload->MemoryProtection) ||
@@ -1350,7 +1057,7 @@ Return Value:
             (PEVENT_PAYLOAD_QUEUE_APC)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
         IOA_ATOM_RESULT best;
 
-        /* 跨进程要求 (对齐 SS isCrossProcess): 同进程自 APC 不构成原子炸弹 */
+        /* 跨进程要求 (isCrossProcess): 同进程自 APC 不构成原子炸弹 */
         if ((ULONG)(ULONG_PTR)payload->SourceProcessId !=
             (ULONG)(ULONG_PTR)payload->TargetProcessId &&
             payload->ApcRoutine != 0 &&
@@ -1394,7 +1101,7 @@ Return Value:
                                          srcName, tgtName);
     risk = IoaComputeInjectionRisk(type, tgtName);
 
-    /* 孤儿注入器修正（对齐 SS PrpCalculateRelationshipScore
+    /* 孤儿注入器修正（PrpCalculateRelationshipScore
      * PR_SCORE_ORPHANED_INJECTOR=200）: 源进程父节点缺失（父已退出/
      * 不在谱系, T1_GFLAG_ORPHAN 语义）且非系统进程 → 注入风险分提升。
      * SS 0-1000 尺度 +200 → wkd 0-100 约 +20。 */
@@ -1404,7 +1111,7 @@ Return Value:
         risk = min(risk + 20, WKD_INJECT_RISK_CAP);
     }
 
-    /* 多目标注入器修正（对齐 SS PR_SCORE_MULTIPLE_TARGETS=120）:
+    /* 多目标注入器修正（PR_SCORE_MULTIPLE_TARGETS=120）:
      * 源进程操作不同目标数 >5 → 注入风险分提升。SS +120 → wkd 约 +10。 */
     if (SrcNode != NULL && SrcNode->OutPairCount > 5) {
         risk = min(risk + 10, WKD_INJECT_RISK_CAP);
@@ -1419,12 +1126,16 @@ Return Value:
             &conf, &risk);
     }
 
-    /* 反射 DLL 精确确认 (事件驱动定向验证, 对齐 SS AnalyzeCandidate L2403-2418):
-     * 分类器以 UNBACKED_START 近似判定 ReflectiveDLL; 定向验证线程入口区域
-     * 是否为隐藏无背衬 PE (MsGetRegionInfo + MsScanRegionAt + 模块对照)。
-     * 确认成功 → 置信度提升至确认级; 不可验证 → 保留近似判定, 不引入误报。 */
+    /* 反射 DLL 精确确认 (事件驱动定向验证, 合并入 PspDetermineReflectiveLoading,
+     * SS AnalyzeCandidate L2403-2418): 分类器以 UNBACKED_START 近似判定
+     * ReflectiveDLL; PspDetermineReflectiveLoading 定向验证线程入口区域是否为
+     * 隐藏无背衬 PE (MmGetMemoryRegionInformation + MsScanRegionAt + WpeAnalyzePEDeep +
+     * 加载器分类)。确认成功 → 置信度提升至确认级; 不可验证 → 保留近似判定,
+     * 不引入误报。 */
     if (type == WkdInjection_ReflectiveDLL && TgtNode) {
         ULONG_PTR startRoutine = 0;
+        RID_LOAD_TYPE loadType = RidLoad_Unknown;
+
         if (Event &&
             (Event->Type == WkdEvent_RemoteThreadCreate ||
              Event->Type == WkdEvent_ThreadCreate)) {
@@ -1432,19 +1143,18 @@ Return Value:
                 (PEVENT_PAYLOAD_THREAD_CREATE)((PUCHAR)Event + sizeof(WKD_EVENT_HEADER));
             startRoutine = (ULONG_PTR)payload->StartRoutine;
         }
-        if (IoaConfirmReflectiveLoading(
+        if (PspDetermineReflectiveLoading(
                 (ULONG)(ULONG_PTR)TgtNode->ProcessId,
-                startRoutine)) {
-            conf = 95;   /* 对齐 SS DetectionConfidence::Confirmed */
-            if (risk < 90) risk = 90;
+                startRoutine, &loadType, &conf, &risk)) {
+            /* 确认成功: 已回填确认级置信度/风险分 (≥90, RID_CONFIRM_*) */
         }
     }
 
     /* 原子炸弹 Critical 提升: 全局表存在 Critical 级可疑原子 (壳码+高熵等强特征)
-     * 时置信度提升至确认级 (对齐 SS BuildAttackFromCorrelation 高置信度路径)。 */
+     * 时置信度提升至确认级 (BuildAttackFromCorrelation 高置信度路径)。 */
     if (type == WkdInjection_AtomBombing &&
         atomSuspicion == IoaAtom_Critical) {
-        conf = 90;   /* 对齐 SS DetectionConfidence::Confirmed */
+        conf = 90;   /* DetectionConfidence::Confirmed */
         if (risk < 85) risk = 85;
     }
 
@@ -1569,7 +1279,7 @@ Return Value:
     case WkdInjection_ShellcodeInjection:
         return L"T1055.002";
     case WkdInjection_PeInjection:
-        /* 对齐 SS InjTechPeInjection (InjectionDetector.c:2313-2316): PE 注入 */
+        /* InjTechPeInjection (InjectionDetector.c:2313-2316): PE 注入 */
         return L"T1055.002";
     case WkdInjection_ThreadHijacking:
         return L"T1055.003";
@@ -1577,28 +1287,28 @@ Return Value:
     case WkdInjection_EarlyBird:
         return L"T1055.004";
     case WkdInjection_TlsCallback:
-        /* 对齐 SS InjTechTlsCallback (InjectionDetector.c:2328-2331) */
+        /* InjTechTlsCallback (InjectionDetector.c:2328-2331) */
         return L"T1055.005";
     case WkdInjection_AtomBombing:
         return L"T1055.009";
     case WkdInjection_ExtraWindowMemory:
-        /* 对齐 SS InjTechExtraWindowMemory (InjectionDetector.c:2333-2336) */
+        /* InjTechExtraWindowMemory (InjectionDetector.c:2333-2336) */
         return L"T1055.011";
     case WkdInjection_ProcessHollowing:
         return L"T1055.012";
     case WkdInjection_ProcessDoppelganging:
-        /* 修复: 原落默认 T1055, 注释已言明应映射 T1055.013 (对齐 SS 链模式) */
+        /* 修复: 原落默认 T1055, 注释已言明应映射 T1055.013 (链模式) */
         return L"T1055.013";
     case WkdInjection_VdsoHijacking:
         return L"T1055.014";
     case WkdInjection_Listplanting:
         return L"T1055.015";
     case WkdInjection_SectionMapping:
-        /* 对齐 SS InjTechMapViewOfSection (InjectionDetector.c:2358-2361): 归 T1055,
+        /* InjTechMapViewOfSection (InjectionDetector.c:2358-2361): 归 T1055,
          * 避免与 PeInjection 的 T1055.002 撞号 */
         return L"T1055";
     case WkdInjection_CallbackInjection:
-        /* 对齐 SS InjTechCallbackInjection: MITRE 无独立子技术, 归 T1055 */
+        /* InjTechCallbackInjection: MITRE 无独立子技术, 归 T1055 */
         return L"T1055";
     default:
         return L"T1055";
@@ -1882,7 +1592,7 @@ Return Value:
 /**************************************************/
 /*   SS InjectionDetector.c 迁移补充 (2026-08)      */
 /*                                                  */
-/*  以下能力为活编译无调用者死代码, 对齐 SS 内核版      */
+/*  以下能力为活编译无调用者死代码, 内核版      */
 /*  InjectionDetector.c 功能面 (操作追踪+链关联+       */
 /*  技术判定+统计查询)。数据源缺失标注见各函数注释,     */
 /*  激活条件满足后接线, 不改变现有判定。               */
@@ -1894,7 +1604,7 @@ static volatile LONG64 g_IoaInjStatsDetected   = 0;
 
 /*
  * IoaCalcOperationSuspicion — 单操作即时嫌疑分。
- * 对齐 SS InjRecordOperation (InjectionDetector.c:918-938) +
+ * InjRecordOperation (InjectionDetector.c:918-938) +
  * InjpIsSuspiciousProtection (L3010-3030):
  *   跨进程 +20 / 可疑保护 (RWX 或 ExecuteWriteCopy) +30 /
  *   远程 CreateThread +40 / 远程 QueueApc +35, cap 100。
@@ -1927,7 +1637,7 @@ IoaCalcOperationSuspicion(
     }
 
     /* 可疑保护: 基础值 (低 8 位, 忽略修饰标志) 为 RWX (0x40) 或
-     * ExecuteWriteCopy (0x80)。对齐 SS M-6 FIX: PAGE_* 基础值是互斥值
+     * ExecuteWriteCopy (0x80)。M-6 FIX: PAGE_* 基础值是互斥值
      * 非位掩码, 须等值比较 (InjectionDetector.c:3019-3030)。 */
     {
         ULONG base = Protection & 0xFF;
@@ -2028,7 +1738,7 @@ IoaClassifySecondaryInjection(
 
 /*
  * IoaGetInjectionStatistics — 注入检测统计。
- * 对齐 SS InjGetStatistics (InjectionDetector.c:1467-1540, 8 计数)。
+ * InjGetStatistics (InjectionDetector.c:1467-1540, 8 计数)。
  *
  * wkd 无操作哈希表/链/阻断通道, 5 个计数无对应物置 0 留位:
  *   BlockedInjections / DroppedOperations / ChainsCreated / ActiveOperations
@@ -2057,7 +1767,7 @@ IoaGetInjectionStatistics(
 
 /*
  * IoaQueryInjectionChain — 进程对注入链查询。
- * 对齐 SS InjGetChainInfo (InjectionDetector.c:1226-1292)。
+ * InjGetChainInfo (InjectionDetector.c:1226-1292)。
  *
  * SS 链键为 (SrcPid,TgtPid), wkd 进程对键亦为 (SourceProcessId,TargetProcessId) PID
  * (2026-08-23 pair 键 PID 化): 调用方先用 AeLookupProcessPair(SrcPid, TgtPid)
@@ -2099,7 +1809,7 @@ IoaQueryInjectionChain(
 
 /*
  * IoaDetectInjectionAtRegion — 地址区域定向注入检测。
- * 对齐 SS InjDetectInjection (InjectionDetector.c:1099-1224):
+ * InjDetectInjection (InjectionDetector.c:1099-1224):
  *   SS 在 (SrcPid,TgtPid) 链的操作里匹配 TargetAddress∈[addr, addr+Size),
  *   对命中链做链分析取最佳技术。wkd 无地址级操作记录, 退化实现:
  *     Step1 进程注入状态查询 (该进程作为目标的所有注入对);
@@ -2142,7 +1852,7 @@ IoaDetectInjectionAtRegion(
             for (i = 0; i < scan.ThreatsFound && i < WKD_MEM_MAX_THREATS; i++) {
                 PWKD_MEM_THREAT t = &scan.Threats[i];
                 if (t->Type == WkdMemThreat_PEInjection && !t->PeInPeb) {
-                    /* 隐藏无背衬 PE → 反射加载 (对齐 IoaConfirmReflectiveLoading) */
+                    /* 隐藏无背衬 PE → 反射加载 (对齐 PspDetermineReflectiveLoading) */
                     type = WkdInjection_ReflectiveDLL;
                     if (confidence < 90) confidence = 90;
                 } else if (t->Type == WkdMemThreat_PEInjection) {
@@ -2175,7 +1885,7 @@ IoaDetectInjectionAtRegion(
 
 /*
  * IoaClearInjectionChain — 清进程对注入语义位。
- * 对齐 SS InjClearChain (InjectionDetector.c:1542-1595) 删除指定进程对链。
+ * InjClearChain (InjectionDetector.c:1542-1595) 删除指定进程对链。
  * wkd 进程对无链结构, 仅清 InteractionBitmap 语义层的注入位 (对齐
  * IoaInjSemHasAny 掩码, 保留非注入语义)。
  * InjClearAllChains (清全部) 需 PairManager 全量遍历 API, wkd 无, 不提供。
@@ -2233,7 +1943,7 @@ IoaClassifyBySsOperationPattern(
         return WkdInjection_Unknown;
     }
 
-    /* 累积模式位 (对齐 SS InjpCalculateOperationPatterns) */
+    /* 累积模式位 (InjpCalculateOperationPatterns) */
     if (Pat->HasAllocate && Pat->HasWrite)      patterns |= 0x0001;  /* ALLOCATE_WRITE */
     if (Pat->HasWrite && Pat->HasProtect)       patterns |= 0x0002;  /* WRITE_PROTECT */
     if (Pat->HasProtect && Pat->HasExecProtect) patterns |= 0x0004;  /* PROTECT_EXECUTE */
@@ -2245,7 +1955,7 @@ IoaClassifyBySsOperationPattern(
     if (Pat->HasExecProtect)                    flags |= 0x0001;     /* INJ_CHAIN_FLAG_HAS_EXECUTE */
     if (Pat->HasTransacted)                     flags |= 0x0010;     /* INJ_CHAIN_FLAG_TRANSACTED */
 
-    /* 技术匹配 (对齐 SS InjpMatchPatternToTechnique, 判定顺序一致) */
+    /* 技术匹配 (InjpMatchPatternToTechnique, 判定顺序一致) */
     if ((patterns & 0x0080) && (patterns & 0x0040) && (patterns & 0x0001)) {
         return WkdInjection_ProcessHollowing;    /* Suspend+SetCtx+AllocWrite */
     }
@@ -2601,7 +2311,7 @@ IoaAtom_ScanPeriodic(
  * ========================================================================== */
 
 /* ============================================================================
- * ⑥ APC 例程模块名解析 (对齐 SS GetModuleNameFromAddress, cpp L217-241)
+ * ⑥ APC 例程模块名解析 (GetModuleNameFromAddress, cpp L217-241)
  *
  * 降级判定: 当 ApcRoutine 非精确 API 地址时, 用所在模块名 (kernel32/
  *   kernelbase/ntdll) 作弱信号。SS 在 AnalyzeAPCImpl (ntdll.dll +10 分)
@@ -2671,7 +2381,7 @@ IoaAtomModuleOfRoutine(
 }
 
 /* ============================================================================
- * ⑦ 可疑原子 payload 提取 + SHA256 (对齐 SS BuildAttackFromCorrelation,
+ * ⑦ 可疑原子 payload 提取 + SHA256 (BuildAttackFromCorrelation,
  *    cpp L1231-1247)
  *
  * 将可疑原子内容作为 payload 提取并计算 SHA256, 反哺 IOC (哈希查询/
@@ -2692,7 +2402,7 @@ IoaAtomExtractPayloadHash(
 }
 
 /* ============================================================================
- * ⑧ 单原子查询工具 (对齐 SS GetAtomName / ContainsShellcode / GetAtomEntropy,
+ * ⑧ 单原子查询工具 (GetAtomName / ContainsShellcode / GetAtomEntropy,
  *    cpp L1684-1700 / L2099-2112)
  *
  * 供 UI/主动查询: 对指定原子值做一次完整分析 (内容/熵/壳码/分级)。
@@ -2717,7 +2427,7 @@ IoaAtomQueryAtom(
 }
 
 /* ============================================================================
- * ⑨ 原子创建/删除事件入口 (对齐 SS OnAtomCreateImpl / OnAtomDeleteImpl,
+ * ⑨ 原子创建/删除事件入口 (OnAtomCreateImpl / OnAtomDeleteImpl,
  *    cpp L1335-1377 / L1379-1387)
  *
  * 激活依赖: 驱动补 NtAddAtom/NtDeleteAtom syscall case 上送事件。
@@ -2801,9 +2511,9 @@ typedef struct _IOA_SECTION_TABLE {
     LIST_ENTRY          Buckets[IOA_SECTION_HASH_BUCKETS];
     LONG                Count;
     BOOLEAN             Initialized;
-    LONG                NextSectionId;      /* 自增 SectionId（对齐 SS NextSectionId） */
+    LONG                NextSectionId;      /* 自增 SectionId（NextSectionId） */
     LARGE_INTEGER       StartTime;
-    /* 统计（对齐 SS SEC_TRACKER.Stats） */
+    /* 统计（SEC_TRACKER.Stats） */
     ULONG64             TotalCreated;
     ULONG64             TotalMapped;
     ULONG64             TotalUnmapped;
@@ -2834,7 +2544,7 @@ IoaSectionEnsureInit(
     g_IoaSectionTable.Initialized = TRUE;
 }
 
-/* 64 位斐波那契哈希（对齐 SS SecpHashSectionObject c:1931） */
+/* 64 位斐波那契哈希（SecpHashSectionObject c:1931） */
 static
 ULONG
 IoaSectionHashObject(
@@ -2915,7 +2625,7 @@ IoaSectionFillInfo(
 }
 
 /*
- * IoaSectionTrackCreate — 记录 Section 创建（对齐 SS SecTrackSectionCreate c:566）。
+ * IoaSectionTrackCreate — 记录 Section 创建（SecTrackSectionCreate c:566）。
  * SectionObject==0（创建失败）时忽略；已存在条目返回 STATUS_OBJECT_NAME_EXISTS
  * （对齐 CRITICAL-2 原子 check-and-insert）。
  */
@@ -2979,7 +2689,7 @@ IoaSectionTrackCreate(
 }
 
 /*
- * IoaSectionTrackMap — 记录一次映射（对齐 SS SecTrackSectionMap c:790）。
+ * IoaSectionTrackMap — 记录一次映射（SecTrackSectionMap c:790）。
  * 跨进程（Source≠Target）→ CrossProcessMapCount++；映射进程≠Creator 的
  * RemoteMap 由 IoaSectionIsRemoteMapped 即时判定（不在此置位）。
  */
@@ -3034,10 +2744,10 @@ IoaSectionTrackMap(
 
     InsertTailList(&entry->MapList, &rec->ListEntry);
     entry->ActiveMapCount++;
-    entry->TotalMapCount++;             /* 历史累计（对齐 SS MapCount） */
+    entry->TotalMapCount++;             /* 历史累计（MapCount） */
     g_IoaSectionTable.TotalMapped++;
 
-    /* 跨进程判定（对齐 SS SecTrackSectionMap c:858：mapEntry->ProcessId !=
+    /* 跨进程判定（SecTrackSectionMap c:858：mapEntry->ProcessId !=
      * CreatorProcessId，即被映射进程 ≠ Section 创建者） */
     if (TargetProcessId != entry->CreatorProcessId) {
         entry->CrossProcessMapCount++;
@@ -3050,7 +2760,7 @@ IoaSectionTrackMap(
 }
 
 /*
- * IoaSectionTrackUnmap — 记录解除映射（对齐 SS SecTrackSectionUnmap c:901）。
+ * IoaSectionTrackUnmap — 记录解除映射（SecTrackSectionUnmap c:901）。
  * 按 (ProcessId, ViewBase) 匹配活跃记录并移除（活跃映射数递减）。
  */
 NTSTATUS
@@ -3169,7 +2879,7 @@ IoaIsSectionCrossProcessMapped(
 }
 
 /*
- * IoaSectionIsRemoteMapped — RemoteMap 三方判定（对齐 SS SecSuspicion_RemoteMap
+ * IoaSectionIsRemoteMapped — RemoteMap 三方判定（SecSuspicion_RemoteMap
  * 120 分语义：映射进程 ≠ Creator 且 ≠ 当前进程）。在共享 Section 的跨进程映射
  * 中查找"第三方"（既非创建者也非当前检查者）进程。
  */
@@ -3208,7 +2918,7 @@ IoaSectionIsRemoteMapped(
 }
 
 /*
- * IoaGetSectionInfo — 查询 Section 快照（对齐 SS SecGetSectionInfo c:1040）。
+ * IoaGetSectionInfo — 查询 Section 快照（SecGetSectionInfo c:1040）。
  */
 NTSTATUS
 IoaGetSectionInfo(
@@ -3236,9 +2946,9 @@ IoaGetSectionInfo(
 }
 
 /*
- * IoaSectionCleanupExpired — 清理过期条目（对齐 SS SecpCleanupTimerCallback c:1773）。
+ * IoaSectionCleanupExpired — 清理过期条目（SecpCleanupTimerCallback c:1773）。
  * 移除 ActiveMapCount==0 且超过 5min 的条目。由外部周期调用（死代码，接入后挂
- * agent 维护线程；对齐 SS 60s 周期）。
+ * agent 维护线程；60s 周期）。
  */
 VOID
 IoaSectionCleanupExpired(
@@ -3278,7 +2988,7 @@ IoaSectionCleanupExpired(
 }
 
 /*
- * IoaGetSectionById — 按 SectionId 查询（对齐 SS SecGetSectionById c:1081）。
+ * IoaGetSectionById — 按 SectionId 查询（SecGetSectionById c:1081）。
  * ※ 死代码: SectionId 为聚合表自增 ID（SectionObject 指针的代理），供 UI/日志引用。
  */
 NTSTATUS
@@ -3316,7 +3026,7 @@ IoaGetSectionById(
 }
 
 /*
- * IoaFindSectionByFile — 按后备文件名查询（对齐 SS SecFindSectionByFile c:1130）。
+ * IoaFindSectionByFile — 按后备文件名查询（SecFindSectionByFile c:1130）。
  * ※ 死代码: 数据源缺失——IOA_SECTION_ENTRY.FileName 恒空（驱动 Section Create
  *   不上送 FilePath），恒 STATUS_NOT_FOUND。接入前提: 驱动 Section Create body
  *   补 FilePath 上送 + IoaSectionTrackCreate 填充 FileName。
@@ -3398,7 +3108,7 @@ IoaGetSuspiciousSections(
 }
 
 /*
- * IoaSectionGetStatistics — 聚合表统计（对齐 SS SecGetStatistics c:1657）。
+ * IoaSectionGetStatistics — 聚合表统计（SecGetStatistics c:1657）。
  * ※ 死代码: 无调用者。
  */
 NTSTATUS

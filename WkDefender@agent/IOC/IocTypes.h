@@ -82,10 +82,10 @@ typedef struct _WKD_FILE_REPUTATION {
 /*               文件类型识别                       */
 /*  (SS FileTypeAnalyzer 迁移, 2026-08-06,          */
 /*   FileFormat/FileCategory/RiskLevel/Spoofing     */
-/*   C 化定长; 枚举值对齐 SS 分区间编号)            */
+/*   C 化定长; 枚举值分区间编号)            */
 /**************************************************/
 
-/* 细格式 (对齐 SS FileFormat 分区间: 可执行1-99/脚本100-199/
+/* 细格式 (FileFormat 分区间: 可执行1-99/脚本100-199/
  * 文档200-299/归档300-399/图像400-499/音频500-549/视频550-599/
  * 数据600-699/证书700-749/字体750-799/其他800+) */
 typedef enum _WKD_FILE_FORMAT {
@@ -210,7 +210,7 @@ typedef enum _WKD_FILE_FORMAT {
     WkdFmt_Registry = 812,
 } WKD_FILE_FORMAT, *PWKD_FILE_FORMAT;
 
-/* 大类 (对齐 SS FileCategory 21 类) */
+/* 大类 (FileCategory 21 类) */
 typedef enum _WKD_FILE_CATEGORY {
     WkdCat_Unknown = 0,
     WkdCat_Executable = 1,      /* PE/ELF/Mach-O/.NET/Java */
@@ -236,7 +236,7 @@ typedef enum _WKD_FILE_CATEGORY {
     WkdCat_Text = 21,           /* 纯文本 */
 } WKD_FILE_CATEGORY, *PWKD_FILE_CATEGORY;
 
-/* 风险等级 (对齐 SS RiskLevel 5 级) */
+/* 风险等级 (RiskLevel 5 级) */
 typedef enum _WKD_RISK_LEVEL {
     WkdRisk_Safe = 0,       /* 图像/音频/视频 */
     WkdRisk_Low = 1,        /* 文本/配置 */
@@ -245,7 +245,7 @@ typedef enum _WKD_RISK_LEVEL {
     WkdRisk_Critical = 4,   /* 可执行 */
 } WKD_RISK_LEVEL, *PWKD_RISK_LEVEL;
 
-/* 欺骗类型 (对齐 SS SpoofingType 6 类) */
+/* 欺骗类型 (SpoofingType 6 类) */
 typedef enum _WKD_SPOOFING_TYPE {
     WkdSpoof_None = 0,
     WkdSpoof_ExtensionMismatch = 1, /* 扩展名与内容不符 (如 .jpg 实为 PE) */
@@ -264,7 +264,7 @@ typedef struct _WKD_MAGIC_SIGNATURE {
     WKD_FILE_FORMAT Format;     /* 匹配格式 (待 Disambiguate 精化) */
 } WKD_MAGIC_SIGNATURE, *PWKD_MAGIC_SIGNATURE;
 
-/* 文件类型分析结果 (对齐 SS FileTypeInfo, C 化定长) */
+/* 文件类型分析结果 (FileTypeInfo, C 化定长) */
 typedef struct _WKD_FILE_TYPE_INFO {
     BOOLEAN             Detected;           /* 是否识别出类型 */
     ULONG               Confidence;         /* 0-100 (SS double 0.0-1.0 ×100) */
@@ -273,7 +273,7 @@ typedef struct _WKD_FILE_TYPE_INFO {
     WKD_RISK_LEVEL      RiskLevel;
     WCHAR               Extension[16];      /* 真实扩展名 (如 L".exe") */
     CHAR                Description[64];    /* 人类可读描述 */
-    CHAR                MimeType[96];       /* MIME 类型 (对齐 SS FileTypeInfo.mimeType) */
+    CHAR                MimeType[96];       /* MIME 类型 (FileTypeInfo.mimeType) */
 
     /* 欺骗检测 */
     BOOLEAN             IsSpoofed;
@@ -302,7 +302,7 @@ typedef struct _WKD_FILE_TYPE_INFO {
     ULONG               KeywordCount;
 } WKD_FILE_TYPE_INFO, *PWKD_FILE_TYPE_INFO;
 
-/* 扩展名完整信息 (对齐 SS ExtensionInfo, C 化定长; 供 GetExtensionInfo 查询) */
+/* 扩展名完整信息 (ExtensionInfo, C 化定长; 供 GetExtensionInfo 查询) */
 typedef struct _WKD_EXTENSION_INFO {
     CHAR                Extension[24];      /* 小写带点 (如 ".exe") */
     WKD_FILE_FORMAT     Format;
@@ -352,7 +352,7 @@ typedef struct _WKD_SIG_ANOMALY {
 
 /* 签名狩猎分析结果 (DSV AnalyzeSignature 迁移) */
 typedef struct _WKD_SIGNATURE_HUNT_RESULT {
-    ULONG            RiskScore;      /* 0-100 聚合 (取各 anomaly 贡献最大值, 对齐 SS max 聚合) */
+    ULONG            RiskScore;      /* 0-100 聚合 (取各 anomaly 贡献最大值, max 聚合) */
     ULONG            AnomalyCount;
     WKD_SIG_ANOMALY  Anomaly[WKD_SIG_HUNT_MAX_ANOMALIES];
     BOOLEAN          IsStolenCert;   /* 叶/链命中被盗证书库 */
@@ -503,7 +503,7 @@ typedef struct _IOC_SCAN_RESULT {
     WCHAR               SignerName[256];
     ULONG               CertScore;
 
-    /* 证书详情 (对齐 SS ExtractCertificateDetailsImpl, 2026-08) */
+    /* 证书详情 (ExtractCertificateDetailsImpl, 2026-08) */
     WCHAR               IssuerName[256];
     CHAR                Thumbprint[64];         /* SHA1 指纹 hex 小写 */
     ULONG64             CertValidFrom;          /* Unix 秒 (0=未知) */
@@ -530,6 +530,11 @@ typedef struct _IOC_SCAN_RESULT {
      * 消费面: 信誉归因细分 (SignatureReputation 已接线)。0 前缀=未细分。 */
     WCHAR               RevokeReason[96];
 
+    /* Authenticode 认证哈希 (Authentihash, 2026-09-14):
+     * 整文件 SHA-256 (清可选头 CheckSum + 排除证书表), 小写 hex 64+NUL;
+     * IocScan_ExtractCertDetails 顺带填充, 供离线 catalog / 威胁情报比对。 */
+    CHAR                Authentihash[65];
+
     /* LOLBin */
     BOOLEAN             IsLolbin;
     ULONG               LolbinConfidence;
@@ -553,7 +558,7 @@ typedef struct _IOC_SCAN_RESULT {
     ULONG               ImportSuspiciousCount; /* 可疑导入函数数 */
     BOOLEAN             HasDynamicLoading;     /* LoadLibrary + GetProcAddress 动态加载组合 */
     CHAR                ImpHash[33];           /* 导入哈希 (MD5 hex, 小写 dll.func 排序拼接, 保持既有行为) */
-    CHAR                ImpHashStandard[33];   /* 标准 Mandiant ImpHash (不排序, 对齐 SS ComputeImpHashImpl) */
+    CHAR                ImpHashStandard[33];   /* 标准 Mandiant ImpHash (不排序, ComputeImpHashImpl) */
 
     /* 加壳检测 */
     BOOLEAN             IsPacked;
@@ -594,7 +599,7 @@ typedef struct _IOC_SCAN_RESULT {
     BOOLEAN             NetHasPayloadEmbed;     /* 高熵资源/FieldRVA 载荷 */
     ULONG               NetScore;           /* .NET 威胁分 0-1000 */
 
-    /* 启发式威胁名 (对齐 SS GenerateThreatName, 格式 Heuristic:Win/Packed) */
+    /* 启发式威胁名 (GenerateThreatName, 格式 Heuristic:Win/Packed) */
     CHAR                ThreatName[64];        /* 对齐 IOC_MAX_THREAT_NAME_LENGTH */
 
     /* 综合 */
@@ -653,7 +658,7 @@ typedef struct _IOC_ENGINE_STATS {
 
 /**************************************************/
 /*               多算法哈希 (SS FileHasher)         */
-/*  对齐 SS FileHasher.hpp FileHashes (纯 C 载体)   */
+/*  FileHasher.hpp FileHashes (纯 C 载体)   */
 /**************************************************/
 
 typedef enum _WKD_HASH_ALG {
@@ -676,10 +681,10 @@ typedef struct _WKD_FILE_HASH_SET {
     BOOLEAN Sha512Valid;   BYTE Sha512[64];
     BOOLEAN Sha3_256Valid; BYTE Sha3_256[32];
     BOOLEAN Sha3_512Valid; BYTE Sha3_512[64];
-    /* CTPH 模糊哈希 (buffer 核心, "blockSize:sig1:sig2" ≤109+1, 对齐 SS kMaxResultLength=148) */
+    /* CTPH 模糊哈希 (buffer 核心, "blockSize:sig1:sig2" ≤109+1, kMaxResultLength=148) */
     BOOLEAN FuzzyValid;    CHAR Fuzzy[128];
     BOOLEAN HasErrors;
-    ULONG   ErrorCode;     /* win32/ntstatus 简化 (对齐 SS HashUtils::Error) */
+    ULONG   ErrorCode;     /* win32/ntstatus 简化 (HashUtils::Error) */
 } WKD_FILE_HASH_SET, *PWKD_FILE_HASH_SET;
 
 /* const 指针别名 (读取方, 对齐 PC* 命名惯例) */
@@ -689,10 +694,10 @@ typedef const WKD_FILE_HASH_SET *PCWKD_FILE_HASH_SET;
 /*               媒体文件分析                       */
 /*  (SS MediaFileScanner 迁移, 2026-08-06:          */
 /*   格式验证/隐写检测/元数据·EXIF/漏洞载荷/追加数据 */
-/*   C 化定长, 枚举值对齐 SS 原编号; 虚标枚举不迁)   */
+/*   C 化定长, 枚举值原编号; 虚标枚举不迁)   */
 /**************************************************/
 
-/* 媒体类型 (对齐 SS MediaType; 仅迁移 SS 实际实现的格式,
+/* 媒体类型 (MediaType; 仅迁移 SS 实际实现的格式,
  * ICO/FLAC/OGG/AVI/MKV/MOV 为 SS 虚标枚举从不被识别,
  * 文件类型面由 WKD_FILE_FORMAT WkdFmt_* 已覆盖) */
 typedef enum _WKD_MEDIA_TYPE {
@@ -708,7 +713,7 @@ typedef enum _WKD_MEDIA_TYPE {
     WkdMedia_Mp4     = 40,
 } WKD_MEDIA_TYPE, *PWKD_MEDIA_TYPE;
 
-/* 隐写技术 (对齐 SS StegoTechnique; Palette/AlphaChannel 无实现不迁) */
+/* 隐写技术 (StegoTechnique; Palette/AlphaChannel 无实现不迁) */
 typedef enum _WKD_STEGO_TECHNIQUE {
     WkdStego_None       = 0,
     WkdStego_Lsb        = 1,    /* LSB 卡方 (仅 BMP 像素区生效, PNG 缺陷标注) */
@@ -717,7 +722,7 @@ typedef enum _WKD_STEGO_TECHNIQUE {
     WkdStego_Metadata   = 5,    /* 大元数据段 */
 } WKD_STEGO_TECHNIQUE, *PWKD_STEGO_TECHNIQUE;
 
-/* 媒体威胁类型 (对齐 SS MediaThreatType 全量) */
+/* 媒体威胁类型 (MediaThreatType 全量) */
 typedef enum _WKD_MEDIA_THREAT_TYPE {
     WkdMediaThreat_None             = 0,
     WkdMediaThreat_Steganography    = 1,
@@ -735,7 +740,7 @@ typedef enum _WKD_MEDIA_THREAT_TYPE {
 #define WKD_MEDIA_MAX_APPENDED   (10 * 1024 * 1024)  /* SS MAX_APPENDED_EXTRACT */
 #define WKD_MEDIA_MAX_FILE_SIZE  (100 * 1024 * 1024) /* SS MAX_SCAN_FILE_SIZE */
 
-/* 媒体威胁 (对齐 SS MediaThreat; Description 覆盖最长描述 ~80 字符) */
+/* 媒体威胁 (MediaThreat; Description 覆盖最长描述 ~80 字符) */
 typedef struct _WKD_MEDIA_THREAT {
     WKD_MEDIA_THREAT_TYPE Type;
     ULONG                 Severity;
@@ -743,7 +748,7 @@ typedef struct _WKD_MEDIA_THREAT {
     CHAR                  Description[128];
 } WKD_MEDIA_THREAT, *PWKD_MEDIA_THREAT;
 
-/* 媒体元数据 (对齐 SS MediaMetadata; 裁剪 SS 只设标志不提取值的
+/* 媒体元数据 (MediaMetadata; 裁剪 SS 只设标志不提取值的
  * colorSpace/GPS 坐标/缩略图字节/dateTime 虚字段, 保留 HasGPS/HasThumbnail 标志) */
 typedef struct _WKD_MEDIA_METADATA {
     ULONG     Width;
@@ -757,7 +762,7 @@ typedef struct _WKD_MEDIA_METADATA {
     ULONG     CommentCount;
 } WKD_MEDIA_METADATA, *PWKD_MEDIA_METADATA;
 
-/* 隐写分析结果 (对齐 SS StegoAnalysis; Confidence 0-100,
+/* 隐写分析结果 (StegoAnalysis; Confidence 0-100,
  * ExtractedData 由 IocMedia_ExtractAppendedData 独立 API 覆盖, 不在结构内) */
 typedef struct _WKD_STEGO_ANALYSIS {
     BOOLEAN               StegoDetected;

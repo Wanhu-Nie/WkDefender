@@ -501,7 +501,7 @@ Return Value:
                         /* 镜像签名异常 (SS DSV OnKernelImageLoad L2274-2338 迁移, 2026-08-09):
                          * 未签名 .sys 驱动 (+100/T1014) + 内核/用户态签名等级不匹配 (+80/
                          * T1553.006) 叠加进 scanRes.SignatureHunt (未狩猎时补跑 9 类)。
-                         * RiskScore ≥90 → 事件提级 High (对齐 SS 阻断阈值, wkd monitor-only
+                         * RiskScore ≥90 → 事件提级 High (阻断阈值, wkd monitor-only
                          * 告警; 响应分发由阶段6 VerdictEngine 决定)。 */
                         if (g_IoaSignatureHuntingEnabled) {
                             IoaSigHunt_AnalyzeImageLoad(pathBuf, payload->SignatureStatus, &scanRes);

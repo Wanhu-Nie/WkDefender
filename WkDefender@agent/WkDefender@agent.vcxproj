@@ -1,0 +1,469 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{709cc9be-b895-4c84-991e-6b7cf342414d}</ProjectGuid>
+    <RootNamespace>WkDefenderagent</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>WkDefender@Agent</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0A00;_WIN32_IE=0x0A00;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>External\sqlite3;External\yara\include</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>External\sqlite3;External\yara\lib;External\openssl\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);sqlite3.lib;rpcrt4.lib;wintrust.lib;libyara_debug.lib;libcrypto_debug.lib;ws2_32.lib;crypt32.lib;version.lib;rstrtmgr.lib;setupapi.lib;cfgmgr32.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0A00;_WIN32_IE=0x0A00;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>External\sqlite3;External\yara\include</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>External\sqlite3;External\yara\lib;External\openssl\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);sqlite3.lib;rpcrt4.lib;wintrust.lib;libyara.lib;libcrypto.lib;ws2_32.lib;crypt32.lib;version.lib;rstrtmgr.lib;setupapi.lib;cfgmgr32.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <!-- 主编排 + 入口 -->
+    <ClCompile Include="ETW\EtwConsumer.c" />
+    <ClCompile Include="IOA\IoaCarsalGraph.c" />
+    <ClCompile Include="IOA\IoaEdgeAggregate.c" />
+    <ClCompile Include="IOA\IoaProcessPair.c" />
+    <ClCompile Include="IOA\PairAnalysisContext.c" />
+    <ClCompile Include="IOA\IoaInjectionClassifier.c" />
+    <ClCompile Include="IOA\Tier3\CausalAnalyzer.c" />
+    <ClCompile Include="CmdLineAnalyzer.c" />
+    <!-- 令牌分析引擎 (SS TokenAnalyzer+PrivilegeMonitor 融合迁移, 2026-08-05) -->
+    <ClCompile Include="TokenAnalyzer.c" />
+    <ClCompile Include="main.c" />
+    <!-- 扫描编排层 (SS ScanEngine 迁移) -->
+    <ClCompile Include="ScanManager.c" />
+    <!-- 目录监控编排层 (SS DirectoryMonitor 迁移 2026-08) -->
+    <ClCompile Include="FileSystem\DirectoryMonitor.c" />
+    <ClCompile Include="FileSystem\FileLockManager.c" />
+    <!-- 挂载点监控 (SS MountPointMonitor 迁移 2026-08) -->
+    <ClCompile Include="FileSystem\MountPointMonitor.c" />
+    <!-- IOC 引擎 -->
+    <ClCompile Include="IOC\IocEngine.c" />
+    <ClCompile Include="IOC\IocMatcher.c" />
+    <ClCompile Include="IOC\IocMatcherMatch.c" />
+    <ClCompile Include="FileSystem\FileAnalyzer.c" />
+    <ClCompile Include="IOC\IocScriptScanner.c" />
+    <ClCompile Include="IOC\IocPolymorphicDetector.c" />
+    <ClCompile Include="IOC\IocZeroDayDetector.c" />
+    <ClCompile Include="IOC\IocEmulationEngine.c" />
+    <ClCompile Include="IOC\IocSandboxAnalyzer.c" />
+    <ClCompile Include="IOC\IocArchiveScanner.c" />
+    <ClCompile Include="IOC\IocCertUtils.c" />
+    <ClCompile Include="IOC\ImageAnalyzer\ImageAnalyzer.c" />
+    <ClCompile Include="IOC\IocScanner.c" />
+    <ClCompile Include="IOC\Signature\SignatureCache.c" />
+    <ClCompile Include="IOC\Signature\SignatureCatalog.c" />
+    <ClCompile Include="IOC\Signature\SignatureDetails.c" />
+    <ClCompile Include="IOC\Signature\SignatureHunting.c" />
+    <ClCompile Include="IOC\Signature\SignatureReputation.c" />
+    <ClCompile Include="IOC\Signature\SignatureVerifier.c" />
+    <ClCompile Include="IOC\IocProcessEnrich.c" />
+    <ClCompile Include="IOC\PEAnalyzer\PeAnalyzer.c" />
+    <ClCompile Include="IOC\PEAnalyzer\PeLazy.c" />
+    <ClCompile Include="IOC\PEAnalyzer\PeParser.c" />
+    <ClCompile Include="IOC\PEAnalyzer\PeReader.c" />
+    <ClCompile Include="IOC\PEAnalyzer\PeUnpack.c" />
+    <ClCompile Include="IOC\PEAnalyzer\PeValidate.c" />
+    <ClCompile Include="IOC\StringExtractor.c" />
+    <ClCompile Include="IOC\IocYaraScanner.c" />
+    <ClCompile Include="IOC\IocKnownDll.c" />
+    <ClCompile Include="IOC\IocRegistryVector.c" />
+    <!-- Exempts 排除子系统 (SS Whitelist 重构 2026-08-14, 档案 #67, 仿驱动 Common\Exempts 门面架构) -->
+    <ClCompile Include="Common\Exempts\Exempts.c" />
+    <ClCompile Include="Common\Exempts\ExemptsManager.c" />
+    <ClCompile Include="Common\Exempts\ExemptHash.c" />
+    <ClCompile Include="Common\Exempts\ExemptPath.c" />
+    <ClCompile Include="Common\Exempts\ExemptCert.c" />
+    <ClCompile Include="Common\Exempts\ExemptPush.c" />
+    <ClCompile Include="Common\Exempts\ExemptInjection.c" />
+    <ClCompile Include="Common\Exempts\ExemptProcess.c" />
+    <ClCompile Include="Common\TextSanitize.c" />
+    <ClCompile Include="Common\PathUtil.c" />
+    <!-- IOA 引擎 -->
+    <ClCompile Include="IOA\IoaEngine.c" />
+    <ClCompile Include="Process\ProcessTree.c" />
+    <ClCompile Include="Process\ProcessSnapshot.c" />
+    <ClCompile Include="Process\ProcessThread.c" />
+    <ClCompile Include="Process\ProcessModule.c" />
+    <ClCompile Include="Process\DllInjectionDetector.c" />
+    <ClCompile Include="Process\ReflectiveInjectionDetector.c" />
+    <ClCompile Include="Process\ProcessHollowingDetector.c" />
+    <ClCompile Include="IOA\Tier3\IoaGraphMatcher.c" />
+    <ClCompile Include="IOA\Tier3\IoaGraphWalker.c" />
+    <ClCompile Include="IOA\Tier2\IoaFsmEngine.c" />
+    <ClCompile Include="IOA\IoaGraphRingBuffer.c" />
+    <ClCompile Include="IOA\IoaMitreDetection.c" />
+    <ClCompile Include="IOA\IoaPersistQueue.c" />
+    <ClCompile Include="IOA\Tier1\IoaRateAnalyzer.c" />
+    <ClCompile Include="IOA\IoaThreatScorer.c" />
+    <ClCompile Include="IOA\Tier1\Tier1Engine.c" />
+    <ClCompile Include="IOA\Tier1\T1ShellcodeDetect.c" />
+    <ClCompile Include="IOA\Tier2\IoaTier2Backtrack.c" />
+    <ClCompile Include="IOA\Tier3\Tier3Engine.c" />
+    <ClCompile Include="IOA\Tier3\Tier3Forensics.c" />
+    <ClCompile Include="IOA\Tier3\T3AttackChain.c" />
+    <ClCompile Include="IOA\Tier3\CausalInference.c" />
+    <!-- 行为检测引擎 (死代码, 迁移自 ShadowStrike BehaviorAnalyzer, 未接入流水线) -->
+    <ClCompile Include="IOA\IoaRansomwareDetect.c" />
+    <ClCompile Include="IOA\IoaHeapSprayDetect.c" />
+    <ClCompile Include="IOA\IoaVadTracker.c" />
+    <ClCompile Include="IOA\IoaRopDetect.c" />
+    <ClCompile Include="IOA\IoaPersistenceDetect.c" />
+    <ClCompile Include="IOA\IoaCredentialDetect.c" />
+    <ClCompile Include="IOA\IoaC2Detect.c" />
+    <ClCompile Include="IOA\IoaEvasionDetect.c" />
+    <ClCompile Include="IOA\IoaExfilDetect.c" />
+    <ClCompile Include="IOA\IoaLateralDetect.c" />
+    <!-- LPE 模式检测器 (SS PrivilegeEscalationDetector 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\LpePatternDetector.c" />
+    <!-- KED 模式检测器 (SS KernelExploitDetector 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\KedPatternDetector.c" />
+    <!-- ROP 模式检测器 (SS ROPProtection 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\RopPatternDetector.c" />
+    <!-- ROP 模式检测器宿主接线 (SS RopWiring 迁移 2026-09-11, 服务层生命周期垫片) -->
+    <ClCompile Include="IOA\PatternDetector\RopPatternDetectorHost.c" />
+    <!-- 栈迁移模式检测器 (SS StackPivotDetector 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\SpdPatternDetector.c" />
+    <!-- 堆喷模式检测器 (SS HeapSprayDetector 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\HeapSprayPatternDetector.c" />
+    <!-- 缓冲区溢出防护检测器 (SS BufferOverflowProtection 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\BufferOverflowPatternDetector.c" />
+    <!-- JIT 喷射检测器 (SS JITSprayDetector 迁移 2026-09-11, 独立模块未挂接流水线) -->
+    <ClCompile Include="IOA\PatternDetector\JitSprayPatternDetector.c" />
+    <ClCompile Include="Notification\EventParser.c" />
+    <ClCompile Include="Notification\EventArchive.c" />
+    <ClCompile Include="Notification\pipe_server.c" />
+    <ClCompile Include="Orchestrator\Engine.c" />
+    <ClCompile Include="Orchestrator\VerdictEngine.c" />
+    <!-- 策略引擎 -->
+    <ClCompile Include="PolicyEngine\PolicyEngine.c" />
+    <!-- 存储层 -->
+    <ClCompile Include="Storage\StorageEngine.c" />
+    <ClCompile Include="Storage\YaraRule.c" />
+    <!-- 事件系统 -->
+    <!-- 通知服务 -->
+    <ClCompile Include="Notification\AlpcService.c" />
+    <ClCompile Include="Notification\msg_queue.c" />
+    <ClCompile Include="Notification\NotificationService.c" />
+    <!-- M1 YARA 流水线：YARA FLT 端口 -->
+    <ClCompile Include="Notification\YaraScanPort.c" />
+    <!-- M1 YARA 流水线：机制 B 自研 AC 引擎 -->
+    <ClCompile Include="Memory\MemorySignature.c" />
+    <ClCompile Include="Memory\MemoryScan.c" />
+    <!-- M1 YARA 流水线：驱动安装模块 -->
+    <ClCompile Include="Driver\Install.c" />
+    <!-- 公共工具 -->
+    <ClCompile Include="Common\Utils.c" />
+    <ClCompile Include="Common\FileUtils.c" />
+    <ClCompile Include="Common\BCrypUtils.c" />
+    <ClCompile Include="Common\YaraUtils.c" />
+    <ClCompile Include="Common\HashMap.c" />
+    <!-- 自保护子系统 (SS SelfDefense/AntiDebug 纯 C 迁移 2026-09-01) -->
+    <ClCompile Include="AccessControl\AccessControlEngine.c" />
+    <ClCompile Include="AccessControl\AntiDebug.c" />
+    <ClCompile Include="AccessControl\ProcessProtection.c" />
+    <ClCompile Include="AccessControl\MemoryProtection.c" />
+    <ClCompile Include="AccessControl\RegistryProtection.c" />
+    <!-- 业务模块 -->
+    <ClCompile Include="process_manager.c" />
+    <ClCompile Include="log_manager.c" />
+    <ClCompile Include="system_manager.c" />
+    <ClCompile Include="tools.c" />
+    <!-- 进程画像（迁移自 ShadowStrike ProcessAnalyzer） -->
+    <ClCompile Include="NetworkFootprint.c" />
+    <ClCompile Include="ProcessThreads.c" />
+    <ClCompile Include="ProcessAnalyzer_DeadCode.c" />
+    <!-- Registry 子系统 (SS PhantomCore/Core/Registry 全量迁移 2026-09-08)
+         PD (The Watchman) 已收敛; RA (The Deep Inspector) 2026-09-08;
+         RM (The Gatekeeper) 2026-09-08 -->
+    <ClCompile Include="Registry\PersistenceDetector.c" />
+    <ClCompile Include="Registry\RegistryAnalyzer.c" />
+    <ClCompile Include="Registry\RegistryMonitor.c" />
+    <!-- SA (The Boot Guard) 2026-09-09 -->
+    <ClCompile Include="Registry\StartupAnalyzer.c" />
+    <!-- SSM (The Config Guardian) 2026-09-09 -->
+    <ClCompile Include="Registry\SystemSettingsMonitor.c" />
+    <!-- Registry 子系统门面 (五引擎聚合) 2026-09-09 -->
+    <ClCompile Include="Registry\RegistrySubsystem.c" />
+    <!-- AntiEvasio 规避检测模块 (迁移自 ShadowStrike EvasionDetector 家族, 2026-09-14) -->
+    <ClCompile Include="AntiEvasio\DebuggerEvasionDetector.c" />
+    <ClCompile Include="AntiEvasio\EnvironmentEvasionDetector.c" />
+    <ClCompile Include="AntiEvasio\PackerDetector.c" />
+    <ClCompile Include="AntiEvasio\ProcessEvasionDetector.c" />
+    <ClCompile Include="AntiEvasio\SandboxEvasionDetector.c" />
+    <ClCompile Include="AntiEvasio\TimeBasedEvasionDetector.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 主编排头文件 -->
+    <!-- 公共基础类型 -->
+    <ClInclude Include="DefendTypes.h" />
+    <!-- 进程域头文件 (统一重构 2026-08-15) -->
+    <ClInclude Include="Process\ProcessTypes.h" />
+    <ClInclude Include="IOA\IoaCarsalGraph.h" />
+    <ClInclude Include="IOA\IoaEdgeAggregate.h" />
+    <ClInclude Include="IOA\IoaProcessPair.h" />
+    <ClInclude Include="IOA\PairAnalysisContext.h" />
+    <ClInclude Include="IOA\IoaInjectionClassifier.h" />
+    <ClInclude Include="IOA\Tier3\CausalAnalyzer.h" />
+    <ClInclude Include="IOA\Tier3\CausalInference.h" />
+    <!-- 扫描编排层头 (SS ScanEngine 迁移) -->
+    <ClInclude Include="ScanManager.h" />
+    <!-- 目录监控编排层头 (SS DirectoryMonitor 迁移 2026-08) -->
+    <ClInclude Include="FileSystem\DirectoryMonitor.h" />
+    <ClInclude Include="FileSystem\FileLockManager.h" />
+    <!-- 挂载点监控头 (SS MountPointMonitor 迁移 2026-08) -->
+    <ClInclude Include="FileSystem\MountPointMonitor.h" />
+    <!-- IOC 引擎头文件 -->
+    <ClInclude Include="IOC\IocEngine.h" />
+    <ClInclude Include="FileSystem\FileSystemInternal.h" />
+    <ClInclude Include="Include\FileSystem\FileAnalyzer.h" />
+    <ClInclude Include="Include\Process\InjectionDetector.h" />
+    <ClInclude Include="IOC\IocScriptScanner.h" />
+    <ClInclude Include="IOC\IocPolymorphicDetector.h" />
+    <ClInclude Include="IOC\IocZeroDayDetector.h" />
+    <ClInclude Include="IOC\IocEmulationEngine.h" />
+    <ClInclude Include="IOC\IocSandboxAnalyzer.h" />
+    <ClInclude Include="IOC\IocArchiveScanner.h" />
+    <ClInclude Include="IOC\IocCertUtils.h" />
+    <ClInclude Include="IOC\IocScanner.h" />
+    <ClInclude Include="IOC\Signature\SignatureCache.h" />
+    <ClInclude Include="IOC\Signature\SignatureCatalog.h" />
+    <ClInclude Include="IOC\Signature\SignatureDetails.h" />
+    <ClInclude Include="IOC\Signature\SignatureHunting.h" />
+    <ClInclude Include="IOC\Signature\SignatureReputation.h" />
+    <ClInclude Include="IOC\Signature\SignatureVerifier.h" />
+    <ClInclude Include="IOC\IocProcessEnrich.h" />
+    <ClInclude Include="IOC\PEAnalyzer\PeAnalyzer.h" />
+    <ClInclude Include="IOC\PEAnalyzer\PeInternal.h" />
+    <ClInclude Include="IOC\PEAnalyzer\PeTypes.h" />
+    <ClInclude Include="IOC\IocYaraScanner.h" />
+    <ClInclude Include="IOC\IocTypes.h" />
+    <ClInclude Include="IOC\StringExtractor.h" />
+    <ClInclude Include="IOC\IocLolbinDb.h" />
+    <ClInclude Include="IOC\IocKnownDll.h" />
+    <ClInclude Include="IOC\IocRegistryVector.h" />
+    <!-- Exempts 排除子系统头文件 (SS Whitelist 重构 2026-08-14, 档案 #67) -->
+    <ClInclude Include="Common\Exempts\Exempts.h" />
+    <ClInclude Include="Common\Exempts\ExemptsInternal.h" />
+    <ClInclude Include="Common\TextSanitize.h" />
+    <ClInclude Include="Common\PathUtil.h" />
+    <!-- IOA 引擎头文件 -->
+    <ClInclude Include="IOA\IoaEngine.h" />
+    <ClInclude Include="Process\ProcessTree.h" />
+    <ClInclude Include="Process\ProcessSnapshot.h" />
+    <ClInclude Include="Process\ProcessThread.h" />
+    <ClInclude Include="Process\ProcessModule.h" />
+    <ClInclude Include="Process\InjectionDetectorInternal.h" />
+    <ClInclude Include="IOA\Tier3\IoaGraphMatcher.h" />
+    <ClInclude Include="IOA\Tier3\IoaGraphWalker.h" />
+    <ClInclude Include="IOA\Tier2\IoaFsmEngine.h" />
+    <ClInclude Include="IOA\IoaGraphRingBuffer.h" />
+    <ClInclude Include="IOA\IoaPersistQueue.h" />
+    <ClInclude Include="IOA\Tier1\IoaRateAnalyzer.h" />
+    <ClInclude Include="IOA\IoaThreatScorer.h" />
+    <ClInclude Include="IOA\Tier1\Tier1Engine.h" />
+    <ClInclude Include="IOA\Tier1\T1ShellcodeDetect.h" />
+    <ClInclude Include="IOA\Tier2\IoaTier2Backtrack.h" />
+    <ClInclude Include="IOA\Tier3\Tier3Engine.h" />
+    <ClInclude Include="IOA\IoaMitreMapper.h" />
+    <ClInclude Include="IOA\IoaTypes.h" />
+    <!-- 行为检测引擎头文件 (死代码) -->
+    <ClInclude Include="IOA\IoaRansomwareDetect.h" />
+    <ClInclude Include="IOA\IoaHeapSprayDetect.h" />
+    <ClInclude Include="IOA\IoaVadTracker.h" />
+    <ClInclude Include="IOA\IoaRopDetect.h" />
+    <ClInclude Include="IOA\IoaPersistenceDetect.h" />
+    <ClInclude Include="IOA\IoaCredentialDetect.h" />
+    <ClInclude Include="IOA\IoaC2Detect.h" />
+    <ClInclude Include="IOA\IoaEvasionDetect.h" />
+    <ClInclude Include="IOA\IoaExfilDetect.h" />
+    <ClInclude Include="IOA\IoaLateralDetect.h" />
+    <ClInclude Include="IOA\PatternDetector\LpePatternDetector.h" />
+    <ClInclude Include="IOA\PatternDetector\KedPatternDetector.h" />
+    <ClInclude Include="IOA\PatternDetector\RopPatternDetector.h" />
+    <ClInclude Include="IOA\PatternDetector\RopPatternDetectorHost.h" />
+    <ClInclude Include="IOA\PatternDetector\SpdPatternDetector.h" />
+    <ClInclude Include="IOA\PatternDetector\HeapSprayPatternDetector.h" />
+    <ClInclude Include="IOA\PatternDetector\BufferOverflowPatternDetector.h" />
+    <ClInclude Include="IOA\PatternDetector\JitSprayPatternDetector.h" />
+    <ClInclude Include="Notification\EventParser.h" />
+    <ClInclude Include="Notification\EventArchive.h" />
+    <ClInclude Include="Notification\EventTypes.h" />
+    <ClInclude Include="Notification\pipe_server.h" />
+    <ClInclude Include="Orchestrator\Engine.h" />
+    <ClInclude Include="Orchestrator\VerdictEngine.h" />
+    <!-- 策略引擎头文件 -->
+    <ClInclude Include="PolicyEngine\PolicyEngine.h" />
+    <ClInclude Include="PolicyEngine\PolicyRules.h" />
+    <!-- 存储层头文件 -->
+    <ClInclude Include="Storage\StorageEngine.h" />
+    <ClInclude Include="Storage\YaraRule.h" />
+    <!-- 事件系统头文件 -->
+    <!-- 通知服务头文件 -->
+    <ClInclude Include="Notification\AlpcService.h" />
+    <ClInclude Include="Notification\msg_queue.h" />
+    <ClInclude Include="Notification\NotificationService.h" />
+    <!-- 业务模块头文件 -->
+    <ClInclude Include="process_manager.h" />
+    <ClInclude Include="log_manager.h" />
+    <ClInclude Include="system_manager.h" />
+    <ClInclude Include="tools.h" />
+    <ClInclude Include="NetworkFootprint.h" />
+    <ClInclude Include="ProcessThreads.h" />
+    <ClInclude Include="ProcessAnalyzer_DeadCode.h" />
+    <ClInclude Include="Common\Utils.h" />
+    <ClInclude Include="Common\FileUtils.h" />
+    <ClInclude Include="Common\BCrypUtils.h" />
+    <ClInclude Include="Common\YaraUtils.h" />
+    <ClInclude Include="Common\TitaniumLimits.h" />
+    <ClInclude Include="Common\HashMap.h" />
+    <ClInclude Include="Memory\MemorySignature.h" />
+    <ClInclude Include="Memory\MemoryScan.h" />
+    <ClInclude Include="Notification\YaraScanPort.h" />
+    <ClInclude Include="Driver\Install.h" />
+    <ClInclude Include="CmdLineAnalyzer.h" />
+    <ClInclude Include="TokenAnalyzer.h" />
+    <ClInclude Include="WkDefenderHeader.h" />
+    <ClInclude Include="ETW\EtwConsumer.h" />
+    <ClInclude Include="AccessControl\AccessControlEngine.h" />
+    <ClInclude Include="AccessControl\AntiDebug.h" />
+    <ClInclude Include="AccessControl\ProcessProtection.h" />
+    <ClInclude Include="AccessControl\MemoryProtection.h" />
+    <ClInclude Include="AccessControl\RegistryProtection.h" />
+    <!-- Registry 子系统头文件: RegistryInternal.h 为子系统唯一头(公共门面 + 引擎私有,
+         2026-09-15 公共头 Registry.h 并入) -->
+    <ClInclude Include="Registry\RegistryInternal.h" />
+    <!-- 遗漏登记头文件补齐 (2026-09-14) -->
+    <ClInclude Include="Common\YaraProtocol.h" />
+    <ClInclude Include="IOC\IocMatcher.h" />
+    <ClInclude Include="IOC\IocMatcherMatch.h" />
+    <ClInclude Include="IOC\IocMatcherTypes.h" />
+    <ClInclude Include="IOC\DotNetAnalyzer.h" />
+    <ClInclude Include="IOC\ImageAnalyzer\ImageAnalyzer.h" />
+    <ClInclude Include="IOA\Tier3\T3AttackChain.h" />
+    <!-- AntiEvasio 规避检测模块头文件 (迁移自 ShadowStrike, 2026-09-14) -->
+    <ClInclude Include="AntiEvasio\DebuggerEvasionDetector.h" />
+    <ClInclude Include="AntiEvasio\EnvironmentEvasionDetector.h" />
+    <ClInclude Include="AntiEvasio\PackerDetector.h" />
+    <ClInclude Include="AntiEvasio\ProcessEvasionDetector.h" />
+    <ClInclude Include="AntiEvasio\SandboxEvasionDetector.h" />
+    <ClInclude Include="AntiEvasio\TimeBasedEvasionDetector.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

@@ -3,11 +3,11 @@
 
     2026-09-05 三次演进后的最终形态：本文件仅为【类型与接口头】——
     判定主流程、运行时与全部实现已随"访问掩码主线"并入
-    Callbacks/ObjectNotify.c（机制层），本头文件供以下消费者引用声明：
+    Callbacks/ObjectNotification.c（机制层），本头文件供以下消费者引用声明：
       - ThreadAccessProtection.h: 复用 WKD_PAP_VERDICT / 等级 / 操作枚举
       - IocProcess.c §2.5:       PapClassifyProcess 安全画像采集
       - WkdEntry.c:              PapInitialize / PapShutdown 生命周期编排
-      - ObjectNotify.c:          判定实现（include 本头获取 DTO 与常量）
+      - ObjectNotification.c:       判定实现（include 本头获取 DTO 与常量）
 
     检测能力（对齐 ShadowStrike ProcessProtection）：
         - 保护对象: LSASS（Critical）/ csrss·smss·wininit·winlogon（CriticalSystem,
@@ -26,13 +26,13 @@
         - 受保护 = WKD_SECURITY_CONTEXT.PapProfile 非零（进程创建回调 §2.5
           同步采集的打包分类/等级画像），对象解引用 O(1) 无锁直达
         - 判定主线程（目标画像 + 策略 + 打分 + 裁决 + 剥离写回）内联于
-          Callbacks/ObjectNotify.c 的 CbpAuditProcessAccess（参数直传源/目标/
+          Callbacks/ObjectNotification.c 的 CbpAuditProcessAccess（参数直传源/目标/
           OB 现场，不再经 WKD_PROCESS_ACCESS_REQUEST 中转）
         - 快速路径过滤下沉 CbpObjectNotifyPreOperationCallback（CbpPapCheckFastPath）
         - 集中缓存（CriticalProcessCache / CacheLock / RundownRef / 进程退出钩子）
           与复合引擎入口（WKD_PAP_ENGINE / PapEvaluateAccess）整段移除
 
-    Synchronization（运行时位于 ObjectNotify.c）:
+    Synchronization（运行时位于 ObjectNotification.c）:
         - PolicyLock（EX_PUSH_LOCK）: 保护 AccessPolicies（管理面，PASSIVE）
         - RateLock（KSPIN_LOCK）: 保护 RateEntries（源侧限速兜底）
         - PapProfile 读写: 写入方为创建回调（SecurityContext->Lock 独占域）
@@ -164,7 +164,7 @@ typedef enum _WKD_PAP_SUSPICIOUS_FLAGS {
 
 /* ============================================================================
  * 前向声明：wkd 进程对象（完整定义在 Process/ProcessMonitor.h，
- * 实现 .c 侧（ObjectNotify.c）include 后即可访问 Core.EProcess / Core.ProcessId /
+ * 实现 .c 侧（ObjectNotification.c）include 后即可访问 Core.EProcess / Core.ProcessId /
  * SecurityContext->SessionId；判定参数直传指针，不拷贝扁平字段）
  * ============================================================================ */
 
@@ -263,7 +263,7 @@ PapShutdown(
 // 动态添加受保护进程（管理面，对齐 ShadowStrike PpAddProtectedProcess）。
 // 2026-09-05 重构：改写目标进程自述安全画像（SecurityContext->PapProfile），
 // 与进程创建回调采集串行（Lock 独占域 / 管理面单写者），无并发写者。
-// 供 ALPC 管理通道后续接线。实现位于 Callbacks/ObjectNotify.c。
+// 供 ALPC 管理通道后续接线。实现位于 Callbacks/ObjectNotification.c。
 // 运行环境: PASSIVE_LEVEL
 //
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -354,7 +354,7 @@ PapGetProcessProtection(
 // PapGetProcessProtection 惰性分类（不写回）。
 // 无锁纯计算（2026-09-05 起：Pap 画像 + PsGetProcessImageFileName 后缀匹配），
 // 不触碰任何缓存/画像状态；命中返回 TRUE 与分类/等级，未命中返回 FALSE。
-// 实现位于 Callbacks/ObjectNotify.c（与判定主线同层托管）。
+// 实现位于 Callbacks/ObjectNotification.c（与判定主线同层托管）。
 //
 _IRQL_requires_max_(DISPATCH_LEVEL)
 BOOLEAN

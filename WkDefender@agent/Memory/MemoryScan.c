@@ -20,7 +20,7 @@
 /* 全局 AC 索引（机制 B，由 IocEngine_Initialize 构建，与机制 A 同源 yara_rules 表） */
 static MS_PATTERN_INDEX* g_MsIndex = NULL;
 
-/* 扫描统计（对齐 SS MemoryScanner MsGetStatistics L2273-2321，死代码读取 API） */
+/* 扫描统计（MemoryScanner MsGetStatistics L2273-2321，死代码读取 API） */
 static WKD_MEM_SCANNER_STATS g_MsStats;
 
 /*++
@@ -77,7 +77,7 @@ BOOL MsScanProcessMemory(
 {
     if (!hProcess || !Base || Size == 0 || !Index || !Callback) return FALSE;
 
-    /* 分块读取（防止单次超大分配）+ 跨块边界 overlap（对齐 SS MspScanSingleRegion
+    /* 分块读取（防止单次超大分配）+ 跨块边界 overlap（MspScanSingleRegion
      * MED-1 fix L3362-3365：读 chunk+overlap、推进 chunk，重叠部分下轮重扫，
      * 保证跨块边界的模式不漏检）。overlap = 模式长度上限 - 1。 */
     SIZE_T chunk = MS_SCAN_CHUNK;
@@ -301,8 +301,8 @@ MsScanMemoryRegions(
 #define MS_MIN_NOP_SLED          16
 #define MS_MIN_SHELLCODE_SIZE    16   /* 最小壳码分析长度 (对齐 MS_MIN_NOP_SLED, 原引用无定义) */
 #define MS_MAX_EXTRACTED_STRINGS 500
-#define MS_MIN_REGION_SIZE       64                       /* 对齐 SS MS_MIN_REGION_SIZE (高熵采样过滤) */
-#define MS_ENTROPY_SAMPLE_SIZE   (64 * 1024)              /* 对齐 SS MS_SCAN_CHUNK_SIZE=64KB (高熵采样) */
+#define MS_MIN_REGION_SIZE       64                       /* MS_MIN_REGION_SIZE (高熵采样过滤) */
+#define MS_ENTROPY_SAMPLE_SIZE   (64 * 1024)              /* MS_SCAN_CHUNK_SIZE=64KB (高熵采样) */
 
 /*++ ShadowStrike ShellcodeDetector 迁移 static 函数前向声明 (2026-08-07)。
  *   本文件"SS 独有检测/死代码迁移"分区位于 MsAnalyzeShellcode 之后, 但后者
@@ -530,7 +530,7 @@ MsParsePE(
 /*++
  * MsBuildModuleSet
  *   构建进程已加载模块基址/大小集 (EnumProcessModules + GetModuleInformation)。
- *   对齐 SS GetPEBModulesImpl (ReflectiveDLLDetector.cpp L2293)。
+ *   GetPEBModulesImpl (ReflectiveDLLDetector.cpp L2293)。
  *--*/
 _Use_decl_annotations_
 BOOL
@@ -574,7 +574,7 @@ MsBuildModuleSet(
 /*++
  * MsIsAddrInModuleSet
  *   地址是否落在任一模块 [Base, Base+Size) 区间内。
- *   对齐 SS IsAddressInAnyModule (ReflectiveDLLDetector.cpp L142)。
+ *   IsAddressInAnyModule (ReflectiveDLLDetector.cpp L142)。
  *--*/
 _Use_decl_annotations_
 BOOLEAN
@@ -699,7 +699,7 @@ MsDetectShellcode(
 }
 
 /**************************************************/
-/*  已知反射加载器签名 (对齐 SS ReflectiveDLLDetector) */
+/*  已知反射加载器签名 (ReflectiveDLLDetector) */
 /*  g_cobaltStrikePatterns / g_meterpreterPatterns  */
 /*  / g_apiHashPatterns                            */
 /**************************************************/
@@ -751,7 +751,7 @@ static const MS_APIHASH_PATTERN g_ApiHashPatterns[] = {
       {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00} },
 };
 
-/* 扫描缓冲找 API-hash 模式, 返回模式名或 NULL (对齐 SS DetectAPIHashingPattern L196) */
+/* 扫描缓冲找 API-hash 模式, 返回模式名或 NULL (DetectAPIHashingPattern L196) */
 static
 const char*
 MsDetectApiHashingPattern(
@@ -781,7 +781,7 @@ MsDetectApiHashingPattern(
 
 /**************************************************/
 /*  API 哈希值解析 (ShadowStrike ShellcodeDetector 迁移 2026-08-07) */
-/*  对齐 SS SdpDetectApiHashing L2592-2692 +      */
+/*  SdpDetectApiHashing L2592-2692 +      */
 /*  SdpInitializeApiHashDatabase L2056-2105        */
 /**************************************************/
 
@@ -837,7 +837,7 @@ static const WKD_API_HASH_ENTRY g_ApiHashTable[] = {
 #pragma warning(disable:4505)   /* static 工具无调用者, 供哈希数值校验/未来扩展 */
 /*++
  * WkRor13Hash
- *   ROR13 字符串哈希计算 (对齐 SS 壳码 API 哈希算法, SS 已删计算函数仅留
+ *   ROR13 字符串哈希计算 (壳码 API 哈希算法, SS 已删计算函数仅留
  *   硬编码常量 — 本函数为 wkd 新增工具, 用于校验 g_ApiHashTable 数值与
  *   未来"邻近 API 字符串反向确认"降误报)。
  *--*/
@@ -861,7 +861,7 @@ WkRor13Hash(
  * MsScanApiHashResolution
  *   哈希值解析: 单遍扫描缓冲, 提取 MOV EAX/ECX/EDX,imm32 (B8-BA) 与
  *   PUSH imm32 (68) 的 4 字节候选哈希, 线性查 g_ApiHashTable 解析 API 名。
- *   对齐 SS SdpDetectApiHashing L2636-2684 (wkd 仅字节模式识别升级为值解析)。
+ *   SdpDetectApiHashing L2636-2684 (wkd 仅字节模式识别升级为值解析)。
  *   返回 TRUE = 至少解析到一个已知 API。
  *--*/
 static BOOLEAN
@@ -919,7 +919,7 @@ MsScanApiHashResolution(
 
 /*++
  * MsDetectReflectiveLoader
- *   已知反射加载器签名检测 (对齐 SS DetectKnownLoader 启发式, ReflectiveDLLDetector.cpp L1514):
+ *   已知反射加载器签名检测 (DetectKnownLoader 启发式, ReflectiveDLLDetector.cpp L1514):
  *     - CS Beacon config marker / sleep mask stub (g_cobaltStrikePatterns L478-485)
  *     - Meterpreter reflective stub / stage marker (g_meterpreterPatterns L490-497)
  *     - API-hash 字节模式: ROR-13 x64/x86 / DJB2 / CRC32 (g_apiHashPatterns L176-193)
@@ -985,7 +985,7 @@ MsDetectReflectiveLoader(
         return TRUE;
     }
 
-    /* API-hash 字节模式 (对齐 SS DetectAPIHashingPattern L196) */
+    /* API-hash 字节模式 (DetectAPIHashingPattern L196) */
     {
         const char* hashName = MsDetectApiHashingPattern(Buffer, Size);
         if (hashName != NULL) {
@@ -1032,7 +1032,7 @@ MsDetectReflectiveLoader(
 /*++
  * MsContainsPE
  *   进程级 PE 快速检查: 读给定地址前部字节判断 MZ 签名。
- *   对齐 SS ContainsPE (ReflectiveDLLDetector.cpp L1207-1217).
+ *   ContainsPE (ReflectiveDLLDetector.cpp L1207-1217).
  *   ※ 死代码: 供实时内存监控 (T4) PE 预判用, 当前无调用者。
  *--*/
 _Use_decl_annotations_
@@ -1066,7 +1066,7 @@ MsContainsPE(
 /*++
  * MsHasReflectiveLoading
  *   快速布尔判定: 目标进程是否存在隐藏无背衬 PE (反射加载)。
- *   对齐 SS HasReflectiveLoading (ReflectiveDLLDetector.cpp L1114-1117).
+ *   HasReflectiveLoading (ReflectiveDLLDetector.cpp L1114-1117).
  *   Quick 模式全扫 + 查 WkdMemThreat_PEInjection && !PeInPeb.
  *   ※ 死代码: 供 UI 快速体检/进程体检, 当前无调用者。
  *--*/
@@ -1093,49 +1093,6 @@ MsHasReflectiveLoading(
         }
     }
     return found;
-}
-
-/*++
- * MsHandleKernelImageLoad
- *   镜像加载通知 → PEB 对照 → 无背衬判定 → 定向反射扫描。
- *   对齐 SS OnKernelImageLoad (ReflectiveDLLDetector.cpp L2567-2604):
- *     系统模块/低 PID 跳过 → 模块表对照 (正常加载已入 PEB 则跳过) →
- *     VirtualQueryEx 查 MEM_PRIVATE → MsScanRegionAt 定向扫描。
- *   ※ 死代码: 依赖 ImageLoad 事件接入 IOA (当前 process_manager.c:1720
- *     MsScanOnImageLoad 仅做 YARA 扫描, 未调用本函数)。
- *--*/
-_Use_decl_annotations_
-VOID
-MsHandleKernelImageLoad(
-    DWORD ProcessId,
-    ULONG_PTR ImageBase,
-    SIZE_T ImageSize,
-    BOOLEAN IsSystemModule
-    )
-{
-    WKD_MEM_MODULE_SET set;
-    WKD_MEMORY_REGION region;
-    PWKD_MEM_SCAN_RESULT scan;
-
-    UNREFERENCED_PARAMETER(ImageSize);
-
-    if (IsSystemModule) return;      /* 系统模块 (ntdll/kernel32 等) 低误报价值 */
-    if (ProcessId <= 4) return;
-
-    /* PEB 对照: 正常加载的镜像已入模块表 (对齐 SS L2573-2581) */
-    if (!MsBuildModuleSet(ProcessId, &set)) return;
-    if (MsIsAddrInModuleSet(&set, ImageBase)) return;
-
-    /* 无背衬判定: 区域为 MEM_PRIVATE (对齐 SS L2587-2603) */
-    if (!MsGetRegionInfo(ProcessId, ImageBase, &region)) return;
-    if (region.Type != WkdMemType_Private) return;
-
-    /* 定向反射扫描 (对齐 SS DispatchAsyncScan) */
-    scan = (PWKD_MEM_SCAN_RESULT)malloc(sizeof(WKD_MEM_SCAN_RESULT));
-    if (scan != NULL) {
-        MsScanRegionAt(ProcessId, region.BaseAddress, region.RegionSize, scan);
-        free(scan);
-    }
 }
 
 /*++
@@ -1247,8 +1204,8 @@ MsCheckHighEntropy(
 
 /*++
  * MsFindHighEntropyRegions
- *   全进程高熵区域发现（对齐 SS MsFindHighEntropyRegions L2135-2265）：
- *   枚举 MEM_COMMIT 区域 → 读首块采样（64KB，对齐 SS MS_SCAN_CHUNK_SIZE）→
+ *   全进程高熵区域发现（MsFindHighEntropyRegions L2135-2265）：
+ *   枚举 MEM_COMMIT 区域 → 读首块采样（64KB，MS_SCAN_CHUNK_SIZE）→
  *   熵 ≥ 阈值（0-1000 尺度）→ 记录。采样不足以 100% 代表整区，但供取证初筛。
  *   ※ 死代码: 供取证 / UI 主动扫描接线，当前无调用者。
  *--*/
@@ -1511,7 +1468,7 @@ MsScanRegionContent(
     size = (ULONG)bytesRead;
     InterlockedAdd64(&g_MsStats.BytesScanned, bytesRead);
 
-    /* ① 非映像内存 PE 判定 + 模块表对照 (对齐 SS FindHiddenModules L1292) */
+    /* ① 非映像内存 PE 判定 + 模块表对照 (FindHiddenModules L1292) */
     if (Region->Type != WkdMemType_Image) {
         WKD_MEM_THREAT threat;
         if (MsDetectPE(buffer, size, &threat)) {
@@ -1529,7 +1486,7 @@ MsScanRegionContent(
                     strcpy_s(threat.MatchedRule, sizeof(threat.MatchedRule),
                              "PE in module list (file-backed)");
                 } else {
-                    /* 隐藏无背衬 PE → 反射加载高置信 (对齐 SS isHiddenFromPEB → High) */
+                    /* 隐藏无背衬 PE → 反射加载高置信 (isHiddenFromPEB → High) */
                     threat.Confidence = 95;
                     threat.RiskScore = 95;
                     strcpy_s(threat.MatchedRule, sizeof(threat.MatchedRule),
@@ -1537,7 +1494,7 @@ MsScanRegionContent(
                 }
             }
 
-            /* 已知反射加载器签名 (对齐 SS DetectKnownLoader 启发式, 仅隐藏无背衬 PE) */
+            /* 已知反射加载器签名 (DetectKnownLoader 启发式, 仅隐藏无背衬 PE) */
             if (Modules != NULL && !threat.PeInPeb) {
                 WKD_MEM_THREAT loader;
                 if (MsDetectReflectiveLoader(buffer, size, &loader)) {
@@ -1661,7 +1618,7 @@ Return Value:
     }
     InterlockedIncrement64(&g_MsStats.TotalScans);
 
-    /* 模块表对照集 (隐藏模块判定, 对齐 SS GetPEBModulesImpl) */
+    /* 模块表对照集 (隐藏模块判定, GetPEBModulesImpl) */
     {
         WKD_MEM_MODULE_SET moduleSet;
         RtlZeroMemory(&moduleSet, sizeof(moduleSet));
@@ -2108,8 +2065,8 @@ MsReadMemory(
 
 /*++
  * MsExtractPayload
- *   提取反射加载 PE 内存映像 (对齐 SS ExtractPayload, ReflectiveDLLDetector.cpp L1587-1635).
- *   上限 100MB (对齐 SS kMaxExtraction=100MB).
+ *   提取反射加载 PE 内存映像 (ExtractPayload, ReflectiveDLLDetector.cpp L1587-1635).
+ *   上限 100MB (kMaxExtraction=100MB).
  *--*/
 _Use_decl_annotations_
 NTSTATUS
@@ -2121,7 +2078,7 @@ MsExtractPayload(
     PULONG OutSize
     )
 {
-    const SIZE_T kMaxExtraction = 100 * 1024 * 1024;   /* 对齐 SS kMaxExtraction */
+    const SIZE_T kMaxExtraction = 100 * 1024 * 1024;   /* kMaxExtraction */
 
     if (Size == 0 || Size > kMaxExtraction) {
         /* 对齐 SS: 无效大小直接失败, 防 DoS */
@@ -2140,7 +2097,7 @@ MsExtractPayload(
 
 /*++
  * MsDumpPE
- *   提取 PE 内存映像并写盘 (对齐 SS DumpPE, ReflectiveDLLDetector.cpp L1637-1655).
+ *   提取 PE 内存映像并写盘 (DumpPE, ReflectiveDLLDetector.cpp L1637-1655).
  *--*/
 _Use_decl_annotations_
 BOOLEAN
@@ -2292,12 +2249,12 @@ MsEnumerateSuspiciousRegions(
 }
 
 /*++
- * MsGetRegionInfo
+ * MmGetMemoryRegionInformation
  *   地址 → 区域信息 (对齐 PS GetRegionInfo).
  *--*/
 _Use_decl_annotations_
 BOOLEAN
-MsGetRegionInfo(
+MmGetMemoryRegionInformation(
     DWORD ProcessId,
     ULONG_PTR Address,
     PWKD_MEMORY_REGION Region
@@ -2337,7 +2294,7 @@ MsGetRegionInfo(
 
 /*++
  * MsAnalyzeShellcode
- *   完整壳码分析 (对齐 PS AnalyzeForShellcode, 置信度对齐 SS SdpCalculateConfidenceScore).
+ *   完整壳码分析 (对齐 PS AnalyzeForShellcode, 置信度SdpCalculateConfidenceScore).
  *   2026-08-07: 接入 SS ShellcodeDetector PIC/哈希值解析/高熵字段, 评分替换
  *   为 SS 组合加分表 (MsScoreShellcodeConfidence).
  *--*/
@@ -2361,7 +2318,7 @@ MsAnalyzeShellcode(
 
     if (Buffer == NULL || Size < MS_MIN_SHELLCODE_SIZE) return;
 
-    startMs = GetTickCount64();   /* 分析耗时计时 (对齐 SS AnalysisDurationMs) */
+    startMs = GetTickCount64();   /* 分析耗时计时 (AnalysisDurationMs) */
 
     flags = IocDetectShellcode(Buffer, Size, TRUE);
 
@@ -2369,7 +2326,7 @@ MsAnalyzeShellcode(
         ULONG nopOffset = 0, nopLength = 0;
         UCHAR nopByte = 0;
         Analysis->HasNopSled = TRUE;
-        /* 补明细 (对齐 SS SdpDetectNopSledInternal): 评分 NopSledLength>64 加成 + 取证 NopByte */
+        /* 补明细 (SdpDetectNopSledInternal): 评分 NopSledLength>64 加成 + 取证 NopByte */
         if (MsScanNopSled(Buffer, Size, &nopOffset, &nopLength, &nopByte)) {
             Analysis->NopSledLength = nopLength;
             Analysis->NopSledOffset = nopOffset;
@@ -2388,7 +2345,7 @@ MsAnalyzeShellcode(
         ULONG stubCount = 0;
         ULONG n;
         Analysis->HasSyscallStubs = TRUE;
-        /* 补明细 (对齐 SS SdpDetectDirectSyscalls): 评分 SyscallCount>2 加成 */
+        /* 补明细 (SdpDetectDirectSyscalls): 评分 SyscallCount>2 加成 */
         if (MsScanDirectSyscalls(Buffer, Size, stubs, 16, &stubCount)) {
             Analysis->SyscallCount = stubCount;
             n = min(stubCount, (ULONG)RTL_NUMBER_OF(Analysis->SyscallNumbers));
@@ -2402,7 +2359,7 @@ MsAnalyzeShellcode(
     }
 
     /* ShadowStrike ShellcodeDetector 迁移 2026-08：SS 独有检测（wkd T1 未覆盖），
-     * 对齐 SS SdpDetectEggHunter/EncoderLoop/HeavensGate/StackPivot/SuspiciousCalls */
+     * SdpDetectEggHunter/EncoderLoop/HeavensGate/StackPivot/SuspiciousCalls */
     if (MsScanEggHunter(Buffer, Size, &Analysis->EggHunterOffset)) {
         Analysis->HasEggHunter = TRUE;
     }
@@ -2441,14 +2398,14 @@ MsAnalyzeShellcode(
         }
     }
 
-    /* 熵分析（对齐 SS SdpCalculateEntropy，0-1000 尺度阈值 700 ↔ SS 70%） */
+    /* 熵分析（SdpCalculateEntropy，0-1000 尺度阈值 700 ↔ SS 70%） */
     Analysis->HasHighEntropy = (MsCalculateEntropy(Buffer, Size) >= MS_ENTROPY_THRESHOLD);
 
     /* 置信度评分 (SS SdpCalculateConfidenceScore 12 单项 + 5 组合加分, cap 100) */
     Analysis->Confidence = MsScoreShellcodeConfidence(Analysis);
     Analysis->IsShellcode = (Analysis->Confidence >= 50);   /* SS MinConfidenceScore 默认 50 */
 
-    /* 分析耗时 (对齐 SS SdAnalyzeBuffer AnalysisDurationMs) */
+    /* 分析耗时 (SdAnalyzeBuffer AnalysisDurationMs) */
     Analysis->AnalysisDurationMs = (ULONG)(GetTickCount64() - startMs);
 }
 
@@ -2487,7 +2444,7 @@ MsCheckAPIHashing(
 /*  SS 独有检测（wkd IocDetectShellcode 未覆盖）  */
 /**************************************************/
 
-/* EggHunter 签名（对齐 SS ShellcodeDetector.c g_EggHunter* L107-128） */
+/* EggHunter 签名（ShellcodeDetector.c g_EggHunter* L107-128） */
 static const BYTE kSsEggHunterSeh[] = {
     0x66,0x81,0xCA,0xFF,0x0F,0x42,0x52,0x6A,0x02
 };
@@ -2497,19 +2454,19 @@ static const BYTE kSsEggHunterSyscall[] = {
 static const BYTE kSsEggHunterNtDisplay[] = {
     0x66,0x81,0xCA,0xFF,0x0F,0x42,0x6A,0x43,0x58,0xCD,0x2E
 };
-/* Heaven's Gate RETF 过渡（对齐 SS g_HeavensGateRetf L172-177） */
+/* Heaven's Gate RETF 过渡（g_HeavensGateRetf L172-177） */
 static const BYTE kSsHeavensGateRetf[] = {
     0x6A,0x33,0xE8,0x00,0x00,0x00,0x00,0x83,0x04,0x24,0x05,0xCB
 };
-/* 扫描窗口（对齐 SS SD_EGG_HUNTER_MAX_SIZE=128 / SD_ENCODER_LOOP_MAX_SIZE=256，×4 扫描开头） */
+/* 扫描窗口（SD_EGG_HUNTER_MAX_SIZE=128 / SD_ENCODER_LOOP_MAX_SIZE=256，×4 扫描开头） */
 #define SD_EGG_HUNTER_SCAN       (128 * 4)
 #define SD_ENCODER_LOOP_SCAN     (256 * 4)
 
 /*++
  * MsScanEggHunter
- *   EggHunter 检测（对齐 SS SdpDetectEggHunter L2378）：SEH/syscall/
+ *   EggHunter 检测（SdpDetectEggHunter L2378）：SEH/syscall/
  *   NtDisplayString 3 签名 + 通用 OR DX,0x0FFF; INC EDX 模式。
- *   HunterOffset 输出命中相对偏移 (对齐 SS EggHunter.HunterAddress)。
+ *   HunterOffset 输出命中相对偏移 (EggHunter.HunterAddress)。
  *--*/
 static BOOLEAN
 MsScanEggHunter(
@@ -2524,7 +2481,7 @@ MsScanEggHunter(
     if (Buffer == NULL || Size < 5) return FALSE;
     if (HunterOffset != NULL) *HunterOffset = 0;
 
-    /* 仅扫描缓冲开头（egg hunter 通常 <128 字节，对齐 SS ×4） */
+    /* 仅扫描缓冲开头（egg hunter 通常 <128 字节，×4） */
     if (scanSize > SD_EGG_HUNTER_SCAN) scanSize = SD_EGG_HUNTER_SCAN;
 
     for (i = 0; i < scanSize; i++) {
@@ -2559,7 +2516,7 @@ MsScanEggHunter(
 
 /*++
  * MsScanEncoderLoop
- *   编码器循环检测（对齐 SS SdpDetectEncoderLoop L2458）：XOR/ADD/SUB/ROL/ROR
+ *   编码器循环检测（SdpDetectEncoderLoop L2458）：XOR/ADD/SUB/ROL/ROR
  *   操作码 + 邻近 LOOP/JMP/JNZ/JZ 循环指令。
  *--*/
 static BOOLEAN
@@ -2581,11 +2538,11 @@ MsScanEncoderLoop(
 
     for (i = 0; i + 4 < scanSize; i++) {
         BOOLEAN candidate = FALSE;
-        BOOLEAN loopJcc = FALSE;   /* TRUE=XOR 认 JNZ/JZ; FALSE=ADD/SUB/ROL/ROR 仅 LOOP/JMP (对齐 SS L2496-2583) */
+        BOOLEAN loopJcc = FALSE;   /* TRUE=XOR 认 JNZ/JZ; FALSE=ADD/SUB/ROL/ROR 仅 LOOP/JMP (L2496-2583) */
         const char* typeName = NULL;
 
         /* XOR BYTE PTR [reg+offset], imm8 (80 34) / XOR [reg],reg (31/33, 需内存操作数
-         * modrm&0xC0!=0xC0 排除 31 C0=XOR EAX,EAX 等寄存器清零惯用法, 对齐 SS L2517) */
+         * modrm&0xC0!=0xC0 排除 31 C0=XOR EAX,EAX 等寄存器清零惯用法, L2517) */
         if (Buffer[i] == 0x80 && (Buffer[i + 1] & 0x38) == 0x30) { candidate = TRUE; loopJcc = TRUE; typeName = "XOR"; }
         else if ((Buffer[i] == 0x31 || Buffer[i] == 0x33) && (Buffer[i + 1] & 0xC0) != 0xC0) { candidate = TRUE; loopJcc = TRUE; typeName = "XOR"; }
         /* ADD BYTE PTR [reg+offset], imm8 (80 00) */
@@ -2611,7 +2568,7 @@ MsScanEncoderLoop(
                         strcpy_s(EncoderType, TypeSize, typeName);
                     }
                     if (LoopOffset != NULL) {
-                        *LoopOffset = i;   /* 解码循环起始偏移 (对齐 SS Encoder.LoopStart=&buffer[i]) */
+                        *LoopOffset = i;   /* 解码循环起始偏移 (Encoder.LoopStart=&buffer[i]) */
                     }
                     return TRUE;
                 }
@@ -2623,7 +2580,7 @@ MsScanEncoderLoop(
 
 /*++
  * MsScanHeavensGate
- *   WoW64 32→64 过渡检测（对齐 SS SdpDetectHeavensGate L2792）：
+ *   WoW64 32→64 过渡检测（SdpDetectHeavensGate L2792）：
  *   JMP FAR 0x33/0x23 段 / RETF 过渡 / PUSH 0x33;...;RETF。
  *--*/
 static BOOLEAN
@@ -2656,9 +2613,9 @@ MsScanHeavensGate(
 
 /*++
  * MsScanStackPivot
- *   栈转移 gadget 检测（对齐 SS SdpDetectStackPivot L2851）：
+ *   栈转移 gadget 检测（SdpDetectStackPivot L2851）：
  *   XCHG ESP / MOV ESP / LEAVE RET / POP ESP / ADD ESP large + RET 验证。
- *   GadgetOffset 输出命中相对偏移 (对齐 SS StackPivot.GadgetAddress)。
+ *   GadgetOffset 输出命中相对偏移 (StackPivot.GadgetAddress)。
  *--*/
 static BOOLEAN
 MsScanStackPivot(
@@ -2720,7 +2677,7 @@ MsScanStackPivot(
 
 /*++
  * MsScanSuspiciousCalls
- *   间接 CALL/JMP 密集检测（对齐 SS SdpDetectSuspiciousCalls L3134）：
+ *   间接 CALL/JMP 密集检测（SdpDetectSuspiciousCalls L3134）：
  *   动态 API 解析（哈希解析后经寄存器间接调用），密度 ≥3 判定。
  *--*/
 static BOOLEAN
@@ -2752,12 +2709,12 @@ MsScanSuspiciousCalls(
 /**************************************************/
 /*  ShadowStrike ShellcodeDetector 死代码迁移区      */
 /*  (2026-08-07) — 全功能面覆盖, 暂不接线            */
-/*  对齐 SS ShellcodeDetector.c 逐函数重实现         */
+/*  ShellcodeDetector.c 逐函数重实现         */
 /**************************************************/
 
 /*++
  * MsScanNopSled
- *   带明细的 NOP sled 检测（对齐 SS SdpDetectNopSledInternal L2288-2373）：
+ *   带明细的 NOP sled 检测（SdpDetectNopSledInternal L2288-2373）：
  *   0x90 / 66 90 / 0F 1F /0 多字节变体 + 最长连续段 + offset/length/nopByte。
  *   与活路径 T1scCountMaxNOPSled 同源算法, 此处保留明细供取证/加权。
  *--*/
@@ -2831,7 +2788,7 @@ MsScanNopSled(
 
 /*++
  * MsScanDirectSyscalls
- *   直接 syscall stub 检测（对齐 SS SdpDetectDirectSyscalls L2719-2781）：
+ *   直接 syscall stub 检测（SdpDetectDirectSyscalls L2719-2781）：
  *   x64 完整 stub (MOV R10,RCX; MOV EAX,imm32; 20B 内 SYSCALL, 提取调用号) +
  *   裸 SYSCALL/SYSENTER/INT 2E, 去重 + 上限 16。
  *--*/
@@ -2885,7 +2842,7 @@ MsScanDirectSyscalls(
                 Stubs[count].SyscallNumber = 0;
                 Stubs[count].StubOffset = i;
                 Stubs[count].StubSize = 2;
-                Stubs[count].IsDirect = (Buffer[i] != 0xCD);  /* INT 2E 为间接 (对齐 SS StubType_Indirect) */
+                Stubs[count].IsDirect = (Buffer[i] != 0xCD);  /* INT 2E 为间接 (StubType_Indirect) */
                 count++;
             }
         }
@@ -2897,7 +2854,7 @@ MsScanDirectSyscalls(
 
 /*++
  * MsScanPositionIndependentCode
- *   PIC GetPC 5 模式检测（对齐 SS SdpDetectPositionIndependentCode L3057-3127）：
+ *   PIC GetPC 5 模式检测（SdpDetectPositionIndependentCode L3057-3127）：
  *   CALL $+5;POP / FNSTENV / FSTENV+FWAIT / LEA RIP / CALL 负偏移, 命中 ≥1 即真。
  *   ※ 死代码: 用户决策 FNSTENV 不进活路径 T1 (纯 FPU 代码误报 + 影响复用方),
  *     本函数保留 SS 完整语义供死分析加权精度对齐。
@@ -2967,7 +2924,7 @@ MsScanPositionIndependentCode(
 
 /*++
  * MsScoreShellcodeConfidence
- *   置信度评分（对齐 SS SdpCalculateConfidenceScore L3232-3312）：
+ *   置信度评分（SdpCalculateConfidenceScore L3232-3312）：
  *   12 单项 + 5 组合加分, cap 100。
  *   注: SS 原版 Polymorphic flag (Encoder&&HighEntropy) 与组合 HighEntropy+Encoder
  *   重复双计 (+10+10), wkd 合并为组合加分一次 (+10)。
@@ -3002,7 +2959,7 @@ MsScoreShellcodeConfidence(
     if (Analysis->HasPic) score += 15;
     if (Analysis->HasSuspiciousCall) score += 15;
 
-    /* 组合加成 (对齐 SS L3286-3304) */
+    /* 组合加成 (L3286-3304) */
     if (Analysis->HasNopSled && Analysis->HasEncoder) score += 15;
     if (Analysis->HasApiHashing && Analysis->HasSyscallStubs) score += 20;
     if (Analysis->HasHighEntropy && Analysis->HasEncoder) score += 10;
@@ -3015,8 +2972,8 @@ MsScoreShellcodeConfidence(
 
 /*++
  * MsScoreShellcodeSeverity
- *   严重度评分（对齐 SS SdpCalculateSeverityScore L3332-3384）→ RiskScore 0-100。
- *   HeavensGate/EggHunter 由 Type=Shellcode 时标志提升, 对齐 SS 语义。
+ *   严重度评分（SdpCalculateSeverityScore L3332-3384）→ RiskScore 0-100。
+ *   HeavensGate/EggHunter 由 Type=Shellcode 时标志提升, 语义。
  *--*/
 static ULONG
 MsScoreShellcodeSeverity(
@@ -3062,7 +3019,7 @@ MsScoreShellcodeSeverity(
 
 /*++
  * MsDetermineShellcodeThreatType
- *   主威胁类型判定（对齐 SS SdpDeterminePrimaryType L3405-3462, 最特异→最一般）。
+ *   主威胁类型判定（SdpDeterminePrimaryType L3405-3462, 最特异→最一般）。
  *   HasKnownSignature 为预留字段 (无填充者), 未来填充后可优先 Signature 家族。
  *--*/
 static WKD_MEM_THREAT_TYPE
@@ -3211,7 +3168,7 @@ MsScanShellcodePipeline(
 
 /**************************************************/
 /*  扫描统计 — SS MemoryScanner 迁移（死代码）      */
-/*  对齐 SS MsGetStatistics L2273-2321             */
+/*  MsGetStatistics L2273-2321             */
 /**************************************************/
 
 /*++
@@ -3231,7 +3188,7 @@ MsGetStatistics(
 {
     if (Stats == NULL) return;
     *Stats = g_MsStats;
-    /* 对齐 SS MsGetStatistics L2314-2316：平均耗时 = 累计耗时 / 总扫描数 */
+    /* MsGetStatistics L2314-2316：平均耗时 = 累计耗时 / 总扫描数 */
     if (Stats->TotalScans > 0) {
         Stats->AverageScanTimeMs = Stats->CumulativeScanTimeMs / Stats->TotalScans;
     }

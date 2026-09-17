@@ -282,9 +282,9 @@ typedef struct _WKD_MESSAGE_BODY_OBJECT_ACCESS {
 } WKD_MESSAGE_BODY_OBJECT_ACCESS, *PWKD_MESSAGE_BODY_OBJECT_ACCESS;
 
 //
-// 句柄复制事件消息体（对齐 SS HtRecordDuplication 参数语义，HandleTracker 迁移 2026-08）
+// 句柄复制事件消息体（HtRecordDuplication 参数语义，HandleTracker 迁移 2026-08）
 // 死代码：事件源=Ob 回调 OB_OPERATION_HANDLE_DUPLICATE，CbInitializeObjectNotify 未激活；
-// Agent 侧由因果图消费（跨进程边，对齐 SS PrAddRelationship(PrRelation_HandleDuplication)）。
+// Agent 侧由因果图消费（跨进程边，PrAddRelationship(PrRelation_HandleDuplication)）。
 //
 typedef struct _WKD_MESSAGE_BODY_HANDLE_DUPLICATE {
     HANDLE      SourceProcessId;            // 复制源进程 PID
@@ -418,12 +418,12 @@ typedef struct _WKD_MESSAGE_BODY_PROCESS_EXIT {
 /*   （T1003.003 硬链接 / T1070.006·T1564.001 属性）。 */
 /**************************************************/
 
-#define WKD_FILE_OP_WRITE       0
-#define WKD_FILE_OP_RENAME      1
-#define WKD_FILE_OP_DELETE      2
-#define WKD_FILE_OP_TRUNCATE    3
-#define WKD_FILE_OP_HARDLINK    4   /* 硬链接创建（FileLinkInformation，PreSetInfo 迁移 2026-08） */
-#define WKD_FILE_OP_ATTRIBUTE   5   /* 属性/时间戳/短名变更（FileBasicInformation/ShortName，PreSetInfo 迁移 2026-08） */
+#define WKD_FLT_OP_WRITE       0
+#define WKD_FLT_OP_RENAME      1
+#define WKD_FLT_OP_DELETE      2
+#define WKD_FLT_OP_TRUNCATE    3
+#define WKD_FLT_OP_HARDLINK    4   /* 硬链接创建（FileLinkInformation，PreSetInfo 迁移 2026-08） */
+#define WKD_FLT_OP_ATTRIBUTE   5   /* 属性/时间戳/短名变更（FileBasicInformation/ShortName，PreSetInfo 迁移 2026-08） */
 
 typedef struct _WKD_MESSAGE_BODY_FILE_EVENT {
     /* === 标识 === */
@@ -431,11 +431,11 @@ typedef struct _WKD_MESSAGE_BODY_FILE_EVENT {
     HANDLE          ThreadId;           /* 操作线程 */
 
     /* === 操作 === */
-    ULONG           OperationType;      /* WKD_FILE_OP_* */
+    ULONG           OperationType;      /* WKD_FLT_OP_* */
     ULONG           FileSize;           /* 文件大小（低 32 位） */
-    LONGLONG        WriteOffset;        /* 写偏移（-1=未知/非写操作）。对齐 SS PostWrite PW_WRITE_CONTEXT.WriteOffset */
-    ULONG           BytesWritten;       /* 写字节数（0=非写操作）。对齐 SS PostWrite BytesWritten */
-    ULONG64         FileId;             /* 文件对象 ID（0=未知）。对齐 SS stream context FileId，FileInternalInformation */
+    LONGLONG        WriteOffset;        /* 写偏移（-1=未知/非写操作）。PostWrite PW_WRITE_CONTEXT.WriteOffset */
+    ULONG           BytesWritten;       /* 写字节数（0=非写操作）。PostWrite BytesWritten */
+    ULONG64         FileId;             /* 文件对象 ID（0=未知）。stream context FileId，FileInternalInformation */
     ULONG           FileEntropy;        /* 写缓冲区熵（Q16 定点，0=未知/未采样）。对齐 agent WKD_RANSOM_ENTROPY_Q16 */
     ULONG           Flags;              /* bit0=IsCanary（蜜罐命中）；后续扩展位见 DEF_FILE_FLAG_* */
     LARGE_INTEGER   Timestamp;          /* 操作时间 */
@@ -537,16 +537,16 @@ typedef struct _WKD_MESSAGE_BODY_SECTION_MAP {
 /*       区段创建事件体（驱动→Agent，线格式）        */
 /*                                                  */
 /*  用于 WkdMessage_SyscallCreateSection(0x1011)。  */
-/*  SectionTracker 迁移 2026-08（对齐 SS SectionTracker.c）：
+/*  SectionTracker 迁移 2026-08（SectionTracker.c）：
 /*  NtCreateSection 在 Exit 时 deref 输出 SectionHandle 得 SectionObject，
 /*  解析输入参数做 5 类怀疑信号判定（匿名可执行 200/大匿名 80/无背衬 180/
-/*  TxF 事务 300/DeletePending 250），评分对齐 SS SecpUpdateSuspicionScore
+/*  TxF 事务 300/DeletePending 250），评分SecpUpdateSuspicionScore
 /*  权重和 + ≥3 标志组合加成，随消息上送。
 /*  Body = [固定头 WKD_MESSAGE_BODY_SECTION_CREATE]（固定大小，无变长数据）。
 /*  ※ 死代码: 依赖 SmInitialize 启用（WkdEntry.c:261 注释态）。
 /**************************************************/
 
-/* 区段怀疑标志位（对齐 SS SecSuspicion_* 裁剪，wkd 由 NtCreateSection 轨产生） */
+/* 区段怀疑标志位（SecSuspicion_* 裁剪，wkd 由 NtCreateSection 轨产生） */
 #define WKD_SEC_SUSPICION_NONE              0x00000000
 #define WKD_SEC_SUSPICION_TRANSACTED        0x00000001  /* TxF 事务（Doppelganging T1055.013，权重 300） */
 #define WKD_SEC_SUSPICION_DELETED           0x00000002  /* DeletePending（Doppelganging 变体，权重 250） */

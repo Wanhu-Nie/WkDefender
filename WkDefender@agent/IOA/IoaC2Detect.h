@@ -10,7 +10,7 @@
 /*  待接通: 驱动补网络事件源 (ETW/WFP) +             */
 /*  ThreatIntel 情报订阅后激活。                      */
 /*                                                  */
-/*  评分 (对齐 SS BehaviorConstants):                */
+/*  评分 (BehaviorConstants):                */
 /*    信标周期 (CV<0.3) +20 (T1071)                  */
 /*    DGA 高熵域名 +10 (T1568.002)                   */
 /*    情报域名命中 +30 (T1071.001)                   */
@@ -21,7 +21,7 @@
 #include "IoaTypes.h"
 
 /**************************************************/
-/*   SS BehaviorEventType 语义常量 (对齐 SS L485-662) */
+/*   SS BehaviorEventType 语义常量 (L485-662) */
 /**************************************************/
 
 #define WKD_EVT_NET_CONNECT         400     /* NetworkConnect */
@@ -30,18 +30,18 @@
 #define WKD_EVT_NET_HTTPS_REQUEST   407     /* NetworkHTTPSRequest */
 
 /**************************************************/
-/*   评分常量 (对齐 SS BehaviorConstants)           */
+/*   评分常量 (BehaviorConstants)           */
 /**************************************************/
 
 #define WKD_C2_BEACON_SCORE         20      /* 信标 CV<0.3 */
 #define WKD_C2_DGA_SCORE            10      /* DGA 高熵域名 */
 #define WKD_C2_INTEL_SCORE          30      /* 情报域名命中 */
 
-/* DGA 启发参数 (对齐 SS L1499) */
+/* DGA 启发参数 (L1499) */
 #define WKD_C2_DGA_MIN_LEN          15      /* 域名最短长度 */
 #define WKD_C2_DGA_UNIQ_RATIO       70      /* 唯一字符率 >0.7 (百分制) */
 
-/* 信标检测参数 (对齐 SS L1465-1481) */
+/* 信标检测参数 (L1465-1481) */
 #define WKD_C2_BEACON_MIN_INTERVALS 4       /* 最少间隔数 */
 #define WKD_C2_BEACON_MAX_CV        30      /* 变异系数 <0.3 (百分制) */
 

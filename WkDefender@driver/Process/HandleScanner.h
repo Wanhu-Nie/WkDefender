@@ -21,8 +21,8 @@
 //
 #define HS_POOL_TAG         'HShW'
 #define HS_POOL_TAG_BUFFER  'hbsW'
-#define HS_POOL_TAG_ENTRY   'eHSW'   /* 缓存句柄条目（对齐 SS HT_POOL_TAG_ENTRY） */
-#define HS_POOL_TAG_PROCESS 'pHSW'   /* 缓存快照（对齐 SS HT_POOL_TAG_PROCESS） */
+#define HS_POOL_TAG_ENTRY   'eHSW'   /* 缓存句柄条目（HT_POOL_TAG_ENTRY） */
+#define HS_POOL_TAG_PROCESS 'pHSW'   /* 缓存快照（HT_POOL_TAG_PROCESS） */
 
 //
 // 限制
@@ -30,12 +30,12 @@
 #define HS_MAX_HANDLES_PER_PROCESS  65536
 #define HS_MAX_PATH_LENGTH          520
 #define HS_MAX_SENSITIVE_PROCESSES  32
-#define HS_MAX_OBJECT_NAME_LENGTH   520     // 对象名最大长度（字节，对齐 SS HT_MAX_OBJECT_NAME_LENGTH）
-#define HS_MAX_DUPLICATIONS         4096    // 复制记录上限（对齐 SS HT_MAX_DUPLICATIONS）
-#define HS_MAX_TRACKED_PROCESSES    4096    // 缓存进程上限（对齐 SS HT_MAX_TRACKED_PROCESSES）
+#define HS_MAX_OBJECT_NAME_LENGTH   520     // 对象名最大长度（字节，HT_MAX_OBJECT_NAME_LENGTH）
+#define HS_MAX_DUPLICATIONS         4096    // 复制记录上限（HT_MAX_DUPLICATIONS）
+#define HS_MAX_TRACKED_PROCESSES    4096    // 缓存进程上限（HT_MAX_TRACKED_PROCESSES）
 
 //
-// 缓存层常量（对齐 SS HT_HASH_BUCKET_COUNT / HT_SIGNATURE / HT_DEFAULT_*）
+// 缓存层常量（HT_HASH_BUCKET_COUNT / HT_SIGNATURE / HT_DEFAULT_*）
 //
 #define HS_HASH_BUCKET_COUNT            256
 #define HS_HASH_BUCKET_MASK             (HS_HASH_BUCKET_COUNT - 1)
@@ -77,7 +77,7 @@ typedef enum _HS_SUSPICION {
     HsSuspicion_TokenSteal       = 0x00000020,  // 令牌窃取
     HsSuspicion_CredentialAccess = 0x00000040,  // 凭证访问 (LSASS dump)
     HsSuspicion_SystemProcess    = 0x00000080,  // System 进程 (PID=4)
-    HsSuspicion_DuplicatedIn     = 0x00000100,  // 复制流入句柄（对齐 SS HtSuspicion_DuplicatedIn；SS 枚举路径未置位 IsDuplicated，此维度在 SS 未激活，标注保留）
+    HsSuspicion_DuplicatedIn     = 0x00000100,  // 复制流入句柄（HtSuspicion_DuplicatedIn；SS 枚举路径未置位 IsDuplicated，此维度在 SS 未激活，标注保留）
 } HS_SUSPICION;
 
 //
@@ -91,7 +91,7 @@ typedef struct _HS_HANDLE_ENTRY {
     HANDLE          TargetProcessId;    // 指向的目标 PID（仅 Process/Thread）
     HS_SUSPICION    SuspicionFlags;
     ULONG           SuspicionScore;     // 0-100
-    /* ---- 补充字段（对齐 SS HT_HANDLE_ENTRY，HandleTracker 迁移 2026-08）---- */
+    /* ---- 补充字段（HT_HANDLE_ENTRY，HandleTracker 迁移 2026-08）---- */
     BOOLEAN         IsDuplicated;       // 是否复制流入（SS 枚举路径未置位，死逻辑标注）
     BOOLEAN         Reserved0;
     HANDLE          DuplicatedFromProcess;  // 复制来源进程（SS 未激活，恒 NULL）
@@ -138,9 +138,9 @@ typedef struct _HS_CONFIG {
     BOOLEAN EnableCrossProcessDetection;
     BOOLEAN EnableTokenStealDetection;
     BOOLEAN EnableSensitiveProcessDetection;
-    /* ---- 补充字段（对齐 SS HT_CONFIG，HandleTracker 迁移 2026-08，供复制追踪/缓存死代码使用）---- */
-    BOOLEAN EnableDuplicationTracking;      // 复制追踪开关（对齐 SS HT_CONFIG.EnableDuplicationTracking）
-    ULONG   SuspicionThreshold;             // 聚合怀疑阈值（对齐 SS HT_CONFIG.SuspicionThreshold，默认 50）
+    /* ---- 补充字段（HT_CONFIG，HandleTracker 迁移 2026-08，供复制追踪/缓存死代码使用）---- */
+    BOOLEAN EnableDuplicationTracking;      // 复制追踪开关（HT_CONFIG.EnableDuplicationTracking）
+    ULONG   SuspicionThreshold;             // 聚合怀疑阈值（HT_CONFIG.SuspicionThreshold，默认 50）
     ULONG MaxDuplications;              // 复制记录上限（默认 HS_MAX_DUPLICATIONS）
     ULONG CleanupIntervalMs;            // 周期清理间隔（默认 60000）
     ULONG CacheTimeoutMs;               // 复制记录/缓存 TTL（默认 30000）
@@ -237,7 +237,7 @@ HsIsSensitiveProcess(
 /**************************************************/
 /*  死代码：复制追踪 / 缓存层 / 统计 / 查询 API      */
 /*                                                   */
-/*  对齐 SS HandleTracker.{c,h}，迁移 2026-08。      */
+/*  HandleTracker.{c,h}，迁移 2026-08。      */
 /*  功能面覆盖但未接入流水线——复制追踪事件源是       */
 /*  Ob 回调 OB_OPERATION_HANDLE_DUPLICATE（ObjectNotify */
 /*  CbInitializeObjectNotify 被 WkdEntry 注释），     */
@@ -246,7 +246,7 @@ HsIsSensitiveProcess(
 /**************************************************/
 
 //
-// 查询 API 输出（对齐 SS HT_HANDLE_INFO / HT_PROCESS_HANDLES_INFO）
+// 查询 API 输出（HT_HANDLE_INFO / HT_PROCESS_HANDLES_INFO）
 //
 typedef struct _HS_HANDLE_INFO {
     HANDLE          HandleValue;
@@ -278,7 +278,7 @@ typedef struct _HS_PROCESS_HANDLES_INFO {
 } HS_PROCESS_HANDLES_INFO, *PHS_PROCESS_HANDLES_INFO;
 
 //
-// 复制追踪记录（对齐 SS HT_DUPLICATION_RECORD）
+// 复制追踪记录（HT_DUPLICATION_RECORD）
 // 不接入：跨进程复制关联应归 Agent 因果图（IOA_TIER3 跨进程边），内核不维护复制列表。
 //
 typedef struct _HS_DUPLICATION_RECORD {
@@ -294,7 +294,7 @@ typedef struct _HS_DUPLICATION_RECORD {
 } HS_DUPLICATION_RECORD, *PHS_DUPLICATION_RECORD;
 
 //
-// 句柄快照缓存（对齐 SS HT_PROCESS_HANDLES）
+// 句柄快照缓存（HT_PROCESS_HANDLES）
 // 不接入：wkd 分层模型句柄快照由 Agent 按需触发（ScanManager 模式），内核无快照缓存需求。
 //
 typedef struct _HS_PROCESS_HANDLES {
@@ -331,7 +331,7 @@ typedef struct _HS_PROCESS_HANDLES {
 } HS_PROCESS_HANDLES, *PHS_PROCESS_HANDLES;
 
 //
-// hash 桶（对齐 SS HT_HASH_BUCKET）
+// hash 桶（HT_HASH_BUCKET）
 //
 typedef struct _HS_HASH_BUCKET {
     LIST_ENTRY      ProcessList;
@@ -340,7 +340,7 @@ typedef struct _HS_HASH_BUCKET {
 } HS_HASH_BUCKET, *PHS_HASH_BUCKET;
 
 //
-// 统计（对齐 SS HT_STATISTICS）
+// 统计（HT_STATISTICS）
 //
 typedef struct _HS_STATISTICS {
     volatile LONG64 HandlesTracked;
@@ -356,7 +356,7 @@ typedef struct _HS_STATISTICS {
 } HS_STATISTICS, *PHS_STATISTICS;
 
 //
-// 主 tracker（对齐 SS HT_TRACKER）
+// 主 tracker（HT_TRACKER）
 // 裁剪：SS 的 SensitiveProcesses[32] 哈希名单由 wkd HspIsSensitiveProcessName
 // 运行时数组遍历替代（重功能实现），不搬；timer 由 SS TimerManager 改用
 // worker 线程周期性等待（通用 KEVENT/线程机制，见 HsInitialize 死代码实现）。
@@ -401,7 +401,7 @@ typedef struct _HS_TRACKER {
 
 //
 // ======================================================================
-// 死代码 API 声明（对齐 SS HtInitialize/HtShutdown/HtRecordDuplication/
+// 死代码 API 声明（HtInitialize/HtShutdown/HtRecordDuplication/
 // HtGetStatistics/HtGetHandlesInfo/HtGetHandleByIndex）
 // ======================================================================
 //
@@ -453,7 +453,7 @@ HsRecordDuplication(
 
 /*++
 Routine Description:
-    获取追踪器统计。死代码：无消费方（对齐 SS HtGetStatistics 在 SS 内亦无调用方）。
+    获取追踪器统计。死代码：无消费方（HtGetStatistics 在 SS 内亦无调用方）。
 
 IRQL: DISPATCH_LEVEL 及以下
 --*/
@@ -493,7 +493,7 @@ HsGetHandleByIndex(
 
 /*++
 Routine Description:
-    新进程句柄快照分析（对齐 SS PnpAnalyzeProcess 的 HandleTracker 段，
+    新进程句柄快照分析（PnpAnalyzeProcess 的 HandleTracker 段，
     ProcessNotify.c:3398-3465：HtSnapshotHandles+HtAnalyzeHandles →
     PN_BEHAVIOR_HANDLE_* 映射 → SuspicionScore 累加）。实时枚举新进程
     句柄→聚合分析→映射句柄行为标志→输出聚合摘要。
@@ -522,7 +522,7 @@ HspAnalyzeNewProcessHandles(
 
 /*++
 Routine Description:
-    快照并缓存指定进程的全部句柄（对齐 SS HtSnapshotHandles L1084-1152）。
+    快照并缓存指定进程的全部句柄（HtSnapshotHandles L1084-1152）。
     组合 API：分配 → 枚举 → 缓存（hash 表 + 全局列表）。返回的快照须
     HspReleaseHandles 释放。HspEnumerateProcessHandles 内部已更新统计。
     死代码：缓存层未接入（wkd 创建时快照走 HspAnalyzeNewProcessHandles 实时枚举）。
@@ -539,7 +539,7 @@ HspSnapshotHandles(
 
 /*++
 Routine Description:
-    对快照做聚合分析（对齐 SS HtAnalyzeHandles L1367-1438）。
+    对快照做聚合分析（HtAnalyzeHandles L1367-1438）。
     遍历聚合 SuspicionFlags + ManyHandles 阈值 + 更新缓存聚合字段（独占锁发布一致对）。
     死代码：缓存层未接入。
 
@@ -556,7 +556,7 @@ HspAnalyzeHandles(
 
 /*++
 Routine Description:
-    释放快照（对齐 SS HtReleaseHandles L1551-1571）：移除缓存 + 引用递减。
+    释放快照（HtReleaseHandles L1551-1571）：移除缓存 + 引用递减。
     死代码：缓存层未接入。
 
 IRQL: PASSIVE_LEVEL / APC_LEVEL
@@ -569,18 +569,18 @@ HspReleaseHandles(
     );
 
 /*++
-    句柄聚合怀疑 → 告警位图（对齐 SS PnpAnalyzeProcess 的 BeEngineSubmitEvent
+    句柄聚合怀疑 → 告警位图（PnpAnalyzeProcess 的 BeEngineSubmitEvent
     三类告警，ProcessNotify.c:3427-3449：CredentialDumping/RemoteThreadCreate/LSASSAccess）
-    权重：CredentialAccess=40 / InjectionCapable=25 / TokenSteal=30（对齐 SS 权重，
+    权重：CredentialAccess=40 / InjectionCapable=25 / TokenSteal=30（权重，
     cap 100，即 SS 的 SuspicionScore 累加语义）。
 */
-#define HS_ALERT_CREDENTIAL_DUMP   0x00000001   /* 对齐 SS BehaviorEvent_CredentialDumping */
-#define HS_ALERT_INJECTION         0x00000002   /* 对齐 SS BehaviorEvent_RemoteThreadCreate */
-#define HS_ALERT_TOKEN_STEAL       0x00000004   /* 对齐 SS BehaviorEvent_LSASSAccess */
+#define HS_ALERT_CREDENTIAL_DUMP   0x00000001   /* BehaviorEvent_CredentialDumping */
+#define HS_ALERT_INJECTION         0x00000002   /* BehaviorEvent_RemoteThreadCreate */
+#define HS_ALERT_TOKEN_STEAL       0x00000004   /* BehaviorEvent_LSASSAccess */
 
 /*++
 Routine Description:
-    句柄聚合怀疑 → 告警位图 + 建议累计分（对齐 SS PnpAnalyzeProcess 的
+    句柄聚合怀疑 → 告警位图 + 建议累计分（PnpAnalyzeProcess 的
     BeEngineSubmitEvent + SuspicionScore += HtScore 累加，ProcessNotify.c:3427-3449）。
     死代码：接入点在进程创建路径（AeOrchestratorDispatch ProcessCreated 分支，
     门控默认关）；wkd 以 Ob 回调实时检测为主路径。返回告警位图，AccumulatedScore

@@ -22,7 +22,7 @@ UtHeapFree(
 /*        hex / base64 工具 (SS HashUtils/Base64)   */
 /**************************************************/
 
-/* 十六进制输入上限 (20MB hex = 10MB 二进制, 对齐 SS HashUtils MAX_HEX_INPUT_SIZE) */
+/* 十六进制输入上限 (20MB hex = 10MB 二进制, HashUtils MAX_HEX_INPUT_SIZE) */
 #define UT_MAX_HEX_INPUT_SIZE  (20 * 1024 * 1024)
 
 BOOLEAN
@@ -35,7 +35,7 @@ UtHexEncode(
     )
 /*++
 Routine Description:
-    二进制 → 十六进制串。查表逐 nibble (对齐 SS HashUtils::ToHexLower/ToHexUpper)。
+    二进制 → 十六进制串。查表逐 nibble (HashUtils::ToHexLower/ToHexUpper)。
 
 Arguments:
     Data   - 输入缓冲。
@@ -75,7 +75,7 @@ UtHexDecode(
 /*++
 Routine Description:
     十六进制串 → 二进制。偶数长度, ≤20MB 上限, 大小写折叠, 非法字符失败
-    (对齐 SS HashUtils::FromHex L316-358)。
+    (HashUtils::FromHex L316-358)。
 
 Arguments:
     Hex     - 输入 hex 串。
@@ -127,7 +127,7 @@ UtBase64Encode(
     )
 /*++
 Routine Description:
-    二进制 → 标准 Base64 串 (RFC 4648 字母表, 对齐 SS Base64Utils)。
+    二进制 → 标准 Base64 串 (RFC 4648 字母表, Base64Utils)。
 
 Arguments:
     Data   - 输入缓冲。

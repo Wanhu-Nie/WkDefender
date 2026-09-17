@@ -1,7 +1,7 @@
 ﻿/**************************************************/
 /*  WkDefender IOC — 证书详情提取与时间戳            */
 /*  自 IocScanner.c 独立 (2026-08 重构)              */
-/*  对齐 SS ExtractCertificateDetailsImpl/PE_sig_verf */
+/*  ExtractCertificateDetailsImpl/PE_sig_verf */
 /**************************************************/
 
 #pragma once
@@ -27,7 +27,7 @@ extern BOOLEAN g_IocCertReputationEnabled;
 Routine Description:
     提取签名证书详情: 签名者/颁发者/SHA1 指纹/有效期/证书链(≤16)/严格信任/
     EV/EKU/弱算法/吊销(cache-only)/cert_reputation 表接线。
-    对齐 SS ExecutableAnalyzer::ExtractCertificateDetailsImpl L3428-3561。
+    ExecutableAnalyzer::ExtractCertificateDetailsImpl L3428-3561。
 
 Arguments:
     FilePath - 文件路径。
@@ -46,7 +46,7 @@ IocScan_ExtractCertDetails(
 /*++
 Routine Description:
     提取 legacy 计数器签名时间戳 (szOID_RSA_counterSign → signingTime)。
-    对齐 SS PE_sig_verf L2238-2283。
+    PE_sig_verf L2238-2283。
     签名时间豁免 (SignatureVerifier CertVerify CERT_E_EXPIRED 分支) 激活调用。
 
 Arguments:

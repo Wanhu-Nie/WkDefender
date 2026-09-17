@@ -14,6 +14,7 @@ typedef struct _TS_CONTEXT TS_CONTEXT, * PTS_CONTEXT;
 typedef struct _AE_IOC_CONTEXT AE_IOC_CONTEXT, * PAE_IOC_CONTEXT;
 typedef struct _AE_IOA_CONTEXT AE_IOA_CONTEXT, * PAE_IOA_CONTEXT;
 typedef struct _WKD_THREAD_CONTEXT WKD_THREAD_CONTEXT, * PWKD_THREAD_CONTEXT;
+typedef struct _WKD_MEMORY_REGION_CONTEXT WKD_MEMORY_REGION_CONTEXT, * PWKD_MEMORY_REGION_CONTEXT;
 
 /* PPL 结构体 */
 
@@ -81,23 +82,23 @@ typedef struct _WKD_SECURITY_CONTEXT {
 #define WKD_BEHAVIOR_REFLECTION_LOAD    0x00000008  // 反射加载
 #define WKD_BEHAVIOR_SUSPICIOUS_CMD     0x00000010  // cmd.exe 链式命令
 #define WKD_BEHAVIOR_LONG_CMDLINE       0x00000020  // > 2048 字符
-#define WKD_BEHAVIOR_LOLBIN             0x00000040  // LOLBin 进程（迁移自 SS BE_PROC_FLAG_LOLBIN，评分乘数 ×120）
+#define WKD_BEHAVIOR_LOLBIN             0x00000040  // LOLBin 进程（BE_PROC_FLAG_LOLBIN，评分乘数 ×120）
 #define WKD_BEHAVIOR_SUSPICIOUS_PARENT     0x00000080
 #define WKD_BEHAVIOR_PARENT_CHILD_MISMATCH 0x00000100
 #define WKD_BEHAVIOR_SCRIPT_HOST            0x00000200
-#define WKD_BEHAVIOR_CLIPBOARD              0x00000400  // 剪贴板窃取命令行/镜像名（T1115，迁移自 SS ClipboardMonitor）
-#define WKD_BEHAVIOR_OBFUSCATED             0x00000800  // 混淆检测（^/%/` 计数 + iex/char 拼接，迁移自 SS CommandLineParser）
-#define WKD_BEHAVIOR_HIDDEN_WINDOW          0x00001000  // 隐藏窗口执行（-w hidden/start /min，迁移自 SS CommandLineParser）
-#define WKD_BEHAVIOR_REMOTE_EXEC            0x00002000  // 远程执行（Invoke-Command/wmic /node:/psexec，迁移自 SS CommandLineParser）
-#define WKD_BEHAVIOR_SUSPICIOUS_PATH        0x00004000  // 可疑路径执行（temp/appdata/recycle，迁移自 SS CommandLineParser）
-#define WKD_BEHAVIOR_SCRIPT_FILE            0x00008000  // 脚本文件参数执行（.vbs/.js/.hta，迁移自 SS CommandLineParser）
+#define WKD_BEHAVIOR_CLIPBOARD              0x00000400  // 剪贴板窃取命令行/镜像名（T1115，ClipboardMonitor）
+#define WKD_BEHAVIOR_OBFUSCATED             0x00000800  // 混淆检测（^/%/` 计数 + iex/char 拼接，CommandLineParser）
+#define WKD_BEHAVIOR_HIDDEN_WINDOW          0x00001000  // 隐藏窗口执行（-w hidden/start /min，CommandLineParser）
+#define WKD_BEHAVIOR_REMOTE_EXEC            0x00002000  // 远程执行（Invoke-Command/wmic /node:/psexec，CommandLineParser）
+#define WKD_BEHAVIOR_SUSPICIOUS_PATH        0x00004000  // 可疑路径执行（temp/appdata/recycle，CommandLineParser）
+#define WKD_BEHAVIOR_SCRIPT_FILE            0x00008000  // 脚本文件参数执行（.vbs/.js/.hta，CommandLineParser）
 
-    /* 句柄追踪行为标志（对齐 SS PN_BEHAVIOR_HANDLE_*，HandleTracker 迁移 2026-08）
+    /* 句柄追踪行为标志（PN_BEHAVIOR_HANDLE_*，HandleTracker 迁移 2026-08）
      * 写入方：HspAnalyzeNewProcessHandles（创建时快照分析，死代码门控默认关，
      * wkd 以 Ob 回调实时检测（IocDetectHandle）为主路径）。 */
-#define WKD_BEHAVIOR_HANDLE_INJECTION       0x00010000  // 持有注入能力句柄（对齐 SS PN_BEHAVIOR_HANDLE_INJECTION）
-#define WKD_BEHAVIOR_HANDLE_CRED_ACCESS     0x00020000  // 持有凭证访问句柄（对齐 SS PN_BEHAVIOR_HANDLE_CRED_ACCESS）
-#define WKD_BEHAVIOR_HANDLE_TOKEN_STEAL     0x00040000  // 持有令牌窃取句柄（对齐 SS PN_BEHAVIOR_HANDLE_TOKEN_STEAL）
+#define WKD_BEHAVIOR_HANDLE_INJECTION       0x00010000  // 持有注入能力句柄（PN_BEHAVIOR_HANDLE_INJECTION）
+#define WKD_BEHAVIOR_HANDLE_CRED_ACCESS     0x00020000  // 持有凭证访问句柄（PN_BEHAVIOR_HANDLE_CRED_ACCESS）
+#define WKD_BEHAVIOR_HANDLE_TOKEN_STEAL     0x00040000  // 持有令牌窃取句柄（PN_BEHAVIOR_HANDLE_TOKEN_STEAL）
 
     /* 环境变量监控预留（ShadowStrike EnvironmentMonitor 迁移 2026-08）
      * 0x00080000 首位置已被堆喷占用（见下），剩余 0x00100000-0x0F000000
@@ -112,7 +113,7 @@ typedef struct _WKD_SECURITY_CONTEXT {
      * TsIndicator_Injection_HeapSpray 0x0306）。 */
 #define WKD_BEHAVIOR_HEAP_SPRAY             0x00080000
 
-    /* WSL/容器逃逸（迁移自 SS WSLMonitor 2026-08）
+    /* WSL/容器逃逸（WSLMonitor 2026-08）
      * 0x10000000 独立位（bit28），避开 0x80000 起环境预留段。
      * 写入方：IocProcess.c §3.3 IocpDetectWsl（活代码）；读取方：
      *   - 进程创建父链判定（同 §3.3）
@@ -131,7 +132,7 @@ typedef struct _WKD_SECURITY_CONTEXT {
     // PPL（Protected Process Light）保护级（2026-08-09 D6，进程创建回调采集）
     // 低 4 位 Type（PS_PROTECTED_TYPE：0=None/1=PPL/2=Full），高 4 位 Signer
     // （PS_PROTECTED_SIGNER：WinSystem/Lsa/Antimalware/...）。0 = 非保护进程。
-    // 对齐 SS ShadowStrikeValidateProcessSignature 的 ProcessProtectionInformation 段，
+    // ShadowStrikeValidateProcessSignature 的 ProcessProtectionInformation 段，
     // 采集自 PsGetProcessProtection（EPROCESS->Protection）。消费点（Exempts 判定
     // / L1 参考）标注未来。
     PS_PROTECTION PplProtection;
@@ -200,7 +201,7 @@ typedef struct _WKD_PAS_PROCESS_PROFILE {
 //
 // 逐进程堆喷画像（HeapSpray 迁移 2026-08）
 // 内嵌于 WKD_PROCESS，随进程退出统一回收（值类型，无独立分配）。
-// 支撑分配风暴轻量预判: 5s 窗口计数 (对齐 SS HsRecordAllocation 窗口) +
+// 支撑分配风暴轻量预判: 5s 窗口计数 (HsRecordAllocation 窗口) +
 // 阈值命中 → BehaviorFlags 置位 + AeReportIndicatorPair 上报
 // TsIndicator_Injection_HeapSpray (0x0306, 预登记槽位激活)。
 // ※ 死代码: 依赖 SmInitialize 启用 (WkdEntry.c:261 注释态), syscall 管线
@@ -217,32 +218,59 @@ typedef struct _WKD_HEAP_SPRAY_PROFILE {
 } WKD_HEAP_SPRAY_PROFILE, *PWKD_HEAP_SPRAY_PROFILE;
 
 //
-// 逐进程内存区域追踪状态（MemoryMonitor 迁移 2026-08）
-// 内嵌于 WKD_PROCESS，随进程退出由 PspDestroyProcess → WkdMemRegionCleanupProcess
-// 统一回收（区域节点为动态链表，须遍历释放）。
-// 区域节点（WKD_MEM_REGION，Memory/MemoryRegion.h）由 MemoryRegion.c 管理，
-// 此处仅声明链表头/锁/计数与风险统计（对齐 SS MM_PROCESS_CONTEXT 子集）。
+// 逐进程内存区域追踪（MemoryMonitor 迁移 2026-08）
+// 2026-09-09 方案 A 指针化重构 → 2026-09-10 二次重构：
+// WKD_MEMORY_REGION_STATE 已撤销——其成员（区域链表/锁/计数/风险统计/
+// 进程级内存标志）全部上提合并进 WKD_MEMORY_REGION_CONTEXT
+// （Memory/MemoryRegion.h），避免"上下文包一层无实质载荷的状态"的
+// 冗余间接层；WKD_PROCESS 仅保留 PWKD_MEMORY_REGION_CONTEXT 指针，
+// 随进程退出由 PspDestroyProcess → WkdDestroyMemoryRegionContext 统一回收。
+// 区域节点（WKD_MEMORY_REGION，Memory/MemoryRegion.h）由 MemoryRegion.c 管理。
 // 支撑 4 类内存事件预判（RWX 初始分配/W→X 解包/Image 区早期 RWX 镂空/
-// 跨进程注入标记）与 MemoryRiskScore 0-1000 聚合。
-// ※ 死代码: 依赖 SmInitialize 启用 (WkdEntry.c:261 注释态), syscall 管线
+// 跨进程注入标记）、MemoryRiskScore 0-1000 聚合，以及
+// 进程创建基线快照（MmBuildMemoryRegionBaseline）与定时一致性校验。
+// ※ 事件轨：依赖 SmInitialize 启用（WkdEntry.c 注释态），syscall 管线
 //   恢复后由 SyscallHijack.c 内存 case 调用 WkdMemRegionTrack* 驱动。
 //
-typedef struct _WKD_MEM_REGION_STATE {
-    HANDLE            ProcessId;               /* 所属进程（区域节点复用） */
-    LIST_ENTRY        RegionList;              /* 区域链表（WKD_MEM_REGION 节点） */
-    EX_PUSH_LOCK      RegionLock;              /* 区域锁（APC_LEVEL） */
-    volatile LONG     RegionCount;             /* 活跃区域数 */
-    volatile LONG     ShellcodeDetectionCount; /* Shellcode 检测计数（×200） */
-    volatile LONG     InjectionAttemptCount;   /* 注入尝试计数（×300） */
-    volatile LONG64   SuspiciousOperations;    /* 可疑操作计数（×10） */
-    volatile LONG     MemoryRiskScore;         /* 0-1000（对齐 SS MmpUpdateProcessRisk） */
-    volatile LONG     Flags;                   /* WKD_MEM_PROCESS_FLAG_* */
-} WKD_MEM_REGION_STATE, *PWKD_MEM_REGION_STATE;
-
-// 进程级内存标志（对齐 SS MM_PROCESS_FLAG_*）
+// 进程级内存标志（MM_PROCESS_FLAG_*）
 #define WKD_MEM_PROCESS_FLAG_HOLLOWING_TARGET  0x00000001  // Image 区早期 RWX（镂空指示器）
 #define WKD_MEM_PROCESS_FLAG_INJECTION_TARGET  0x00000002  // 注入目标
 #define WKD_MEM_PROCESS_FLAG_INJECTION_SOURCE  0x00000004  // 注入源
+
+//
+// 逐进程注册表行为画像（RegistryProtection 迁移 2026-09-09，架构重构：
+// 由 AccessControl/RegistryProtection.c 原独立维护的进程行为哈希表并入本结构）
+// 内嵌于 WKD_PROCESS，随进程退出统一回收（值类型，无独立分配/引用计数）。
+// 支撑注册表持久化/防御规避/勒索行为关联（SHADOWSTRIKE_REG_PROCESS_CONTEXT）。
+// 字段规则与既有画像一致：无锁原子写（Interlocked*），单写者/多读语义。
+// 注意：本头不得反向依赖 RegistryProtection.h —— RecentOps 以 ULONG 存
+// WKD_RG_REG_OPERATION 枚举值，ThreatIndicators 存 WKD_RG_THREAT_INDICATOR
+// 位图（含行为模式一次性上报标志 WKD_RG_PROCCTX_FLAG_*，定义于 .c）。
+//
+typedef struct _WKD_RG_PROCESS_PROFILE {
+    /* 活动计数 */
+    volatile LONG64 TotalOperations;       /* 总操作计数 */
+    volatile LONG64 CreateKeyCount;        /* 创建键计数 */
+    volatile LONG64 SetValueCount;         /* 设置值计数 */
+    volatile LONG64 DeleteKeyCount;        /* 删除键计数 */
+    volatile LONG64 DeleteValueCount;      /* 删除值计数 */
+    volatile LONG64 PersistenceAttempts;   /* 持久化尝试计数 */
+    volatile LONG64 SecurityKeyAccesses;   /* 安全键访问计数 */
+    volatile LONG64 BlockedOperations;     /* 被阻断操作计数 */
+
+    /* 行为跟踪 */
+    volatile ULONG ThreatIndicators;       /* WKD_RG_THREAT_INDICATOR 位图 + 模式上报标志 */
+    volatile ULONG SuspicionScore;         /* 注册表行为可疑分（0-100） */
+    volatile ULONG RunKeyModifications;    /* Run/RunOnce 修改计数 */
+    volatile ULONG ServiceModifications;   /* Services 修改计数 */
+    volatile ULONG IFEOModifications;      /* IFEO 修改计数 */
+    volatile ULONG SecurityPolicyModifications; /* 安全策略修改计数 */
+
+    /* 近期操作时序环形缓冲（WKD_RG_RING_BUFFER_SIZE，无锁原子写） */
+    volatile ULONG RecentOps[WKD_RG_RING_BUFFER_SIZE];        /* WKD_RG_REG_OPERATION 值 */
+    LARGE_INTEGER  RecentOpTimes[WKD_RG_RING_BUFFER_SIZE];
+    volatile ULONG RecentOpIndex;
+} WKD_RG_PROCESS_PROFILE, *PWKD_RG_PROCESS_PROFILE;
 
 //
 // 核心进程结构体（类似 KPROCESS）
@@ -291,7 +319,8 @@ typedef struct _WKD_PROCESS {
     WKD_SYSCALL_SUPPRESSION SyscallSuppression;  // 事件抑制状态（内嵌，无需单独分配）
     WKD_PAS_PROCESS_PROFILE SectionMapProfile;   // 区段映射画像（PreAcquireSection 迁移 2026-08，内嵌值类型）
     WKD_HEAP_SPRAY_PROFILE HeapSprayProfile;     // 堆喷画像（HeapSpray 迁移 2026-08，内嵌值类型）
-    WKD_MEM_REGION_STATE MemRegionState;         // 内存区域追踪（MemoryMonitor 迁移 2026-08，内嵌值类型）
+    PWKD_MEMORY_REGION_CONTEXT MemoryRegionContext;  // 内存区域追踪（2026-09-09 方案 A：指针载荷，主动构建+惰性挂载）
+    WKD_RG_PROCESS_PROFILE RegistryProfile;      // 注册表行为画像（RegistryProtection 迁移 2026-09-09，内嵌值类型）
 
     // 排除/信任标记（排除子系统 Exempts 写入，自保护/镜像免检依据）
     struct {
@@ -361,17 +390,17 @@ typedef struct _WKD_PROCESS_MONITOR {
         volatile LONG EncodedCommands;
         volatile LONG DownloadCradles;
         volatile LONG ReflectiveLoads;
-        volatile LONG ClipboardMatches;      // 剪贴板窃取命令行/镜像名命中（T1115，迁移自 SS ClipboardMonitor）
-        volatile LONG ObfuscatedCommands;    // 混淆检测命中（迁移自 SS CommandLineParser）
-        volatile LONG HiddenWindowCommands;  // 隐藏窗口执行命中（迁移自 SS CommandLineParser）
-        volatile LONG RemoteExecCommands;    // 远程执行命中（迁移自 SS CommandLineParser）
-        volatile LONG SuspiciousPathCommands; // 可疑路径命中（迁移自 SS CommandLineParser）
-        volatile LONG ScriptFileCommands;    // 脚本文件执行命中（迁移自 SS CommandLineParser）
-        volatile LONG WslProcessesDetected;  // WSL 进程追踪数（迁移自 SS WSLMonitor Stats.WslProcessesDetected）
-        volatile LONG WslSuspiciousSpawns;   // WSL 子进程 spawn（对齐 SS Stats.SuspiciousSpawns）
-        volatile LONG WslEscapeAttempts;     // WSL 逃逸尝试（进程+文件侧共用，对齐 SS Stats.EscapeAttemptsDetected）
-        volatile LONG WslCredentialAccess;   // WSL 凭据文件访问（对齐 SS Stats.CredentialAccessAttempts）
-        volatile LONG WslFileSystemCrossings; // WSL 文件系统穿越计数（对齐 SS Stats.FileSystemCrossings，§9 死代码）
+        volatile LONG ClipboardMatches;      // 剪贴板窃取命令行/镜像名命中（T1115，ClipboardMonitor）
+        volatile LONG ObfuscatedCommands;    // 混淆检测命中（CommandLineParser）
+        volatile LONG HiddenWindowCommands;  // 隐藏窗口执行命中（CommandLineParser）
+        volatile LONG RemoteExecCommands;    // 远程执行命中（CommandLineParser）
+        volatile LONG SuspiciousPathCommands; // 可疑路径命中（CommandLineParser）
+        volatile LONG ScriptFileCommands;    // 脚本文件执行命中（CommandLineParser）
+        volatile LONG WslProcessesDetected;  // WSL 进程追踪数（WSLMonitor Stats.WslProcessesDetected）
+        volatile LONG WslSuspiciousSpawns;   // WSL 子进程 spawn（Stats.SuspiciousSpawns）
+        volatile LONG WslEscapeAttempts;     // WSL 逃逸尝试（进程+文件侧共用，Stats.EscapeAttemptsDetected）
+        volatile LONG WslCredentialAccess;   // WSL 凭据文件访问（Stats.CredentialAccessAttempts）
+        volatile LONG WslFileSystemCrossings; // WSL 文件系统穿越计数（Stats.FileSystemCrossings，§9 死代码）
     } Statistics;
 
     /* 防护限流 */
@@ -423,6 +452,24 @@ PsLookupWkdProcessByProcessId(
         &g_WkdProcessMonitor.ProcessTable,
         &ProcessId, sizeof(HANDLE));
 }
+
+//
+// 按进程名查找 WKD_PROCESS（2026-09-09，RG 评分联动进程对 target 挂点）
+//
+// 用途：RG 告警评分注入以"进程对 <写入者, Registry>"表达
+// "进程 → 注册表子系统"交互语义 — Target 即系统自带的 Registry 进程
+// （PmEnumerateProcesses 全量收录）。实现经 CoEnumerateHashMap 按
+// Core.ImagePath 文件名匹配（大小写不敏感），命中后以标准
+// "查找即 +1" 契约返回持引用对象，调用方须配对 PsDereferenceWkdProcess。
+// 未命中返回 NULL（Registry 进程未收录/进程名不匹配），调用方按
+// "尽力而为"跳过。
+//
+_IRQL_requires_(PASSIVE_LEVEL)
+_Must_inspect_result_
+PWKD_PROCESS
+PsLookupWkdProcessByName(
+    _In_ PCWSTR ProcessName
+    );
 
 FORCEINLINE
 LONG

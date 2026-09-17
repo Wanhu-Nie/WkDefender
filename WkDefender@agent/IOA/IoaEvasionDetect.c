@@ -136,7 +136,7 @@ IoaEvasion_CheckMasquerade(
     )
 /*++
 Routine Description:
-    脚本解释器 masquerade 检测 (对齐 SS L1262-1272):
+    脚本解释器 masquerade 检测 (L1262-1272):
     脚本解释器 (powershell/cmd 等) 从 Temp/AppData 路径启动
     视为进程伪装。
 
@@ -174,7 +174,7 @@ IoaEvasion_IsScriptInterpreter(
     )
 /*++
 Routine Description:
-    脚本解释器判定 (对齐 SS IsScriptInterpreter L2831-2845):
+    脚本解释器判定 (IsScriptInterpreter L2831-2845):
     进程名大小写不敏感命中 g_WkdScriptInterpreters。
 
 Arguments:
@@ -207,7 +207,7 @@ IoaEvasion_IsDocumentApp(
     )
 /*++
 Routine Description:
-    文档应用判定 (对齐 SS IsDocumentApplication L2816-2829):
+    文档应用判定 (IsDocumentApplication L2816-2829):
     进程名大小写不敏感命中 g_WkdDocumentApps。
 
 Arguments:

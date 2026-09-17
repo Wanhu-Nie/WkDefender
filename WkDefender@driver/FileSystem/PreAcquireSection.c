@@ -1,9 +1,9 @@
 ﻿/**************************************************/
 /*  PreAcquireSection 代码执行映射检测              */
-/*  迁移自 SS PreAcquireSection.c（重功能实现）      */
+/*  PreAcquireSection.c（重功能实现）      */
 /*                                                  */
-/*  活代码：WkdPasProcessMapping 检测流水线（分类/   */
-/*    行为检测/评分），由 Filter.c FspPreAcquireSection */
+/*  活代码：FsAuditMemeoryMapping 检测流水线（分类/   */
+/*    行为检测/评分），由 Filter.c CbpPreAcquireSectionNotifyCallback */
 /*    回调壳调用；逐进程画像内嵌 WKD_PROCESS。        */
 /*  死代码分区：扫描缓存/LRU/独立链表上下文/查询 API  */
 /*    （保留功能面落位，标注不接入原因）。            */
@@ -12,7 +12,7 @@
 #include <fltKernel.h>
 #include <ntifs.h>
 #include "../Process/ProcessMonitor.h"   /* WKD_PAS_PROCESS_PROFILE 内嵌于 WKD_PROCESS */
-#include "PreAcquireSection.h"
+#include "FileSystem.h"   /* 内部私有头（2026-09-13 重构）：include 公共头 + 内部结构 */
 
 /*++
  * 模块职责：
@@ -23,7 +23,7 @@
  *     - 评分融合（PAS 基础分 + Filter.c B2 路径分析分），阻断决策 Audit 门控
  *   迁移来源：ShadowStrike Callbacks/FileSystem/PreAcquireSection.c
  *
- *   阻断决策在 Filter.c FspPreAcquireSection（评分 + EnableBlocking 门控 +
+ *   阻断决策在 Filter.c CbpPreAcquireSectionNotifyCallback（评分 + EnableBlocking 门控 +
  *     自保护执行映射强信号阻断）；跨进程映射注入归 SyscallHijack.c
  *     NtMapViewOfSection case（agent 0x6005/0x6006 消费链）。
  *
@@ -46,9 +46,8 @@
  * （供 Filter.c 回调壳共用），此处仅保留本模块内部阈值，避免宏重复定义。 */
 #define PAS_TIME_WINDOW_100NS       (1000LL * 10000LL)   /* 1 秒窗口 */
 #define PAS_MAX_TRACKED_MAPPINGS    4096
-#define PAS_HOLLOWING_RECENT_EXEC   3
-#define PAS_HOLLOWING_IMAGE_MAP     5
-#define PAS_HOLLOWING_TOTAL_MAP     20
+/* 空心化阈值已提为 Config 字段（Hollowing* ，默认 3/5/20），
+ * 原常量宏 PAS_HOLLOWING_RECENT_EXEC/IMAGE_MAP/TOTAL_MAP 废弃删除。 */
 
 /**************************************************/
 /*                      结构体声明                 */
@@ -109,7 +108,7 @@ typedef struct _WKD_PAS_SUSPICIOUS_PATH {
     USHORT LengthInBytes;
 } WKD_PAS_SUSPICIOUS_PATH;
 
-/* 可疑路径表（对齐 SS g_SuspiciousPaths 11 条） */
+/* 可疑路径表（g_SuspiciousPaths 11 条） */
 static const WKD_PAS_SUSPICIOUS_PATH g_WkdPasSuspiciousPaths[] = {
     { L"\\Temp\\",                  12 },
     { L"\\TMP\\",                   10 },
@@ -141,6 +140,10 @@ typedef struct _WKD_PAS_CONFIG {
     ULONG   MinBlockScore;             /* 阻断阈值（默认 85） */
     ULONG   SuspicionMedium;           /* 事件上送/可疑计数门槛（默认 30） */
     ULONG   AnomalyThreshold;          /* 快速映射异常阈值（默认 10/s） */
+    ULONG   HollowingRecentExecThreshold;    /* 空心化：窗口内可执行映射数（默认 3） */
+    ULONG   HollowingImageMappingThreshold;  /* 空心化：镜像映射数（默认 5） */
+    ULONG   HollowingTotalMappingThreshold;  /* 空心化：总映射数（默认 20） */
+    ULONG   HollowingEarlyProcessWindowMs;   /* 空心化：早期进程窗口 ms（默认 5000） */
 } WKD_PAS_CONFIG, *PWKD_PAS_CONFIG;
 
 /* 统计计数（原子，供 DbgPrint 与未来查询 API 消费） */
@@ -156,6 +159,9 @@ typedef struct _WKD_PAS_STATS {
     volatile UINT64 Blocked;
     volatile UINT64 SelfProtectionBlocks;
     volatile UINT64 Allowed;
+    volatile UINT64 CacheHits;         /* verdict 缓存命中（干净或恶意，均计数） */
+    volatile UINT64 CacheMisses;       /* 无有效 verdict（无 context/未扫/已 Dirty） */
+    volatile UINT64 CacheBlocks;       /* 恶意 verdict 强信号阻断 */
 } WKD_PAS_STATS, *PWKD_PAS_STATS;
 
 /* 逐映射记录哈希桶（死代码：SS 128 桶 + LRU 追踪。活路径用栈上记录 +
@@ -195,7 +201,7 @@ static WKD_PAS_GLOBAL_STATE g_WkdPasState = {0};
 
 /**************************************************/
 /*                      函数声明                   */
-/*  活代码：WkdPasProcessMapping/Initialize/Shutdown */
+/*  活代码：FsAuditMemeoryMapping/Initialize/Shutdown */
 /*  死代码：旧独立链表上下文管理 + 路径检测（被      */
 /*    WKD_PROCESS 内嵌 SectionMapProfile 与 Filter.c */
 /*    B2 路径分析取代，保留供死代码分区编译）。       */
@@ -239,7 +245,7 @@ WkdPasIsSuspiciousPath(
 /**************************************************/
 
 /*
- * 映射分类（对齐 SS PaspClassifyMapping）：
+ * 映射分类（PaspClassifyMapping）：
  *   执行保护 → EXECUTABLE；PAGE_EXECUTE_READWRITE/WRITECOPY → WRITABLE；
  *   SEC_IMAGE → IMAGE（PE 镜像加载 vs 数据节加执行权限）。
  */
@@ -265,7 +271,7 @@ WkdPasClassifyMapping(
 }
 
 /*
- * 文件名可疑（SectionTracker 迁移 2026-08，对齐 SS SecpIsSuspiciousName L2639）：
+ * 文件名可疑（SectionTracker 迁移 2026-08，SecpIsSuspiciousName L2639）：
  *   双扩展名 + 可疑尾扩展（.exe/.dll/.scr）或超长文件名（>200 字符）。
  *   全程长度边界安全的 UNICODE_STRING 遍历（MED-6 约定，无 wcsrchr/wcslen）。
  */
@@ -335,7 +341,7 @@ WkdPasIsSuspiciousName(
 }
 
 /*
- * 评分（对齐 SS PaspCalculateSuspicionScore，上限 100）：
+ * 评分（PaspCalculateSuspicionScore，上限 100）：
  *   WRITABLE+25 / 可疑路径+20 / Temp+15 / ADS+30 / Hollowing+35 /
  *   Reflective+40 / EarlyProcess+10 / 行为 RAPID+15 / HOLLOWING+20 / REFLECTIVE+25
  */
@@ -366,7 +372,7 @@ WkdPasCalculateSuspicionScore(
 }
 
 /*
- * 逐进程映射画像更新（对齐 SS PaspUpdateProcessMetrics）：
+ * 逐进程映射画像更新（PaspUpdateProcessMetrics）：
  *   1s 窗口滚动计数，超早期进程窗口清除 IsEarlyProcess。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -386,7 +392,7 @@ WkdPasUpdateProcessMetrics(
         InterlockedExchange(&Profile->RecentMappings, 0);
         InterlockedExchange(&Profile->RecentExecutables, 0);
         Profile->WindowStartTime = currentTime;
-        /* 早期进程窗口清除由调用方 WkdPasProcessMapping 依据 Core.CreateTime
+        /* 早期进程窗口清除由调用方 FsAuditMemeoryMapping 依据 Core.CreateTime
          * 判定（profile 无创建时刻冗余字段，WKD_KPROCESS.Core.CreateTime 承担）。 */
     }
 
@@ -403,13 +409,14 @@ WkdPasUpdateProcessMetrics(
 }
 
 /*
- * 进程空心化检测（对齐 SS PaspDetectHollowingPattern 4 信号）：
+ * 进程空心化检测（PaspDetectHollowingPattern 4 信号）：
  *   ① 窗口内可执行映射>3；② ImageMappings>5 且 Total<20（占比）；
  *   ③ 早期进程+W+RX；④ 早期进程+全线程挂起。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
+_Must_inspect_result_
 static BOOLEAN
-WkdPasDetectHollowingPattern(
+FsDetectProcessHollowing(
     _In_ PWKD_PAS_PROCESS_PROFILE Profile,
     _In_ PWKD_PAS_MAPPING_RECORD Record
     )
@@ -426,10 +433,11 @@ WkdPasDetectHollowingPattern(
     totalMappings = (UINT64)InterlockedCompareExchange64(
         (volatile LONG64*)&Profile->TotalMappings, 0, 0);
 
-    if (recentExecs > PAS_HOLLOWING_RECENT_EXEC) {
+    if (recentExecs > (ULONG)g_WkdPasState.Config.HollowingRecentExecThreshold) {
         return TRUE;
     }
-    if (imageMappings > PAS_HOLLOWING_IMAGE_MAP && totalMappings < PAS_HOLLOWING_TOTAL_MAP) {
+    if (imageMappings > (UINT64)g_WkdPasState.Config.HollowingImageMappingThreshold &&
+        totalMappings < (UINT64)g_WkdPasState.Config.HollowingTotalMappingThreshold) {
         return TRUE;
     }
     if (Profile->IsEarlyProcess &&
@@ -443,7 +451,7 @@ WkdPasDetectHollowingPattern(
 }
 
 /*
- * DLL 注入检测（对齐 SS PaspDetectInjectionPattern）：
+ * DLL 注入检测（PaspDetectInjectionPattern）：
  *   跨进程映射，或 W+RX 且来自网络/可移除。
  *   注：SS 的 NETWORK/REMOVABLE 标志从未置位（死分支）；wkd 由回调壳
  *   WkdFspGetVolumeNetworkRemovable 补齐生产者，本分支在 wkd 激活。
@@ -468,7 +476,7 @@ WkdPasDetectInjectionPattern(
 }
 
 /*
- * 反射加载检测（对齐 SS PaspDetectReflectiveLoading）：
+ * 反射加载检测（PaspDetectReflectiveLoading）：
  *   W+RX + 可疑路径 / Temp / 窗口内可执行映射>2。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -496,7 +504,7 @@ WkdPasDetectReflectiveLoading(
 }
 
 /*
- * 安全子串搜索（对齐 SS PaspContainsSubstringW，长度感知不依赖空终止）。
+ * 安全子串搜索（PaspContainsSubstringW，长度感知不依赖空终止）。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
 static BOOLEAN
@@ -688,8 +696,8 @@ WkdPasDereferenceProcessContext(
 /**************************************************/
 
 /*
- * 处理一次可执行映射（对齐 SS ShadowStrikePreAcquireSection 行为检测主体）。
- * 由 Filter.c FspPreAcquireSection 在 SyncTypeCreateSection+执行保护、已查名
+ * 处理一次可执行映射（ShadowStrikePreAcquireSection 行为检测主体）。
+ * 由 Filter.c CbpPreAcquireSectionNotifyCallback 在 SyncTypeCreateSection+执行保护、已查名
  * 后调用。内部：
  *   1) 查找进程权威副本 WKD_PROCESS（SectionMapProfile 内嵌，PID 复用防护内建）；
  *   2) 分类 + 预映射标志（B2 路径/卷类型已在回调壳映射为 PreMappedFlags）；
@@ -701,7 +709,7 @@ WkdPasDereferenceProcessContext(
  */
 _Use_decl_annotations_
 NTSTATUS
-WkdPasProcessMapping(
+FsAuditMemeoryMapping(
     _In_ PWKD_PAS_INPUT Input,
     _Out_opt_ PULONG Score,
     _Out_opt_ PULONG MappingFlags
@@ -743,11 +751,12 @@ WkdPasProcessMapping(
     PsReferenceWkdProcess(process);
     profile = &process->SectionMapProfile;
 
-    /* 早期进程窗口（创建后 5s）过期清除，依据 Core.CreateTime */
+    /* 早期进程窗口（创建后 5s）过期清除（窗口可配：Config.HollowingEarlyProcessWindowMs），
+     * 依据 Core.CreateTime */
     if (profile->IsEarlyProcess) {
         KeQuerySystemTime(&currentTime);
         if (currentTime.QuadPart - process->Core.CreateTime.QuadPart >
-            (LONGLONG)PAS_HOLLOWING_EARLY_WINDOW_MS * 10000) {
+            (LONGLONG)g_WkdPasState.Config.HollowingEarlyProcessWindowMs * 10000) {
             profile->IsEarlyProcess = FALSE;
         }
     }
@@ -766,7 +775,7 @@ WkdPasProcessMapping(
         flags |= PAS_MAP_FLAG_EARLY_PROCESS;
     }
 
-    /* 文件名可疑（SectionTracker 迁移 2026-08，对齐 SS SecpIsSuspiciousName）：
+    /* 文件名可疑（SectionTracker 迁移 2026-08，SecpIsSuspiciousName）：
      * 双扩展名 + 可疑尾扩展 / 超长文件名 → 置 SUSPICIOUS_PATH（评分 +20）。
      * 注：匿名可执行 Section（SS ExecuteAnonymous=150/LargeAnonymous=80）在
      * minifilter 文件轨不触发（无文件 IRP），归 syscall 轨 NtCreateSection
@@ -783,7 +792,7 @@ WkdPasProcessMapping(
 
     /* 空心化（4 信号；全线程挂起信号为死代码） */
     if (g_WkdPasState.Config.EnableHollowingDetection &&
-        WkdPasDetectHollowingPattern(profile, &record)) {
+        FsDetectProcessHollowing(profile, &record)) {
         flags |= PAS_MAP_FLAG_HOLLOWING_SUSPECT;
         InterlockedOr((PLONG)&profile->BehaviorFlags, PAS_BEHAVIOR_HOLLOWING);
         profile->IsHollowingSuspect = TRUE;
@@ -910,12 +919,40 @@ WkdPasNoteAllowed(
     InterlockedIncrement64((PLONG64)&g_WkdPasState.Stats.Allowed);
 }
 
+/* verdict 缓存统计（薄层壳 CbpPreAcquireSectionNotifyCallback 查询 STREAM_CONTEXT verdict 后计数） */
+_IRQL_requires_max_(DISPATCH_LEVEL)
+VOID
+WkdPasNoteCacheHit(
+    VOID
+    )
+{
+    InterlockedIncrement64((PLONG64)&g_WkdPasState.Stats.CacheHits);
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+VOID
+WkdPasNoteCacheMiss(
+    VOID
+    )
+{
+    InterlockedIncrement64((PLONG64)&g_WkdPasState.Stats.CacheMisses);
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+VOID
+WkdPasNoteCacheBlock(
+    VOID
+    )
+{
+    InterlockedIncrement64((PLONG64)&g_WkdPasState.Stats.CacheBlocks);
+}
+
 /**************************************************/
 /*              初始化 / 清理（活代码）             */
 /**************************************************/
 
 /*
- * 初始化（对齐 SS PaspInitialize）。由 Filter.c FsInitialize 在注册
+ * 初始化（PaspInitialize）。由 Filter.c CbInitializeFileSystemNotification 在注册
  * AcquireSection IRP 后调用（PASSIVE_LEVEL）。初始化配置默认值（阻断
  * Audit 门控，对齐 wkd NamedPipeMonitor/AppControl 惯例）与统计计数。
  */
@@ -939,6 +976,11 @@ WkdPasInitialize(
     g_WkdPasState.Config.MinBlockScore = PAS_MIN_BLOCK_SCORE;
     g_WkdPasState.Config.SuspicionMedium = PAS_SUSPICION_MEDIUM_DEFAULT;
     g_WkdPasState.Config.AnomalyThreshold = PAS_ANOMALY_THRESHOLD_DEFAULT;
+    /* 空心化阈值提为可配（Config.Hollowing* 默认 3/5/20/5000） */
+    g_WkdPasState.Config.HollowingRecentExecThreshold = 3;
+    g_WkdPasState.Config.HollowingImageMappingThreshold = 5;
+    g_WkdPasState.Config.HollowingTotalMappingThreshold = 20;
+    g_WkdPasState.Config.HollowingEarlyProcessWindowMs = PAS_HOLLOWING_EARLY_WINDOW_MS;
 
     ExInitializePushLock(&g_WkdPasState.ConfigLock);
 
@@ -963,7 +1005,7 @@ WkdPasInitialize(
 }
 
 /*
- * 清理（对齐 SS PaspShutdown）。由 Filter.c FsCleanup 调用。
+ * 清理（PaspShutdown）。由 Filter.c FsCleanup 调用。
  * 画像随 WKD_PROCESS 释放，此处仅置状态标志 + 清空死代码链表。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -1073,7 +1115,7 @@ typedef NTSTATUS (*WKD_PAS_PFN_ZwQuerySystemInformation)(
     );
 
 /*
- * 全线程挂起检测（空心化第 4 信号，死代码对齐 SS PaspIsProcessSuspended L794-916）。
+ * 全线程挂起检测（空心化第 4 信号，死代码PaspIsProcessSuspended L794-916）。
  * ZwQuerySystemInformation(SystemProcessInformation) 全量枚举 → 目标进程全部
  * 线程 ThreadState==Waiting && WaitReason==Suspended → 空心化强信号。
  * 成本高（256KB~4MB 缓冲 + 全线程遍历），活路径不调用；接入时评估改用进程挂起
@@ -1165,7 +1207,7 @@ WkdPasIsProcessSuspended(
 }
 
 /*
- * 映射记录 FileId 哈希（死代码，对齐 SS PaspHashFileId L2266-2283）。
+ * 映射记录 FileId 哈希（死代码，PaspHashFileId L2266-2283）。
  * 活路径用栈上记录，本函数供逐记录 LRU 追踪激活时使用。
  */
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -1184,7 +1226,7 @@ WkdPasHashFileId(
     return hash & WKD_PAS_HASH_BUCKET_MASK;
 }
 
-/* 插入映射记录（死代码：MappingList 尾插 LRU + 哈希桶索引，对齐 SS PaspInsertRecord） */
+/* 插入映射记录（死代码：MappingList 尾插 LRU + 哈希桶索引，PaspInsertRecord） */
 _IRQL_requires_(PASSIVE_LEVEL)
 static VOID
 WkdPasInsertRecord(
@@ -1214,7 +1256,7 @@ WkdPasInsertRecord(
 _IRQL_requires_max_(DISPATCH_LEVEL)
 static VOID WkdPasFreeRecord(_In_ PWKD_PAS_MAPPING_RECORD Record);
 
-/* LRU 淘汰（死代码：MappingList 头部最旧，淘汰 Count 条，对齐 SS PaspEvictOldestRecords） */
+/* LRU 淘汰（死代码：MappingList 头部最旧，淘汰 Count 条，PaspEvictOldestRecords） */
 _IRQL_requires_(PASSIVE_LEVEL)
 static VOID
 WkdPasEvictOldestRecords(
@@ -1274,7 +1316,7 @@ WkdPasFreeRecord(
     }
 }
 
-/* 分配映射记录 + 容量管理（死代码：对齐 SS PaspAllocateRecord L2073-2123 的
+/* 分配映射记录 + 容量管理（死代码：PaspAllocateRecord L2073-2123 的
  * LRU 淘汰，替代 lookaside 用 ExAllocatePool2） */
 _IRQL_requires_(PASSIVE_LEVEL)
 static PWKD_PAS_MAPPING_RECORD
@@ -1301,7 +1343,7 @@ WkdPasAllocateRecord(
 }
 
 /*
- * 过期记录清理（死代码：对齐 SS PaspCleanupStaleRecords L2776-2843，1min 周期）。
+ * 过期记录清理（死代码：PaspCleanupStaleRecords L2776-2843，1min 周期）。
  * 画像随 WKD_PROCESS 回收无需定时器；逐记录表启用时以 1min 工作项周期调用。
  */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -1358,28 +1400,14 @@ WkdPasCleanupStaleRecords(
 }
 
 /*
- * 扫描缓存命中查询（死代码：wkd 无内核扫描缓存）。
- * 接入前提：PreCreate 把 YARA verdict 写入内核缓存（FileId+VolumeSerial → Verdict）。
- * 命中 Malicious → ShouldBlock=TRUE + Score=100（对齐 SS CacheResult.Verdict==
- * Verdict_Malicious L1527-1542 立即阻断）。当前恒未命中。
+ * 扫描缓存 verdict 消费（2026-09 激活）：PostCreate 迁移补齐生产者后，
+ * 读取 STREAM_CONTEXT verdict 改在薄层壳 CbpPreAcquireSectionNotifyCallback 内联完成
+ * （FltGetStreamContext + FsCheckStreamContextValidity + !WkdPocNeedsRescan +
+ * Scanned && !ScanResult → 强信号阻断，统计走 WkdPasNoteCache* 访问器）。
+ * 本函数为迁移期占位残留，已删除（避免与壳内真实实现双轨误导）。
  */
-_IRQL_requires_(PASSIVE_LEVEL)
-static BOOLEAN
-WkdPasCheckCachedVerdict(
-    _In_ UINT64 FileId,
-    _In_ ULONG VolumeSerial,
-    _Out_ PBOOLEAN ShouldBlock,
-    _Out_ PULONG Score
-    )
-{
-    UNREFERENCED_PARAMETER(FileId);
-    UNREFERENCED_PARAMETER(VolumeSerial);
-    if (ShouldBlock) *ShouldBlock = FALSE;
-    if (Score) *Score = 0;
-    return FALSE;
-}
 
-/* 统计查询（死代码，对齐 SS ShadowStrikeGetPreAcquireSectionStats L2864-2903） */
+/* 统计查询（死代码，ShadowStrikeGetPreAcquireSectionStats L2864-2903） */
 _IRQL_requires_(PASSIVE_LEVEL)
 static NTSTATUS
 WkdPasGetStats(
@@ -1401,7 +1429,7 @@ WkdPasGetStats(
     return STATUS_SUCCESS;
 }
 
-/* 进程映射画像查询（死代码，对齐 SS ShadowStrikeQueryProcessMappingContext
+/* 进程映射画像查询（死代码，ShadowStrikeQueryProcessMappingContext
  * L2921-2964。活数据在 WKD_PROCESS.SectionMapProfile，经 PsLookupWkdProcessByProcessId
  * 读取，引用保护防并发销毁）。 */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -1445,7 +1473,7 @@ WkdPasRemoveProcessMappingContext(
     UNREFERENCED_PARAMETER(ProcessId);
 }
 
-/* 配置更新（死代码，对齐 SS ShadowStrikeUpdatePreAcquireSectionConfig L3037-3071。
+/* 配置更新（死代码，ShadowStrikeUpdatePreAcquireSectionConfig L3037-3071。
  * 接入前提：agent 策略下发通道。接入时需同步访问器（WkdPasShouldBlock 等）加锁，
  * 当前 Config 仅初始化时设置不可变，无竞态）。 */
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -1468,7 +1496,7 @@ WkdPasUpdateConfig(
     return STATUS_SUCCESS;
 }
 
-/* 配置获取（死代码，对齐 SS ShadowStrikeGetPreAcquireSectionConfig L3086-3107） */
+/* 配置获取（死代码，ShadowStrikeGetPreAcquireSectionConfig L3086-3107） */
 _IRQL_requires_(PASSIVE_LEVEL)
 static NTSTATUS
 WkdPasGetConfig(
@@ -1489,7 +1517,7 @@ WkdPasGetConfig(
     return STATUS_SUCCESS;
 }
 
-/* 扩展统计（死代码，对齐 SS ShadowStrikeGetPreAcquireSectionExtendedStats L3120-3142） */
+/* 扩展统计（死代码，ShadowStrikeGetPreAcquireSectionExtendedStats L3120-3142） */
 _IRQL_requires_(PASSIVE_LEVEL)
 static NTSTATUS
 WkdPasGetExtendedStats(

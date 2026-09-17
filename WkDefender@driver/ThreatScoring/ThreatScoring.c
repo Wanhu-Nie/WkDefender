@@ -1243,7 +1243,7 @@ Routine Description:
             Context->IocScore += (ULONG)record->Severity *
                 TspGetIndicatorWeight(record->Indicator);
 
-            /* 链种子：累积威胁分（对齐 SS Chain->CumulativeThreatScore，
+            /* 链种子：累积威胁分（Chain->CumulativeThreatScore，
              * 结算幂等——批次链结算后清空，每条记录只累加一次） */
             if (Context->Pair) {
                 Context->Pair->BehaviorContext.CumulativeThreatScore +=
@@ -1295,7 +1295,7 @@ Routine Description:
             entry = entry->Flink;
         }
 
-        /* b') 上下文评分乘数（迁移自 SS BepCalculateEventThreatScore）：
+        /* b') 上下文评分乘数（BepCalculateEventThreatScore）：
          *     按进程对行为上下文（LOLBIN/脚本宿主/高风险/惯犯）调节 IOA
          *     窗口分。每次结算重算，反映 SuspiciousEventCount 动态增长。 */
         if (Context->Pair) {
@@ -1337,7 +1337,7 @@ Routine Description:
 //
 // TspGetContextMultiplier — 进程对上下文评分乘数（%）
 //
-// 迁移自 SS BepCalculateEventThreatScore（BehaviorEngine.c L4414）：
+// BepCalculateEventThreatScore（BehaviorEngine.c L4414）：
 //   LOLBIN 进程      → ×120
 //   脚本宿主进程      → ×115
 //   高风险(可疑≥10)  → ×130   （SS HIGH_RISK：BehaviorScore≥500 或 可疑≥10）

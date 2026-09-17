@@ -300,7 +300,7 @@ typedef struct _WKD_MESSAGE_BODY_PROCESS_CREATE {
 /**************************************************/
 
 //
-// 镜像指示器位（对齐 driver Callbacks/ImageNotify.h IMG_INDICATOR_*）
+// 镜像指示器位（对齐 driver Callbacks/ImageNotification.h IMG_INDICATOR_*）
 //
 #define WKD_IMG_IND_SUSPICIOUS_PATH   0x00000001
 #define WKD_IMG_IND_MASQUERADING_DLL  0x00000002
@@ -321,7 +321,7 @@ typedef struct _WKD_MESSAGE_BODY_PROCESS_CREATE {
 #define WKD_IMG_IND_TLS_CALLBACK      0x00010000
 
 //
-// 镜像签名状态（对齐 driver ImageNotify.h IMG_SIGNATURE_*）
+// 镜像签名状态（对齐 driver ImageNotification.h IMG_SIGNATURE_*）
 //
 #define IMG_SIGNATURE_UNEVALUATED   0   // FileObject 不可用，跳过签名判定（不视为未签名）
 #define IMG_SIGNATURE_VALID         1   // CI 签名等级 > SE_SIGNING_LEVEL_UNSIGNED
@@ -329,7 +329,7 @@ typedef struct _WKD_MESSAGE_BODY_PROCESS_CREATE {
 
 //
 // 镜像加载消息体（驱动→Agent，线格式 v2）
-// 2026-08-15 对齐 driver Callbacks/ImageNotify.h（修复布局错位）：
+// 2026-08-15 对齐 driver Callbacks/ImageNotification.h（修复布局错位）：
 //   - 删除 ProcessId（Pid 在 WKD_MESSAGE_HEADER.SourceProcessId，驱动侧一直填充）
 //   - 删除 PeInfo（WKD_IMG_PE_BASIC，驱动 v2 已移除，PE 事实由 agent 自解析）
 //
@@ -366,9 +366,9 @@ typedef struct _WKD_MESSAGE_BODY_FILE_EVENT {
     HANDLE          ThreadId;           /* 操作线程 */
     ULONG           OperationType;      /* WKD_FILE_OP_* */
     ULONG           FileSize;           /* 文件大小（低 32 位） */
-    LONGLONG        WriteOffset;        /* 写偏移（-1=未知/非写操作）。对齐 SS PostWrite PW_WRITE_CONTEXT.WriteOffset */
-    ULONG           BytesWritten;       /* 写字节数（0=非写操作）。对齐 SS PostWrite BytesWritten */
-    ULONG64         FileId;             /* 文件对象 ID（0=未知）。对齐 SS stream context FileId，FileInternalInformation */
+    LONGLONG        WriteOffset;        /* 写偏移（-1=未知/非写操作）。PostWrite PW_WRITE_CONTEXT.WriteOffset */
+    ULONG           BytesWritten;       /* 写字节数（0=非写操作）。PostWrite BytesWritten */
+    ULONG64         FileId;             /* 文件对象 ID（0=未知）。stream context FileId，FileInternalInformation */
     ULONG           FileEntropy;        /* 写缓冲区熵（Q16 定点，0=未知/未采样）。对齐 agent WKD_RANSOM_ENTROPY_Q16 */
     ULONG           Flags;              /* bit0=IsCanary（蜜罐命中）；后续扩展位见 DEF_FILE_FLAG_* */
     LARGE_INTEGER   Timestamp;          /* 操作时间 */
@@ -437,7 +437,7 @@ typedef struct _WKD_MESSAGE_BODY_SECTION_MAP {
 /*    区段创建事件体（驱动→Agent，与驱动侧一致）      */
 /*                                                  */
 /*  用于 WkdMessage_SyscallCreateSection(0x1011)。  */
-/*  SectionTracker 迁移 2026-08（对齐 SS SectionTracker.c）：
+/*  SectionTracker 迁移 2026-08（SectionTracker.c）：
 /*  5 类怀疑信号判定 + 评分随消息上送，agent 以       */
 /*  SectionObject 为键聚合跨进程映射/RemoteMap。     */
 /*  ※ 死代码: 依赖驱动 SmInitialize 启用。           */

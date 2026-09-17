@@ -250,7 +250,7 @@ MpSecureZero(
     while (Size--) {
         *p++ = 0;
     }
-    /* 内存栅栏：确保写入已提交（对齐 SS atomic_thread_fence seq_cst 语义） */
+    /* 内存栅栏：确保写入已提交（atomic_thread_fence seq_cst 语义） */
     MemoryBarrier();
 }
 
@@ -286,7 +286,7 @@ MpNow(
 }
 
 /* 计算区域哈希（VirtualQuery/VirtualQueryEx 从严校验 + CRC32 + CryptoAPI SHA-256）。
- * 对齐 SS calculateRegionHash：仅接受已提交、非 NOACCESS/GUARD 的区域。
+ * calculateRegionHash：仅接受已提交、非 NOACCESS/GUARD 的区域。
  * ProcessId：0=本进程（直接指针）；非 0=跨进程（CoOpenProcessForQueryRead +
  * ReadProcessMemory 整节载入堆缓冲后计算，2026-09-08 受保护进程链消费）。 */
 static BOOLEAN
@@ -459,7 +459,7 @@ MpStoreEvent(
     MpNow(&Engine->Stats.LastEventTime);
 }
 
-/* 触发保护事件（历史入队 + 锁外回调转发）。对齐 SS fireEvent。 */
+/* 触发保护事件（历史入队 + 锁外回调转发）。fireEvent。 */
 static VOID
 MpFireEvent(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine,
@@ -620,7 +620,7 @@ MpLoadPsapi(
 /* 配置                                                                */
 /* ------------------------------------------------------------------ */
 
-/* 取默认配置（对齐 SS 默认：Standard、全功能开启、安全池 1MB、       */
+/* 取默认配置（默认：Standard、全功能开启、安全池 1MB、       */
 /* 完整性间隔 30s、DefaultResponse=Active）。                          */
 _Use_decl_annotations_
 VOID
@@ -648,7 +648,7 @@ MpGetDefaultConfiguration(
     Config->SendTelemetry = TRUE;
 }
 
-/* 取保护级别对应的配置模板（对齐 SS FromLevel）。 */
+/* 取保护级别对应的配置模板（FromLevel）。 */
 _Use_decl_annotations_
 VOID
 MpGetConfigurationForLevel(
@@ -699,7 +699,7 @@ MpGetConfigurationForLevel(
     }
 }
 
-/* 校验配置有效性（对齐 SS IsValid：池大小上下限、间隔非零）。 */
+/* 校验配置有效性（IsValid：池大小上下限、间隔非零）。 */
 _Use_decl_annotations_
 BOOLEAN
 MpIsConfigurationValid(
@@ -715,7 +715,7 @@ MpIsConfigurationValid(
     return TRUE;
 }
 
-/* 更新配置（对齐 SS SetConfiguration）。 */
+/* 更新配置（SetConfiguration）。 */
 _Use_decl_annotations_
 NTSTATUS
 MpSetConfiguration(
@@ -787,7 +787,7 @@ MpGetProtectionLevel(
 /* 生命周期                                                            */
 /* ------------------------------------------------------------------ */
 
-/* 初始化内存保护引擎（默认配置=Standard；对齐 SS Initialize）。 */
+/* 初始化内存保护引擎（默认配置=Standard；Initialize）。 */
 _Use_decl_annotations_
 NTSTATUS
 MpInitialize(
@@ -844,7 +844,7 @@ MpInitialize(
      * （AcRegisterProtectedProcessInternal → AcApplyProcessHardening，2026-09-08），
      * 本引擎初始化不再施加（无 DEP 失败→初始化失败语义）。 */
 
-    /* 安全堆（对齐 SS initializeSecureHeap） */
+    /* 安全堆（initializeSecureHeap） */
     if (eng->Config.EnableSecureAllocator) {
         eng->SecureHeap = HeapCreate(0, eng->Config.SecurePoolSize, 0);
         if (eng->SecureHeap) {
@@ -852,7 +852,7 @@ MpInitialize(
         }
     }
 
-    /* 反转储（对齐 SS Initialize：enableAntiDump 时混淆 PE 头）。 */
+    /* 反转储（Initialize：enableAntiDump 时混淆 PE 头）。 */
     if (eng->Config.EnableAntiDump) {
         (VOID)MpEnableAntiDump(eng);
     }
@@ -872,7 +872,7 @@ Cleanup:
     return status;
 }
 
-/* 停止引擎并释放内部资源（对齐 SS Shutdown；免鉴权）。
+/* 停止引擎并释放内部资源（Shutdown；免鉴权）。
  * 注意：不释放引擎对象本身，由 MpCleanup 负责。 */
 _Use_decl_annotations_
 NTSTATUS
@@ -900,7 +900,7 @@ MpShutdown(
         free(m);
     }
 
-    /* 恢复 PE 头（对齐 SS shutdownUnchecked） */
+    /* 恢复 PE 头（shutdownUnchecked） */
     if (Engine->SavedPEHeaderSize > 0 && Engine->SavedPEHeaders) {
         (VOID)MpRestorePEHeadersInternal(Engine);
     }
@@ -909,7 +909,7 @@ MpShutdown(
     /* 释放全部安全分配 */
     for (i = 0; i < MP_MAX_SECURE_ALLOCATIONS; i++) {
         if (Engine->SecureAllocations[i].InUse) {
-            /* 对齐 SS freeAllSecureAllocations：零化 + 解锁 + VirtualFree */
+            /* freeAllSecureAllocations：零化 + 解锁 + VirtualFree */
             MpSecureZero(Engine->SecureAllocations[i].Alloc.Address,
                 Engine->SecureAllocations[i].Alloc.Size);
             if (Engine->SecureAllocations[i].Alloc.IsLocked) {
@@ -965,7 +965,7 @@ MpCleanup(
     free(Engine);
 }
 
-/* 启动完整性监视线程（对齐 SS startIntegrityMonitoring + Pp 模式）。 */
+/* 启动完整性监视线程（startIntegrityMonitoring + Pp 模式）。 */
 _Use_decl_annotations_
 NTSTATUS
 AcStartMemoryIntegralityProtection(
@@ -1067,10 +1067,10 @@ MpGetStatus(
 }
 
 /* ------------------------------------------------------------------ */
-/* 安全内存分配（对齐 SS AllocateSecure 系列）                         */
+/* 安全内存分配（AllocateSecure 系列）                         */
 /* ------------------------------------------------------------------ */
 
-/* 分配指定类型的安全内存。对齐 SS AllocateSecure(size, type)：
+/* 分配指定类型的安全内存。AllocateSecure(size, type)：
  * - 对齐到 16 字节
  * - Guarded/config.enableGuardPages → 前后各加 1 页 PAGE_NOACCESS
  * - Locked/Encrypted → VirtualLock
@@ -1213,7 +1213,7 @@ MpAllocateSecureEx(
     return MpAllocateSecureInternal(Engine, Size, Type);
 }
 
-/* 释放安全内存（零化→0xDD 填充→解锁→VirtualFree）。对齐 SS FreeSecure。 */
+/* 释放安全内存（零化→0xDD 填充→解锁→VirtualFree）。FreeSecure。 */
 _Use_decl_annotations_
 VOID
 MpFreeSecure(
@@ -1228,7 +1228,7 @@ MpFreeSecure(
 
     if (!Engine || !Ptr) return;
 
-    /* Size 参数保留于签名（对齐 SS FreeSecure），
+    /* Size 参数保留于签名（FreeSecure），
      * 实际以分配记录 entry->Alloc.Size 为准。 */
     UNREFERENCED_PARAMETER(Size);
 
@@ -1271,10 +1271,10 @@ MpFreeSecure(
     }
 
     LeaveCriticalSection(&Engine->Lock);
-    /* 未追踪的指针：忽略（对齐 SS 仅记日志） */
+    /* 未追踪的指针：忽略（仅记日志） */
 }
 
-/* 重分配安全内存（拷贝 min(old,new) 字节）。对齐 SS ReallocateSecure。 */
+/* 重分配安全内存（拷贝 min(old,new) 字节）。ReallocateSecure。 */
 _Use_decl_annotations_
 PVOID
 MpReallocateSecure(
@@ -1444,10 +1444,10 @@ MpGetSecureMemoryUsage(
 }
 
 /* ------------------------------------------------------------------ */
-/* 内存区域保护（对齐 SS ProtectRegion 系列）                          */
+/* 内存区域保护（ProtectRegion 系列）                          */
 /* ------------------------------------------------------------------ */
 
-/* 注册保护区域内部实现：建基线哈希 + 按类型设页保护。对齐 SS ProtectRegion。
+/* 注册保护区域内部实现：建基线哈希 + 按类型设页保护。ProtectRegion。
  * ProcessId：0=本进程（VirtualProtect 页保护生效）；非 0=跨进程目标
  * （OpenProcess+ReadProcessMemory 建哈希，跳过页保护——不主动改远端保护）。
  * 调用方：AcEnableMemoryIntegrityProtection（本进程薄封装）与
@@ -1521,7 +1521,7 @@ MpRegisterRegionInternal(
     }
     entry->Region.CurrentCrc32 = entry->Region.ExpectedCrc32;
 
-    /* 按类型设页保护（对齐 SS switch；仅本进程区域执行——跨进程不主动
+    /* 按类型设页保护（switch；仅本进程区域执行——跨进程不主动
      * 修改远端分页保护，VirtualProtect 失败仅告警不中断） */
     protection = PAGE_READONLY;
     switch (Type) {
@@ -1550,7 +1550,7 @@ MpRegisterRegionInternal(
     return TRUE;
 }
 
-/* 保护内存区域（本进程语义薄封装；ProcessId=0）。对齐 SS ProtectRegion。 */
+/* 保护内存区域（本进程语义薄封装；ProcessId=0）。ProtectRegion。 */
 _Use_decl_annotations_
 BOOLEAN
 AcEnableMemoryIntegrityProtection(
@@ -1587,7 +1587,7 @@ MpUnprotectRegion(
 
     entry = &Engine->ProtectedRegions[index];
 
-    /* 恢复为可读写（对齐 SS UnprotectRegion） */
+    /* 恢复为可读写（UnprotectRegion） */
     (VOID)VirtualProtect((PVOID)entry->Region.BaseAddress,
         entry->Region.Size, PAGE_READWRITE, &oldProtect);
 
@@ -1600,7 +1600,7 @@ MpUnprotectRegion(
     return TRUE;
 }
 
-/* 保护模块实例全部代码节（2026-09-06 策略 Y）。对齐 SS ProtectSelfCode。
+/* 保护模块实例全部代码节（2026-09-06 策略 Y）。ProtectSelfCode。
  * 以 PWKD_MODULE_INSTANCE（进程内映射视图）为对象：
  *   - 节枚举优先走 WKD_MODULE::PeInfo.Sections（ImageAnalyzer 产物，
  *     零解析成本）；未就绪回退自解析镜像（含边界校验）。
@@ -1824,12 +1824,12 @@ MpGetAllProtectedRegions(
 }
 
 /* ------------------------------------------------------------------ */
-/* 完整性校验（对齐 SS VerifyRegionIntegrity 系列）                    */
+/* 完整性校验（VerifyRegionIntegrity 系列）                    */
 /* ------------------------------------------------------------------ */
 
 /* 校验区域完整性：重算 CRC32+SHA-256 对比基线；不一致时做 hook 特征
  * 检测（E9/EB/FF25/68..C3/CC/x64 mov-rax jmp rax 等），置状态、记账、
- * 触发事件与回调。对齐 SS VerifyRegionIntegrity 完整语义。 */
+ * 触发事件与回调。VerifyRegionIntegrity 完整语义。 */
 _Use_decl_annotations_
 MP_INTEGRITY_STATUS
 AcpVerifyMemoryRegionIntegrity(
@@ -1981,7 +1981,7 @@ AcpVerifyMemoryIntegrity(
     }
     RtlZeroMemory(snapshots, capacity * sizeof(MP_PROTECTED_REGION));
 
-    /* 锁内快照区域 ID 列表（对齐 SS VerifyAllIntegrity：先复制防迭代失效） */
+    /* 锁内快照区域 ID 列表（VerifyAllIntegrity：先复制防迭代失效） */
     EnterCriticalSection(&Engine->Lock);
     for (i = 0; i < MP_MAX_PROTECTED_REGIONS && snapshotCount < capacity; i++) {
         if (Engine->ProtectedRegions[i].InUse) {
@@ -2166,10 +2166,10 @@ MpSyncProtectedProcessSections(
 }
 
 /* ------------------------------------------------------------------ */
-/* 反转储保护（对齐 SS EnableAntiDump 系列）                           */
+/* 反转储保护（EnableAntiDump 系列）                           */
 /* ------------------------------------------------------------------ */
 
-/* 混淆自身 PE 头内部实现（假定已持锁；对齐 SS obfuscatePEHeadersInternal）。 */
+/* 混淆自身 PE 头内部实现（假定已持锁；obfuscatePEHeadersInternal）。 */
 static BOOLEAN
 MpObfuscatePEHeadersInternal(
     _In_ PAC_MEMORY_INTEGRITY_ENGINE Engine
@@ -2349,7 +2349,7 @@ MpRestorePEHeaders(
 }
 
 /* ------------------------------------------------------------------ */
-/* 堆保护（对齐 SS EnableHeapProtection 系列）                         */
+/* 堆保护（EnableHeapProtection 系列）                         */
 /* ------------------------------------------------------------------ */
 
 /* 启用堆保护（HeapSetInformation 终止于损坏）。 */
@@ -2366,7 +2366,7 @@ MpEnableHeapProtection(
 }
 
 /* 校验全部堆完整性（GetProcessHeaps + HeapValidate）。
- * 检测到损坏：记账 + 触发事件 + 返回 FALSE。对齐 SS ValidateHeapIntegrity。 */
+ * 检测到损坏：记账 + 触发事件 + 返回 FALSE。ValidateHeapIntegrity。 */
 _Use_decl_annotations_
 BOOLEAN
 MpValidateHeapIntegrity(
@@ -2425,7 +2425,7 @@ MpValidateHeapIntegrity(
     return ok;
 }
 
-/* 获取全部堆信息（HeapWalk 遍历提交/块；对齐 SS GetHeapInfo）。 */
+/* 获取全部堆信息（HeapWalk 遍历提交/块；GetHeapInfo）。 */
 _Use_decl_annotations_
 NTSTATUS
 MpGetHeapInfo(
@@ -2515,7 +2515,7 @@ MpDestroySecureHeap(
 }
 
 /* ------------------------------------------------------------------ */
-/* 内存查询（对齐 SS QueryMemoryRegion 系列）                          */
+/* 内存查询（QueryMemoryRegion 系列）                          */
 /* ------------------------------------------------------------------ */
 
 /* 查询地址所在内存区域信息（VirtualQuery + 分类 + 模块名）。 */
@@ -2576,7 +2576,7 @@ MpQueryMemoryRegion(
     return TRUE;
 }
 
-/* 枚举全部内存区域（渐进式防死循环；对齐 SS EnumerateMemoryRegions）。 */
+/* 枚举全部内存区域（渐进式防死循环；EnumerateMemoryRegions）。 */
 _Use_decl_annotations_
 NTSTATUS
 MpEnumerateMemoryRegions(
@@ -2849,7 +2849,7 @@ MpUnregisterHeapCorruptionCallback(
 }
 
 /* ------------------------------------------------------------------ */
-/* 统计 / 历史 / 报告（对齐 SS GetStatistics/GetEventHistory/ExportReport）*/
+/* 统计 / 历史 / 报告（GetStatistics/GetEventHistory/ExportReport）*/
 /* ------------------------------------------------------------------ */
 
 /* 获取运行统计快照。 */
@@ -2888,7 +2888,7 @@ MpGetStatistics(
     return STATUS_SUCCESS;
 }
 
-/* 重置统计（不清事件历史；对齐 SS ResetStatistics）。 */
+/* 重置统计（不清事件历史；ResetStatistics）。 */
 _Use_decl_annotations_
 VOID
 MpResetStatistics(
@@ -2908,7 +2908,7 @@ MpResetStatistics(
     InterlockedExchange64(&Engine->Stats.ScanAttemptsDetected, 0);
 }
 
-/* 获取事件历史（新→旧；对齐 SS GetEventHistory 语义）。
+/* 获取事件历史（新→旧；GetEventHistory 语义）。
  * 最多返回 MaxEntries 条。!Buffer 时经 *Count 返回可写总数。 */
 _Use_decl_annotations_
 NTSTATUS
@@ -2993,7 +2993,7 @@ MpClearEventHistory(
     LeaveCriticalSection(&Engine->Lock);
 }
 
-/* 导出 JSON 报告（对齐 SS exportReport 聚合内容）。
+/* 导出 JSON 报告（exportReport 聚合内容）。
  * !Buffer 时经 *Length 返回所需字符数（含 null）。 */
 _Use_decl_annotations_
 NTSTATUS
@@ -3167,7 +3167,7 @@ Cleanup:
 }
 
 /* ------------------------------------------------------------------ */
-/* 名称工具（对齐 SS 枚举→字符串映射）                                */
+/* 名称工具（枚举→字符串映射）                                */
 /* ------------------------------------------------------------------ */
 
 /* 保护级别名称。 */
@@ -3317,7 +3317,7 @@ MpFormatPageProtection(
     }
 }
 
-/* 事件类型名称（对齐 SS MemoryProtectionEventType 位标志枚举）。
+/* 事件类型名称（MemoryProtectionEventType 位标志枚举）。
  * 单个事件 Type 为单一标志，直接映射。 */
 _Use_decl_annotations_
 PCWSTR
@@ -3356,7 +3356,7 @@ MpEventTypeName(
 }
 
 /* ------------------------------------------------------------------ */
-/* 监控线程（完整周期性完整性巡检）。对齐 SS monitorThread。 */
+/* 监控线程（完整周期性完整性巡检）。monitorThread。 */
 static DWORD WINAPI
 AcpMemoryIntegrityRoutine(
     _In_ LPVOID Param
@@ -3368,7 +3368,7 @@ AcpMemoryIntegrityRoutine(
     if (!engine) return 1;
 
     /* 巡检循环：默认 500ms 轮询停止事件；启用完整性监控时以配置间隔巡检。
-     * 周期内容对齐 SS startIntegrityMonitoring：
+     * 周期内容startIntegrityMonitoring：
      *   先 VerifyAllIntegrity，随后若 EnableHeapProtection 则追加
      *   ValidateHeapIntegrity（与完整性校验同频 integrityCheckIntervalMs）。 */
     while (WaitForSingleObject(engine->MonitorStopEvent, 500) != WAIT_OBJECT_0) {
@@ -3380,7 +3380,7 @@ AcpMemoryIntegrityRoutine(
                     break;
                 }
             }
-            /* 周期完整性校验（对齐 SS VerifyAllIntegrity）。
+            /* 周期完整性校验（VerifyAllIntegrity）。
              * 2026-09-08 前置链同步：受保护进程链（含 EDR 自身）主模块
              * 可执行节/.rdata/.pdata 幂等注册 —— 即“链消费”，取代旧的
              * MemoryCrc32 自校验与现代码路径分离。 */
@@ -3398,10 +3398,10 @@ AcpMemoryIntegrityRoutine(
 }
 
 /* ------------------------------------------------------------------ */
-/* 版本（对齐 SS version）                                             */
+/* 版本（version）                                             */
 /* ------------------------------------------------------------------ */
 
-/* 获取版本字符串（对齐 SS GetVersionString）。返回静态串。 */
+/* 获取版本字符串（GetVersionString）。返回静态串。 */
 _Use_decl_annotations_
 PCWSTR
 MpGetVersionString(

@@ -158,9 +158,9 @@ typedef struct _EVENT_PAYLOAD_FILE_EVENT {
     HANDLE              TargetProcessId;    /* 同源（单进程事件） */
     ULONG               OperationType;      /* WKD_FILE_OP_WRITE/RENAME/DELETE/TRUNCATE */
     ULONG               FileSize;           /* 文件大小（低 32 位） */
-    LONGLONG            WriteOffset;        /* 写偏移（-1=未知/非写操作）。对齐 SS PostWrite PW_WRITE_CONTEXT.WriteOffset */
-    ULONG               BytesWritten;       /* 写字节数（0=非写操作）。对齐 SS PostWrite BytesWritten */
-    ULONG64             FileId;             /* 文件对象 ID（0=未知）。对齐 SS stream context FileId */
+    LONGLONG            WriteOffset;        /* 写偏移（-1=未知/非写操作）。PostWrite PW_WRITE_CONTEXT.WriteOffset */
+    ULONG               BytesWritten;       /* 写字节数（0=非写操作）。PostWrite BytesWritten */
+    ULONG64             FileId;             /* 文件对象 ID（0=未知）。stream context FileId */
     ULONG               FileEntropy;        /* 写缓冲区熵（Q16 定点，0=未知）。对齐 WKD_RANSOM_ENTROPY_Q16 */
     ULONG               Flags;              /* DEF_FILE_FLAG_* 位图（bit0=Canary） */
     LARGE_INTEGER       Timestamp;          /* 操作时间 */
@@ -285,10 +285,10 @@ typedef struct _EVENT_PAYLOAD_SECTION_MAP {
 
 /*
  * Section 创建（WkdMessage_SyscallCreateSection(0x1011) → WkdEvent_SectionCreate(0x6007)）。
- * SectionTracker 迁移 2026-08（对齐 SS SectionTracker.c SecTrackSectionCreate）。
+ * SectionTracker 迁移 2026-08（SectionTracker.c SecTrackSectionCreate）。
  * 驱动在 NtCreateSection Exit 时 deref 输出 SectionHandle 得 SectionObject（内核对象指针），
  * 解析输入参数做 5 类怀疑信号判定（匿名可执行 200/大匿名 80/无背衬 180/TxF 事务 300/
- * DeletePending 250），评分对齐 SS SecpUpdateSuspicionScore 权重和 + ≥3 标志组合加成。
+ * DeletePending 250），评分SecpUpdateSuspicionScore 权重和 + ≥3 标志组合加成。
  * 载荷前两字段 (SourceProcessId/TargetProcessId) 与 EVENT_PAYLOAD_SYSCALL 布局一致，
  * 使 IoaObserve 阶段1 可经 default 分支解析节点（创建为单进程事件，Target=同源）。
  * SectionObject 为聚合键：IoaInjectionClassifier 共享 Section 聚合表按它关联

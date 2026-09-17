@@ -6,8 +6,8 @@
 #include "../AnalysisEngine/AnalysisEngine.h"
 #include "../AnalysisEngine/IocProcess.h"
 #include "../AnalysisEngine/IocAppControl.h"
-#include "../Callbacks/ThreadNotify.h"
-#include "../Callbacks/ProcessNotify.h"
+#include "../Callbacks/ThreadNotification.h"
+#include "../Callbacks/ProcessNotification.h"
 #include "../Notification/NotificationManager.h"
 #include "../Notification/AlpcService.h"
 #include "../Notification/MessageSync.h"
@@ -141,6 +141,170 @@ PsDereferenceWkdProcess(
     }
     
     return refCount;
+}
+
+/*++
+    Routine Description:
+        进程名匹配辅助（内部）：比较 WKD_PROCESS 的镜像文件名（Core.ImagePath
+        最后一个 '\' 之后的部分）与目标名是否相等（大小写不敏感）。
+
+        Registry 评分联动的进程对 Target 即系统自带 "Registry" 进程
+        （无扩展名，PmEnumerateProcesses 全量收录）。
+
+    Arguments:
+        Process    - 目标进程对象。
+        TargetName - 目标进程名（宽字符 UNICODE_STRING）。
+
+    Returns:
+        TRUE — 镜像文件名与目标名相等；FALSE — 不匹配。
+
+    运行环境: PASSIVE_LEVEL
+--*/
+static
+BOOLEAN
+PsmpMatchProcessName(
+    _In_ PWKD_PROCESS Process,
+    _In_ PCUNICODE_STRING TargetName
+    )
+{
+    PUNICODE_STRING imagePath;
+    PWCH fileName;
+    ULONG pathLenChars;
+    UNICODE_STRING fileNameStr;
+
+    if (Process == NULL || TargetName == NULL ||
+        Process->Core.ImagePath == NULL ||
+        Process->Core.ImagePath->Buffer == NULL) {
+        return FALSE;
+    }
+
+    imagePath = Process->Core.ImagePath;
+    pathLenChars = imagePath->Length / sizeof(WCHAR);
+
+    /* 提取文件名部分（最后一个 '\' 之后） */
+    fileName = imagePath->Buffer + pathLenChars;
+    while (fileName > imagePath->Buffer) {
+        if (*(fileName - 1) == L'\\') {
+            break;
+        }
+        fileName--;
+    }
+
+    fileNameStr.Buffer = fileName;
+    fileNameStr.Length = (USHORT)((imagePath->Buffer + pathLenChars - fileName) * sizeof(WCHAR));
+    fileNameStr.MaximumLength = fileNameStr.Length;
+
+    return RtlEqualUnicodeString(&fileNameStr, TargetName, TRUE);
+}
+
+/*++
+    Routine Description:
+        按进程名查找 WKD_PROCESS（快照方法，2026-09-09）。
+
+        用途：RG 告警评分注入的进程对 Target —— "进程对 <写入者, Registry>"
+        表达进程 → 注册表子系统交互语义，Target 即系统自带的 "Registry"
+        进程（PmEnumerateProcesses 全量收录）。
+
+        实现：对齐 PmpSendProcessSnapshot 的快照模式 —— 单次
+        g_WkdProcessMonitor.Lock（旋转锁）内完成：第一遍统计活动进程数、
+        锁内分配 PID 快照数组（非分页池）、第二遍快照全部活动进程 PID；
+        锁外再逐个 PsLookupWkdProcessByProcessId（查找即 +1）匹配镜像
+        文件名，命中即持引用返回，未命中释放后继续。
+
+        不采用 CoEnumerateHashMap 的原因：按名匹配需要读取进程的
+        Core.ImagePath，锁内读取存在路径缓冲区同生命周期问题，而
+        快照方法经"查表取引用"保证锁外访问的进程对象存活。
+
+    Arguments:
+        ProcessName - 目标进程名（宽字符串，大小写不敏感比较）。
+
+    Returns:
+        命中 — 返回持引用 WKD_PROCESS（调用方须配对 PsDereferenceWkdProcess）；
+        未命中/参数无效 — NULL。
+
+    运行环境: PASSIVE_LEVEL
+--*/
+_Use_decl_annotations_
+_Must_inspect_result_
+PWKD_PROCESS
+PsLookupWkdProcessByName(
+    _In_ PCWSTR ProcessName
+    )
+{
+    KIRQL oldIrql;
+    PLIST_ENTRY entry;
+    ULONG processCount = 0;
+    ULONG filled = 0;
+    PHANDLE pidArray = NULL;
+    PWKD_PROCESS process;
+    PWKD_PROCESS found = NULL;
+    UNICODE_STRING targetName;
+
+    PAGED_CODE();
+
+    if (ProcessName == NULL || ProcessName[0] == L'\0') {
+        return NULL;
+    }
+
+    RtlInitUnicodeString(&targetName, ProcessName);
+
+    /*
+     * 快照阶段：旋转锁内完成 计数 + 分配 + PID 收集（对齐 PmpSendProcessSnapshot）。
+     * 锁内仅原子/非分页访问，无分页故障风险。
+     */
+    KeAcquireSpinLock(&g_WkdProcessMonitor.Lock, &oldIrql);
+
+    for (entry = g_WkdProcessMonitor.ActiveProcessHead.Flink;
+         entry != &g_WkdProcessMonitor.ActiveProcessHead;
+         entry = entry->Flink) {
+        processCount++;
+    }
+
+    if (processCount == 0) {
+        KeReleaseSpinLock(&g_WkdProcessMonitor.Lock, oldIrql);
+        return NULL;
+    }
+
+    pidArray = (PHANDLE)ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        processCount * sizeof(HANDLE),
+        'pSnP');
+    if (pidArray == NULL) {
+        KeReleaseSpinLock(&g_WkdProcessMonitor.Lock, oldIrql);
+        return NULL;
+    }
+
+    for (entry = g_WkdProcessMonitor.ActiveProcessHead.Flink;
+         entry != &g_WkdProcessMonitor.ActiveProcessHead;
+         entry = entry->Flink) {
+        process = CONTAINING_RECORD(entry, WKD_PROCESS, Links);
+        pidArray[filled++] = process->Core.ProcessId;
+    }
+
+    KeReleaseSpinLock(&g_WkdProcessMonitor.Lock, oldIrql);
+
+    /*
+     * 匹配阶段：锁外逐个查表（查找即 +1）比较镜像文件名。
+     * 命中即持引用返回（循环内已转移引用，后续无须释放）；
+     * 未命中逐个释放查找引用。
+     */
+    for (ULONG i = 0; i < filled; i++) {
+        process = PsLookupWkdProcessByProcessId(pidArray[i]);
+        if (process == NULL) {
+            continue;
+        }
+
+        if (PsmpMatchProcessName(process, &targetName)) {
+            found = process;
+            break;
+        }
+
+        PsDereferenceWkdProcess(process);
+    }
+
+    ExFreePoolWithTag(pidArray, 'pSnP');
+
+    return found;
 }
 
 //
@@ -283,13 +447,20 @@ PspCreateProcessContextInternal(
 
     if (!WkdProcess) return STATUS_INVALID_PARAMETER;
 
-    /* 初始化内存区域追踪状态（2026-08-27 下沉自两条创建路径公共初始化：
+    /* Phase 0: 初始化内存区域追踪上下文（方案 A 2026-09-09：由内嵌值类型改为指针载荷，
+     * 主动构建对齐 ModuleContext 急切创建模式，消除并发挂载竞态。
+     * 失败非致命：热路径 WkdMemRegionGetContext 保留惰性挂载兜底。
      * 必须在 Phase 1 之前完成，确保任何后续 goto Cleanup 路径中
-     * PspDestroyProcess → WkdMemRegionCleanupProcess 访问到合法链表头，
-     * 否则 RegionList 为 NULL 链表头会导致 RemoveHeadList 对 NULL 解引用蓝屏）。 */
-    InitializeListHead(&WkdProcess->MemRegionState.RegionList);
-    ExInitializePushLock(&WkdProcess->MemRegionState.RegionLock);
-    WkdProcess->MemRegionState.ProcessId = WkdProcess->Core.ProcessId;
+     * PspDestroyProcess → WkdDestroyMemoryRegionContext 处理 NULL 指针安全）。 */
+    MmCreateMemoryRegionContext(WkdProcess);
+
+    /* Phase 0.1: 拍摄进程内存基线快照（2026-09-10 激活）。
+     * 创建回调此刻地址空间尚未被用户代码污染（仅主 EXE/ntdll 等初始映像），
+     * 是唯一干净拍摄窗口；基线节点标记 WKD_MEM_FLAG_BASELINE 灌入
+     * RegionList，配合事件增量（SyscallHijack 内存 case）与后续定时器
+     * 一致性校验构成三阶段覆盖（快照轨 VadRegionList 已删除）。
+     * 失败非致命：仅丢基线标记，上下文仍由上面 Phase 0 建立。 */
+    MmBuildMemoryRegionBaseline(WkdProcess);
 
     /* Phase 1: 安全上下文分配 + 快速签名验证（排除判决需要 IsSignatureValid） */
     WkdProcess->SecurityContext = ExAllocatePool2(
@@ -304,7 +475,7 @@ PspCreateProcessContextInternal(
     RtlZeroMemory(WkdProcess->SecurityContext, sizeof(WKD_SECURITY_CONTEXT));
     ExInitializePushLock(&WkdProcess->SecurityContext->Lock);   /* 2026-08-25 锁下沉 */
 
-    /* Phase 1.5: PPL 采集（对齐 SS ShadowStrikeValidateProcessSignature 的
+    /* Phase 1.5: PPL 采集（ShadowStrikeValidateProcessSignature 的
      * ProcessProtectionInformation 段，2026-08-09 迁至进程回调）。
      * PsGetProcessProtection 读 EPROCESS->Protection：低 4 位 Type（PPL 判定）、
      * 高 4 位 Signer（Authenticode/Antimalware/Windows 等）。Type==None 非 PPL。
@@ -335,7 +506,7 @@ PspCreateProcessContextInternal(
         //    /* 完全可信 — 标记 Trusted 供自保护/镜像加载免检 */
         //    WkdProcess->SecurityFlags.Trusted = TRUE;
 
-        //    /* 信任覆盖（对齐 SS PnpIsTrustedProcess）：PPID 欺骗进程即使
+        //    /* 信任覆盖（PnpIsTrustedProcess）：PPID 欺骗进程即使
         //     * 路径/身份符合排除（可信外观）也不豁免——撤销信任走完整
         //     * 创建 IOC 分析以被 IocpDetectPpidSpoofing 标记上报。 */
         //    if (!WkdIsPpidSpoofed(WkdProcess->Core.ProcessId,
@@ -466,7 +637,7 @@ PmpCalculateProcessBodySize(
 /*++
 Routine Description:
     计算将 WKD_PROCESS 序列化为 WKD_MESSAGE_BODY_PROCESS_CREATE 时所需的总字节数。
-    发送级大小说明（对齐 SS PnpSendProcessNotification L3703/3729）：SS 对命令行
+    发送级大小说明（PnpSendProcessNotification L3703/3729）：SS 对命令行
     再 cap 4096 + 超 SHADOWSTRIKE_MAX_MESSAGE_SIZE 截断；wkd 的 AlpcSendMessage
     对超长消息（>WKD_ALPC_MAX_MESSAGE_SUPPORTED）走 SectionView 共享内存，且
     捕获阶段已 cap 命令行 8192 字节（WKD_MAX_COMMAND_LINE_CAPTURE），无需发送级截断。
@@ -654,7 +825,7 @@ Return Value:
     if (!NT_SUCCESS(status)) {
         /*
          * Agent 未连接/发送失败：跳过同步等待，直接放行，避免创建路径
-         * 阻塞 5s（对齐 SS ShadowStrikeIsServiceConnected 快速路径语义——
+         * 阻塞 5s（ShadowStrikeIsServiceConnected 快速路径语义——
          * Agent 不在线时回调不阻塞，进程由 Agent 连接后的快照/基线补齐）。
          */
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
@@ -849,7 +1020,7 @@ PmCreateProcess(
 
     /*
      * 池限流已上移至 PspCreateProcessContext 分配前检查 + 分配后递增
-     * （对齐 SS PnpCheckPoolLimit 分配前检查语义），此处无需重复。
+     * （PnpCheckPoolLimit 分配前检查语义），此处无需重复。
      */
 
     // 将Context插入全局链表
@@ -859,7 +1030,7 @@ PmCreateProcess(
     PsReferenceWkdProcess(wkdProcess);
 
     // 将WkdProcess插入全局哈希表
-    // PID 复用防护（对齐 SS TsOnProcessCreate 创建时间校验语义）：同 PID 已有
+    // PID 复用防护（TsOnProcessCreate 创建时间校验语义）：同 PID 已有
     // 条目时比对 CreateTime——不一致说明旧进程已退出但清理遗漏（PID 复用），
     // 先摘除旧条目再插入，防止新旧上下文串号。
     {
@@ -895,7 +1066,7 @@ PmCreateProcess(
     //if (IocAcEnabled() &&
     //    IocAppControlCheckProcessExecution(
     //        wkdProcess->Core.ImagePath,
-    //        NULL,   /* 进程创建路径无哈希（对齐 SS 异步哈希，哈希判定待 SHA256 能力） */
+    //        NULL,   /* 进程创建路径无哈希（异步哈希，哈希判定待 SHA256 能力） */
     //        wkdProcess->Core.ProcessId,
     //        wkdProcess->Core.ParentProcessId) == AcVerdict_Block) {
     //    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
@@ -910,7 +1081,7 @@ PmCreateProcess(
     //
     // 记录"父进程创建子进程"行为到进程对
     // 如果父进程未被跟踪（系统初始化阶段），跳过行为记录
-    // 信任覆盖（对齐 SS PnpIsTrustedProcess）：被排除的"可信外观"进程若 PPID
+    // 信任覆盖（PnpIsTrustedProcess）：被排除的"可信外观"进程若 PPID
     // 欺骗 → 不再跳过创建 IOC 分析，使其被 IocpDetectPpidSpoofing 标记上报。
     //
     if (!wkdProcess->SecurityFlags.Trusted) {
@@ -959,10 +1130,10 @@ PmCreateProcess(
 
     /*
      * 发射 ETW 进程创建事件
-     * 对齐 SS 主回调 L1264-1291（EtwWriteProcessEvent 先行发射）：SS 在分析前
+     * 主回调 L1264-1291（EtwWriteProcessEvent 先行发射）：SS 在分析前
      * 对所有进程发射 ETW；wkd 的 CbEtwEmitProcessCreate 当前为 DbgPrintEx 回退
      * （EtwWrite 未接线），激活前保持注释——EtwWrite 接入后在此调用，
-     * 且服务未连接/跳过的进程由入口快速路径提前 return（对齐 SS 语义）。
+     * 且服务未连接/跳过的进程由入口快速路径提前 return（语义）。
      * TODO[ProcessNotify→ETW]: 当前为 DbgPrintEx 回退，替换为 EtwWrite
      */
     //CbEtwEmitProcessCreate(
@@ -1050,9 +1221,10 @@ PspDestroyProcess(
     /* 递减池限流计数（分配时递增，销毁必递减，严格配对） */
     PmpUpdatePoolLimitOnDestroy();
 
-    /* 清理内存区域追踪（MemoryMonitor 迁移 2026-08）：遍历释放区域节点。
-     * 必须在释放 WKD_PROCESS 之前调用（MemRegionState 内嵌其中）。 */
-    WkdMemRegionCleanupProcess(&WkdProcess->MemRegionState);
+    /* 清理内存区域追踪上下文（方案 A 2026-09-09：统一销毁指针载荷）。
+     * 必须在释放 WKD_PROCESS 之前调用（MemoryRegionContext 指向独立池块，
+     * 内部遍历释放事件轨 + 快照轨区域节点，随后释放上下文载荷）。 */
+    WkdDestroyMemoryRegionContext(WkdProcess);
 
     ObfDereferenceObject(WkdProcess->Core.EProcess);
     ExFreePoolWithTag(WkdProcess, 'proc');
@@ -1078,7 +1250,7 @@ PmpCreateExistingProcess(
     }
     *WkdProcess = NULL;
 
-    /* 池限流检查（分配前，对齐 SS PnpCheckPoolLimit）。枚举已有进程同样受
+    /* 池限流检查（分配前，PnpCheckPoolLimit）。枚举已有进程同样受
      * 4096 上限约束——池满时跳过该进程，由下轮快照补全。 */
     if (PmpCheckPoolLimit()) {
         return STATUS_QUOTA_EXCEEDED;
@@ -1558,11 +1730,11 @@ PmCheckFileAttributes(
 }
 
 /**************************************************/
-/*       死代码迁移区（对齐 SS ProcessNotify.c）     */
+/*       死代码迁移区（ProcessNotify.c）     */
 /**************************************************/
 //
 // 以下函数为 ShadowStrike ProcessNotify.c 功能面迁移（重功能实现非复制），
-// 当前不接入流水线。每个函数标注：对齐 SS 行号 / 不接入原因 / 激活条件。
+// 当前不接入流水线。每个函数标注：行号 / 不接入原因 / 激活条件。
 // 死代码 static 函数未引用，包裹 #pragma warning(4505) 抑制告警。
 //
 
@@ -1570,7 +1742,7 @@ PmCheckFileAttributes(
 #pragma warning(disable:4505)
 
 //
-// [死代码] 进程上下文清理兜底（对齐 SS PnpCleanupStaleContexts L4888-5006）
+// [死代码] 进程上下文清理兜底（PnpCleanupStaleContexts L4888-5006）
 // 功能：周期遍历活跃进程表，回收两类遗漏上下文：
 //   1. 已标记终止（ExitTime≠0）且超时（5min）未回收的——终止回调后引用未归零；
 //   2. 未标记终止但实际已退出（PsGetProcessExitStatus≠PENDING）——终止回调遗漏。
@@ -1580,7 +1752,7 @@ PmCheckFileAttributes(
 //   wkd 终止路径无泄漏窗口。
 // 激活条件：确认终止路径存在泄漏场景后，在周期线程挂接本函数。
 //
-#define PN_CONTEXT_TIMEOUT_MS   300000          // 5 分钟（对齐 SS PN_CONTEXT_TIMEOUT_MS）
+#define PN_CONTEXT_TIMEOUT_MS   300000          // 5 分钟（PN_CONTEXT_TIMEOUT_MS）
 #define PN_CLEANUP_STALE_MAX    128             // 单轮回收上限（防单轮 CPU 独占）
 
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -1616,12 +1788,12 @@ PnpCleanupStaleContexts(
         BOOLEAN shouldRemove = FALSE;
 
         if (process->Core.ExitTime.QuadPart != 0) {
-            /* 已标记终止，超时兜底（对齐 SS L4930-4935） */
+            /* 已标记终止，超时兜底（L4930-4935） */
             if ((now.QuadPart - process->Core.ExitTime.QuadPart) > timeout.QuadPart) {
                 shouldRemove = TRUE;
             }
         } else {
-            /* 未标记终止但实际已退出（终止回调遗漏，对齐 SS L4942-4952） */
+            /* 未标记终止但实际已退出（终止回调遗漏，L4942-4952） */
             if (process->Core.EProcess != NULL &&
                 PsGetProcessExitStatus(process->Core.EProcess) != STATUS_PENDING) {
                 shouldRemove = TRUE;
@@ -1636,7 +1808,7 @@ PnpCleanupStaleContexts(
 
     KeReleaseSpinLock(&g_WkdProcessMonitor.Lock, oldIrql);
 
-    /* 锁外移除（对齐 SS L4978-5005）。
+    /* 锁外移除（L4978-5005）。
      * 引用配对（激活时需核对）：
      *   收集 +1                   → PsDereferenceWkdProcess（释放收集引用）
      *   表引用（插入时 +1）        → PmHashMapRemove 触发 Dereference 释放

@@ -8,8 +8,8 @@
     实现位置（2026-09-05 判定逻辑整体上移）:
         运行时（g_TapRuntime）/ 判定纯函数族（Tapp*）/ 生命周期（TapInitialize /
         TapShutdown）/ 统计快照（TapGetStatistics）/ 判定入口
-        （Callbacks/ObjectNotify.c::CbpAuditThreadAccess）已从原
-        Process/ThreadAccessProtection.c 并入机制层 Callbacks/ObjectNotify.c，
+        （Callbacks/ObjectNotification.c::CbpAuditThreadAccess）已从原
+        Process/ThreadAccessProtection.c 并入机制层 Callbacks/ObjectNotification.c，
         本文件收敛为纯类型/接口头（同 Pap 的 ProcessAccessProtection.h 形态）。
         参数直传 源/目标 wkd 对象 + OB 现场，不再经 WKD_TAP_ACCESS_REQUEST
         中转（该结构已随 .c 一并删除）。
@@ -25,7 +25,7 @@
         - 系统线程攻击（PsIsSystemThread）
         - 自保护绕过（受保护源进程打其它受保护进程的线程）
 
-    判定流水线（CbpAuditThreadAccess，对齐 SS TpThreadHandlePreCallback）:
+    判定流水线（CbpAuditThreadAccess，TpThreadHandlePreCallback）:
         目标等级直读（归属进程 SecurityContext->PapProfile，进程创建回调 §2.5
         同步采集，先于本线程可被句柄化，不兜底）-> 自保护绕过标记 -> 分析
         （flag+打分）-> 攻击判定 -> 裁决 -> DeniedMask 输出（与 Pap/AU 剥离
@@ -57,7 +57,7 @@ extern "C" {
  * 常量定义
  * ============================================================================ */
 
-/* 打分常量（对齐 SS ThreadProtection.h TP_SCORE_*） */
+/* 打分常量（ThreadProtection.h TP_SCORE_*） */
 #define WKD_TAP_SCORE_CONTEXT_ACCESS    25          /* GET/SET_CONTEXT 访问 */
 #define WKD_TAP_SCORE_SUSPEND_ACCESS    20          /* SUSPEND_RESUME 访问 */
 #define WKD_TAP_SCORE_TERMINATE_ACCESS  30          /* THREAD_TERMINATE */
@@ -68,14 +68,14 @@ extern "C" {
 #define WKD_TAP_SCORE_SYSTEM_THREAD     35          /* 系统线程攻击 */
 #define WKD_TAP_SCORE_SELF_PROTECT_BYPASS  50       /* 自保护绕过 */
 
-/* 攻击类型加分（对齐 SS TppCalculateSuspicionScore switch） */
+/* 攻击类型加分（TppCalculateSuspicionScore switch） */
 #define WKD_TAP_SCORE_ATTACK_HIJACK     20
 #define WKD_TAP_SCORE_ATTACK_APC        25
 #define WKD_TAP_SCORE_ATTACK_SUSPEND_INJECT 20
 #define WKD_TAP_SCORE_ATTACK_TERMINATE  15
 #define WKD_TAP_SCORE_ATTACK_SYSTEM     30
 
-/* 裁决阈值（对齐 SS TP_HIGH/MEDIUM_SUSPICION_THRESHOLD） */
+/* 裁决阈值（TP_HIGH/MEDIUM_SUSPICION_THRESHOLD） */
 #define WKD_TAP_HIGH_SUSPICION_THRESHOLD    80
 #define WKD_TAP_MEDIUM_SUSPICION_THRESHOLD  50
 
@@ -112,7 +112,7 @@ extern "C" {
                                          WKD_TAP_CONTROL_ACCESS)
 
 /* ============================================================================
- * 可疑标志位枚举（对齐 SS TP_SUSPICIOUS_FLAGS 裁剪版）
+ * 可疑标志位枚举（TP_SUSPICIOUS_FLAGS 裁剪版）
  * ============================================================================ */
 
 typedef enum _WKD_TAP_SUSPICIOUS_FLAGS {
@@ -129,7 +129,7 @@ typedef enum _WKD_TAP_SUSPICIOUS_FLAGS {
 } WKD_TAP_SUSPICIOUS_FLAGS, *PWKD_TAP_SUSPICIOUS_FLAGS;
 
 /* ============================================================================
- * 攻击类型枚举（对齐 SS TP_ATTACK_TYPE 裁剪版）
+ * 攻击类型枚举（TP_ATTACK_TYPE 裁剪版）
  * ============================================================================ */
 
 typedef enum _WKD_TAP_ATTACK_TYPE {

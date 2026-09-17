@@ -42,7 +42,7 @@ SnapSetWstr(
 }
 
 /* 谱系:轻量 PPID 检测 + 孤儿判定（WKD_PROCESS 版，
- * 对齐 SS DetectPPIDSpoofingImpl 三启发式） */
+ * DetectPPIDSpoofingImpl 三启发式） */
 static
 VOID
 ProcessSnapshot_DetectPpidSpoof(
@@ -86,7 +86,7 @@ ProcessSnapshot_DetectPpidSpoof(
 }
 
 /* 元数据富化:用户/域/完整性/提权/WoW64/保护
- * (对齐 SS EnrichFromLiveProcess;复用 IpeCollectUserContext) */
+ * (EnrichFromLiveProcess;复用 IpeCollectUserContext) */
 static
 VOID
 ProcessSnapshot_EnrichNode(

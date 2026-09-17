@@ -165,7 +165,7 @@ NTSTATUS StLoadFileReputation(
     );
 
 /* 写入 ioc_hashes 黑名单 (INSERT OR REPLACE + IocMatcher 布隆同步)。
- * 对齐 SS AddToBlacklist (hash → threatName)。 */
+ * AddToBlacklist (hash → threatName)。 */
 NTSTATUS StUpsertIocHash(
     _In_ PCSTR Sha256Hex,
     _In_ ULONG Verdict,
@@ -173,13 +173,13 @@ NTSTATUS StUpsertIocHash(
     _In_opt_ PCSTR ThreatName
     );
 
-/* 移除 ioc_hashes 黑名单 (对齐 SS RemoveFromBlacklist) */
+/* 移除 ioc_hashes 黑名单 (RemoveFromBlacklist) */
 NTSTATUS StRemoveIocHash(
     _In_ PCSTR Sha256Hex
     );
 
 /* 证书信任管理 (cert_reputation 表, thumbprint 键 SHA1 hex 小写,
- * 对齐 SS AddTrustedCertificate/AddUntrustedCertificate)。 */
+ * AddTrustedCertificate/AddUntrustedCertificate)。 */
 NTSTATUS StUpsertCertReputation(
     _In_ PCSTR Thumbprint,
     _In_ BOOLEAN IsTrusted,

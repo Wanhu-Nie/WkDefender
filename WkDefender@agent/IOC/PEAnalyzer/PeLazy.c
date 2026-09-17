@@ -540,7 +540,7 @@ Return Value:
                     imp->NameLength = nameLen;
                 }
 
-                /* 已知系统 DLL 判定 (对齐 SS ParseImportsImpl L1369-1379:
+                /* 已知系统 DLL 判定 (ParseImportsImpl L1369-1379:
                  * kernel32/user32/ntdll/advapi32 精确 + msvcr* 前缀) */
                 {
                     static const char* sysDlls[] = {
@@ -773,7 +773,7 @@ Return Value:
                 return STATUS_NO_MEMORY;
             }
             *dst = eat[i];
-            /* 仅序号/空名导出 (非 forwarder) 可疑 — 对齐 SS ParseExportedFunction:
+            /* 仅序号/空名导出 (非 forwarder) 可疑 — ParseExportedFunction:
              * func.name.empty() && !func.isForwarded → isSuspicious */
             dst->IsSuspicious = (eat[i].NameLength == 0 && !eat[i].IsForwarder);
         }
@@ -861,7 +861,7 @@ Return Value:
                         if (!IocpReaderReadBytes((PPE_READER)&Ctx->Reader, offset, &callback, sizeof(ULONG64)) ||
                             callback == 0) break;
                         Out->Callbacks[Out->CallbackCount] = callback;
-                        /* RVA 视图: VA - vaBase (异常值兜底保留原值), 对齐 SS ParseTLSCallbacksImpl */
+                        /* RVA 视图: VA - vaBase (异常值兜底保留原值), ParseTLSCallbacksImpl */
                         Out->CallbacksRva[Out->CallbackCount] =
                             (callback >= vaBase) ? (callback - vaBase) : callback;
                         Out->CallbackCount++;
@@ -1102,7 +1102,7 @@ WpepParseCodeViewInfo(
             }
         }
         Info->PdbPath[outIdx] = 0;
-    } else if (signature == 0x3031424E) {   /* "NB10" — 旧版 CodeView, 对齐 SS ParseDebugDirectoryImpl */
+    } else if (signature == 0x3031424E) {   /* "NB10" — 旧版 CodeView, ParseDebugDirectoryImpl */
         CHAR pathBuf[PE_MAX_PDB_PATH_LENGTH + 1];
         ULONG pathLen = 0;
         ULONG i;
@@ -1213,7 +1213,7 @@ Return Value:
 /**************************************************/
 
 /*
- * WpepRichProductName — 编译器 ProductId 名映射 (对齐 SS ParseRichHeaderImpl L1931-1950)。
+ * WpepRichProductName — 编译器 ProductId 名映射 (ParseRichHeaderImpl L1931-1950)。
  * 未知 ProductId → NULL (调用方回退 "ProdIdN")。
  */
 static
@@ -1348,7 +1348,7 @@ Return Value:
                     }
                 }
 
-                /* XOR 校验和验证 (对齐 SS ParseRichHeaderImpl L1961-1981):
+                /* XOR 校验和验证 (ParseRichHeaderImpl L1961-1981):
                  * computed = dansOffset(初始) + rotl(DOS 头字节,i)[跳过 e_lfanew 0x3C-0x40]
                  *          + rotl(compId, count&0x1F), compId = (ProductId<<16)|BuildId */
                 {
@@ -1719,7 +1719,7 @@ Return Value:
         imp->UnloadIatRva = desc.UnloadInformationTableRVA;
         imp->TimeDateStamp = desc.TimeDateStamp;
 
-        /* attrs bit0: 1=RVA 模式(现代链接器恒置), 0=VA 模式(旧格式) — 对齐 SS rvaMode 判定;
+        /* attrs bit0: 1=RVA 模式(现代链接器恒置), 0=VA 模式(旧格式) — rvaMode 判定;
          * VA 模式下表字段是 VA, 需 VA - ImageBase → RVA 再转文件偏移 */
         {
             ULONG dllNameRva = desc.DllNameRVA;
@@ -2009,7 +2009,7 @@ Return Value:
 /**************************************************/
 
 /*
- * WpepResourceTypeName — RT_* 类型名映射 (对齐 SS ParseResourcesImpl L1771-1784)。
+ * WpepResourceTypeName — RT_* 类型名映射 (ParseResourcesImpl L1771-1784)。
  */
 static
 VOID
@@ -2171,7 +2171,7 @@ WpepParseResourceLevel(
                 }
             }
 
-            /* 内容级检测 (对齐 SS ParseResourcesImpl L1786-1822): 内嵌 PE/脚本/熵加密 */
+            /* 内容级检测 (ParseResourcesImpl L1786-1822): 内嵌 PE/脚本/熵加密 */
             if (resEntry->Offset != 0 && resEntry->Size >= 2 &&
                 resEntry->Offset < Ctx->Reader.Size) {
                 SIZE_T dataStart = resEntry->Offset;
@@ -2203,7 +2203,7 @@ WpepParseResourceLevel(
                             }
                         }
                     }
-                    /* 熵 (>=7.2 加密判定, ≤10MB 门控防 DoS, 对齐 SS maxResourceSize=10MB) */
+                    /* 熵 (>=7.2 加密判定, ≤10MB 门控防 DoS, maxResourceSize=10MB) */
                     if (dataLen >= 64 && dataLen <= (10u * 1024u * 1024u)) {
                         BYTE* buf = (BYTE*)malloc(dataLen);
                         if (buf != NULL) {

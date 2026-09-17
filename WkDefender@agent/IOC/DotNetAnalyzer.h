@@ -33,7 +33,7 @@
 #include "PEAnalyzer/PeAnalyzer.h"   /* PE_INFO (几何/COR20 目录/Sections) */
 
 /**************************************************/
-/*       混淆标志位 (对齐 SS DotNetObfuscation)     */
+/*       混淆标志位 (DotNetObfuscation)     */
 /**************************************************/
 #define IOC_DN_OBF_NONE              0x0000
 #define IOC_DN_OBF_STRING_ENC        0x0001
@@ -48,7 +48,7 @@
 #define IOC_DN_OBF_BODY_ENC          0x0200
 
 /**************************************************/
-/*        托管 API 危险分类 (对齐 SS 核心子集)       */
+/*        托管 API 危险分类 (核心子集)       */
 /**************************************************/
 typedef enum _IOC_DN_API_CATEGORY {
     IocDnApi_None = 0,

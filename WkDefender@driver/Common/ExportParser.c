@@ -126,6 +126,7 @@ PFN_PsGetProcessProtection                   pfnPsGetProcessProtection = NULL;
 PFN_PsGetProcessSignatureLevel               pfnPsGetProcessSignatureLevel = NULL;
 #endif
 PFN_SeGetCachedSigningLevel                  pfnSeGetCachedSigningLevel = NULL;
+PFN_MM_COPY_VIRTUAL_MEMORY                   pfnMmCopyVirtualMemory = NULL;
 
 //
 // ExLookaside* 未导出系列（特征码定位所得，见 g_ExportTable 特征码项 / CopExportBySignature）
@@ -198,6 +199,14 @@ static WKD_EXPORT_ENTRY g_ExportTable[] = {
       .HostName = NULL, .Pattern = NULL, .Mask = NULL,
       .PatternLength = 0, .CallOffset = 0, .Instance = 0,
       .Address = (PVOID*)&pfnSeGetCachedSigningLevel,
+      .Mandatory = FALSE },
+    /* MmCopyVirtualMemory：跨进程内存拷贝（1607+ 导出，MemoryIntegrity 消费，
+     * 2026-09-13 经 ExportParser 统一动态解析，禁止 IAT/直接符号依赖） */
+    { .Method = WkdResolveByName,
+      .Name = L"MmCopyVirtualMemory",
+      .HostName = NULL, .Pattern = NULL, .Mask = NULL,
+      .PatternLength = 0, .CallOffset = 0, .Instance = 0,
+      .Address = (PVOID*)&pfnMmCopyVirtualMemory,
       .Mandatory = FALSE },
 
     /* ---- 特征码项 ---- */

@@ -21,7 +21,7 @@ WkdPeCbMitigationsOnNtHeader(
     )
 /*++
     DllCharacteristics → HasDEP/ASLR/CFG/高熵ASLR 位映射
-    （对齐 SS PapAnalyzePEHeaders）+ TimeDateStamp + .NET 判定。
+    （PapAnalyzePEHeaders）+ TimeDateStamp + .NET 判定。
 --*/
 {
     PWKD_PE_MITIGATIONS mit = (PWKD_PE_MITIGATIONS)UserCtx;
@@ -71,7 +71,7 @@ WkdPeCbMitigationsOnComplete(
     _In_opt_ PVOID UserCtx
     )
 /*++
-    镜像级 Shannon 熵：采样首 min(SizeOfImage, 0x10000) 字节（对齐 SS PapCalculateEntropy）。
+    镜像级 Shannon 熵：采样首 min(SizeOfImage, 0x10000) 字节（PapCalculateEntropy）。
 --*/
 {
     PWKD_PE_MITIGATIONS mit = (PWKD_PE_MITIGATIONS)UserCtx;
@@ -234,7 +234,7 @@ WkdPeCbExecRangeOnSection(
     )
 /*++
     累计 CNT_CODE && MEM_EXECUTE 节的 min~max 区间
-    （LTCG/延迟加载多 .text 节防伪帧漏报，对齐 SS CsapPopulateTextSectionInline）。
+    （LTCG/延迟加载多 .text 节防伪帧漏报，CsapPopulateTextSectionInline）。
 --*/
 {
     PWKD_PE_EXEC_RANGE range = (PWKD_PE_EXEC_RANGE)UserCtx;
@@ -323,7 +323,7 @@ WkdPeCbPsInfoOnSection(
     )
 /*++
     填 Sections[Index]（Name/VS/VA/Chars/Shannon 熵/IsExec/IsWritable），
-    对齐 SS ImgpAnalyzePeHeader（节遍历上限 min(Number, 16)）。
+    ImgpAnalyzePeHeader（节遍历上限 min(Number, 16)）。
 --*/
 {
     WKD_PS_IMG_PE_INFO* info = (WKD_PS_IMG_PE_INFO*)UserCtx;
@@ -363,7 +363,7 @@ WkdPeCbPsInfoOnDirectory(
     _In_opt_ PVOID UserCtx
     )
 /*++
-    安全目录事实（对齐 SS ImgpAnalyzePeHeader：Security VA/Size）。
+    安全目录事实（ImgpAnalyzePeHeader：Security VA/Size）。
 --*/
 {
     WKD_PS_IMG_PE_INFO* info = (WKD_PS_IMG_PE_INFO*)UserCtx;

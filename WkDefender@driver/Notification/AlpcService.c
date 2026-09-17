@@ -1,11 +1,11 @@
 ﻿#include "MessageSync.h"
 #include "AlpcService.h"
 #include "../Process/ProcessPairContext.h"
-#include "../FileSystem/FileBackupEngine.h"   /* �ع������ļ���FBE�� */
+#include "../Include/FileSystem.h"   /* 文件系统子系统对外公共头：FsBackupRollbackProcess（2026-09-13 重构） */
 #include "../Common/Utils.h"
 #include "../Common/Exempts/Exempts.h"
 #include "../Common/ExportParser.h"
-#include "../SelfProtection/SelfProtectionEngine.h"   /* 自防护引擎（受控卸载 SpEngineUnloadPrepare）2026-09-03 恢复 */
+#include "../AccessControl/SelfProtectionEngine.h"   /* 自防护引擎（受控卸载 SpEngineUnloadPrepare）2026-09-03 恢复 */
 
 /**************************************************/
 /*              ALPC ��־λ����                    */
@@ -644,14 +644,13 @@ AlpcpMessageDispatch(
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                 "[WkDefender] RollbackProcessReq: pid=%lu\n", pid);
 
-            /* PASSIVE_LEVEL��Worker �̣߳���ͬ��ֱ���ں�̬�ع���
-             * ע���ָ� I/O �ڽ����߳�ִ�У��ļ��϶�ʱ��ʱ�ϳ���������Ǩ
-             * FBE ר�� worker �̣߳����� SS �û�̬�������壩��
-             * 2026-08-10 [FileSystem �ų�]: FbeRollbackProcess ������
-             * FileSystem\FileBackupEngine.c���ݲ�������룬����ע�͡� */
-#if 0 /* [FileSystem �ų�-�ݴ����] */
-            fbResult = FbeRollbackProcess((HANDLE)(ULONG_PTR)pid, NULL);
-#endif /* [FileSystem �ų�-�ݴ����] */
+            /* PASSIVE_LEVEL：Worker 线程，同步直接回滚（阻塞式恢复 I/O 在该线程执行，
+             * 文件多时阻塞较久；未来迁移 FBE 专用 worker 线程，类似 SS 用户态回滚方案）。
+             * 2026-08-10 [FileSystem 排除]: FsBackupRollbackProcess 定义于
+             * FileSystem\FileSystem.c 编排器封装（2026-09-13 重构），暂不参与编译，已注释。 */
+#if 0 /* [FileSystem 排除-暂存代码] */
+            fbResult = FsBackupRollbackProcess((HANDLE)(ULONG_PTR)pid, NULL);
+#endif /* [FileSystem 排除-暂存代码] */
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                 "[WkDefender] RollbackProcess result: %d\n", fbResult);
             break;

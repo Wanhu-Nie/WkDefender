@@ -535,7 +535,7 @@ ShpSendSectionCreateMessage(
 // 堆喷分配风暴预判（HeapSpray 迁移 2026-08，死代码）
 //
 // 在 ShpProcessExitAllocateMemory 发送前调用，更新源进程 HeapSprayProfile
-// 5s 窗口计数（对齐 SS HsRecordAllocation 窗口语义）; 命中阈值
+// 5s 窗口计数（HsRecordAllocation 窗口语义）; 命中阈值
 //   (a) ≥100 次 && 总字节 ≥1MB
 //   (b) 对齐分配 ≥50% && ≥100 次
 // → SecurityContext.BehaviorFlags 置 WKD_BEHAVIOR_HEAP_SPRAY + 上报
@@ -545,9 +545,9 @@ ShpSendSectionCreateMessage(
 //   恢复后自动生效。severity=0 走 AeReportIndicatorPair 默认威胁程度表。
 //
 --*/
-#define WKD_DRV_HS_SPRAY_SIZE        (1024 * 1024)        /* 对齐 SS HS_MIN_SPRAY_SIZE */
-#define WKD_DRV_HS_SIMILAR_ALLOC     100                  /* 对齐 SS HS_MIN_SIMILAR_ALLOCATIONS */
-#define WKD_DRV_HS_WINDOW_MS         5000                 /* 对齐 SS HS_ALLOCATION_WINDOW_MS */
+#define WKD_DRV_HS_SPRAY_SIZE        (1024 * 1024)        /* HS_MIN_SPRAY_SIZE */
+#define WKD_DRV_HS_SIMILAR_ALLOC     100                  /* HS_MIN_SIMILAR_ALLOCATIONS */
+#define WKD_DRV_HS_WINDOW_MS         5000                 /* HS_ALLOCATION_WINDOW_MS */
 
 _IRQL_requires_(PASSIVE_LEVEL)
 static
@@ -605,7 +605,7 @@ ShpUpdateHeapSprayProfile(
         InterlockedIncrement(&profile->ExecutableAllocations);
     }
 
-    /* 阈值判定 (对齐 SS HsRecordAllocation L925-928 阈值) */
+    /* 阈值判定 (HsRecordAllocation L925-928 阈值) */
     if (!profile->ThresholdHit &&
         profile->RecentAllocations >= WKD_DRV_HS_SIMILAR_ALLOC) {
         BOOLEAN hit = FALSE;
@@ -724,7 +724,7 @@ ShpProcessExitAllocateMemory(
     /* 内存区域追踪（MemoryMonitor 迁移 2026-08，死代码: SmInitialize 启用后
      * 生效）。分配完成，用实际输出值（allocatedBase/allocatedSize）记录区域
      * + RWX 初始分配预判。 */
-    WkdMemRegionTrackAllocation(
+    MmTrackMemoryRegionAllocation(
         SyscallContext->SourceProcessId,
         SyscallContext->TargetProcessId,
         (ULONG64)(ULONG_PTR)allocatedBase,
@@ -794,7 +794,7 @@ ShpProcessExitProtectMemory(
     ShpSendSyscallMessage(WkdMessage_SyscallProtectMemory, SyscallContext);
 
     /* AMSI 绕过检测器接线（预留）：
-     * 对齐 SS MemoryMonitor 集成 — VirtualProtect 使 amsi.dll 区域可写 → 上报。
+     * MemoryMonitor 集成 — VirtualProtect 使 amsi.dll 区域可写 → 上报。
      * 依赖 SyscallMonitor 激活（SmInitialize 当前注释），激活后自动生效。
      * 仅 PASSIVE_LEVEL 下解引用用户指针（ProbeForRead 要求 IRQL <= APC_LEVEL）。 */
     if (KeGetCurrentIrql() == PASSIVE_LEVEL &&
@@ -947,7 +947,7 @@ ShpProcessExitCreateSection
 
     NtCreateSection 的 Exit 回调处理（SectionTracker 迁移 2026-08）。
     从缓存读取 Entry 时保存的输入参数，deref 输出 SectionHandle 得 SectionObject，
-    执行 5 类怀疑信号检测（对齐 SS SectionTracker.c SecpUpdateSuspicionScore 权重）：
+    执行 5 类怀疑信号检测（SectionTracker.c SecpUpdateSuspicionScore 权重）：
       - ExecuteAnonymous（匿名可执行 200，反射加载信号）
       - LargeAnonymous（匿名 >100MB 80，堆喷/异常大映射）
       - NoBackingFile（SEC_IMAGE 无背衬文件 180，镜像伪造）
@@ -958,7 +958,7 @@ ShpProcessExitCreateSection
     ※ 死代码: 依赖 SmInitialize 启用（WkdEntry.c:261 注释态）。
 --*/
 
-/* 大匿名 Section 阈值（对齐 SS SEC_SUSPICIOUS_SIZE_THRESHOLD = 100MB） */
+/* 大匿名 Section 阈值（SEC_SUSPICIOUS_SIZE_THRESHOLD = 100MB） */
 #define WKD_SEC_LARGE_ANONYMOUS_THRESHOLD   (100ULL * 1024ULL * 1024ULL)
 
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -1004,7 +1004,7 @@ ShpProcessExitCreateSection(
         } */
     }
 
-    /* 读 MaximumSize（输入指针，Exit 时仍有效；对齐 SS SecTrackSectionCreate） */
+    /* 读 MaximumSize（输入指针，Exit 时仍有效；SecTrackSectionCreate） */
     if (cacheEntry->Params.CreateSection.MaximumSize != NULL) {
         /* __try { */
             ProbeForRead(
@@ -1017,12 +1017,12 @@ ShpProcessExitCreateSection(
         } */
     }
 
-    /* 匿名判定（对齐 SS SecTrackSectionCreate FileObject==NULL 分支）：
+    /* 匿名判定（SecTrackSectionCreate FileObject==NULL 分支）：
      * FileHandle 与 ObjectAttributes 二选一，两者皆空 = 纯匿名 Section */
     isAnonymous = (cacheEntry->Params.CreateSection.FileHandle == NULL) &&
                   (cacheEntry->Params.CreateSection.ObjectAttributes == NULL);
 
-    /* 5 类怀疑信号检测（权重对齐 SS SecpUpdateSuspicionScore） */
+    /* 5 类怀疑信号检测（权重SecpUpdateSuspicionScore） */
     if (isAnonymous) {
         /* ExecuteAnonymous：匿名 + 可执行保护（反射加载/自包含 shellcode 载体） */
         if (cacheEntry->Params.CreateSection.SectionPageProtection &
@@ -1040,7 +1040,7 @@ ShpProcessExitCreateSection(
         }
     } else if (cacheEntry->Params.CreateSection.FileHandle != NULL) {
         /* Transacted / Deleted：仅基于文件的 SEC_IMAGE section（Doppelganging 序列）。
-         * 对齐 SS SecpIsTransactedFile（IoGetTransactionParameterBlock）/
+         * SecpIsTransactedFile（IoGetTransactionParameterBlock）/
          * SecpIsFileDeleted（DeletePending）。 */
         PFILE_OBJECT fileObject = NULL;
         NTSTATUS fsStatus = ObReferenceObjectByHandle(
@@ -1061,7 +1061,7 @@ ShpProcessExitCreateSection(
         }
     }
 
-    /* 评分 = 权重和 + ≥3 标志组合加成（对齐 SS c:2346） */
+    /* 评分 = 权重和 + ≥3 标志组合加成（c:2346） */
     if (suspicionFlags & WKD_SEC_SUSPICION_TRANSACTED)         score += 300;
     if (suspicionFlags & WKD_SEC_SUSPICION_DELETED)            score += 250;
     if (suspicionFlags & WKD_SEC_SUSPICION_EXECUTE_ANONYMOUS)  score += 200;
@@ -1865,7 +1865,7 @@ ShpEtwCallback(
                  * 依赖 SmInitialize 启用（WkdEntry.c:261 注释态）。 */
                 switch (syscallNumber) {
                 case WkdSyscall_NtProtectVirtualMemory:
-                    WkdMemRegionTrackProtectionChange(
+                    MmTrackMemoryRegionProtectionChange(
                         syscallContext.TargetProcessId,
                         (ULONG64)(ULONG_PTR)syscallContext.ParameterBlock.ProtectVirtualMemory.BaseAddress,
                         (ULONG64)(ULONG_PTR)syscallContext.ParameterBlock.ProtectVirtualMemory.RegionSize,
@@ -1970,7 +1970,7 @@ ShpEtwCallback(
                          * 跨进程 section 映射 → MAPPED 区域 + 注入目标标记。
                          * 仅 Map 轨（Unmap 不产生新区域）。 */
                         if (origin == 1) {
-                            WkdMemRegionTrackSectionMap(
+                            MmTrackSectionMapping(
                                 syscallContext.SourceProcessId,
                                 syscallContext.TargetProcessId,
                                 (ULONG64)(ULONG_PTR)syscallContext.ParameterBlock.MapViewOfSection.BaseAddress,

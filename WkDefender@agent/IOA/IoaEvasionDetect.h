@@ -11,7 +11,7 @@
 /*  待接通: 驱动补 SmInitialize (syscall) + 文件/     */
 /*  注册表回调后激活。                               */
 /*                                                  */
-/*  评分 (对齐 SS BehaviorConstants):                */
+/*  评分 (BehaviorConstants):                */
 /*    反调试 +20, VM/沙箱 +20, 日志清除 +35 T1070.001 */
 /*    时间戳篡改 +25 T1070.006, 安全禁用 +60 T1562.001 */
 /*    masquerade (脚本父+Temp/AppData) +10 T1036      */
@@ -22,7 +22,7 @@
 #include "IoaTypes.h"
 
 /**************************************************/
-/*   SS BehaviorEventType 语义常量 (对齐 SS L485-662) */
+/*   SS BehaviorEventType 语义常量 (L485-662) */
 /**************************************************/
 
 #define WKD_EVT_PROCESS_CREATE      1       /* ProcessCreate */
@@ -34,7 +34,7 @@
 #define WKD_EVT_SECURITY_DISABLE    755     /* SecurityDisable */
 
 /**************************************************/
-/*   评分常量 (对齐 SS BehaviorConstants)           */
+/*   评分常量 (BehaviorConstants)           */
 /**************************************************/
 
 #define WKD_EVASION_ANTIDEBUG_SCORE 20      /* SS ANTI_DEBUG_SCORE */
@@ -102,7 +102,7 @@ IoaEvasion_UpdateScore(
  * IoaEvasion_CheckMasquerade — 脚本解释器 masquerade 检测 (死代码)。
  *
  * 脚本解释器 (powershell/cmd 等) 从 Temp/AppData 路径启动
- * 视为进程伪装 (对齐 SS L1262-1272)。
+ * 视为进程伪装 (L1262-1272)。
  *
  * 参数:
  *   State          — 进程级行为状态 (读写 MasqueradeHits/标志)。
@@ -121,7 +121,7 @@ IoaEvasion_CheckMasquerade(
 /*
  * IoaEvasion_IsScriptInterpreter — 脚本解释器判定 (死代码)。
  *
- * 进程名是否命中脚本解释器库 (对齐 SS IsScriptInterpreter)。
+ * 进程名是否命中脚本解释器库 (IsScriptInterpreter)。
  * 接入阶段用于判定父进程是否为脚本解释器 (masquerade 前置)。
  *
  * 参数:
@@ -137,7 +137,7 @@ IoaEvasion_IsScriptInterpreter(
 /*
  * IoaEvasion_IsDocumentApp — 文档应用判定 (死代码)。
  *
- * 进程名是否命中文档应用库 (对齐 SS IsDocumentApplication)。
+ * 进程名是否命中文档应用库 (IsDocumentApplication)。
  * 供接入阶段标记"文档父进程"上下文。
  *
  * 参数:

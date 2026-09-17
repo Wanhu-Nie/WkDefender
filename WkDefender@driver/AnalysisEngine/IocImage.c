@@ -18,7 +18,7 @@
 /*                 静态表（L1 检测）                */
 /**************************************************/
 
-// 可疑路径模式（对齐 SS g_SuspiciousPaths，8 条）
+// 可疑路径模式（g_SuspiciousPaths，8 条）
 static const PCWSTR g_IocSuspiciousPaths[] = {
     L"\\Temp\\",
     L"\\tmp\\",
@@ -30,7 +30,7 @@ static const PCWSTR g_IocSuspiciousPaths[] = {
     L"\\Recycle",
 };
 
-// 系统 DLL 名（对齐 SS g_SystemDllNames，12 条）
+// 系统 DLL 名（g_SystemDllNames，12 条）
 static const PCWSTR g_IocSystemDllNames[] = {
     L"ntdll.dll",     L"kernel32.dll",   L"kernelbase.dll", L"user32.dll",
     L"advapi32.dll",  L"shell32.dll",    L"ole32.dll",      L"combase.dll",
@@ -80,7 +80,7 @@ IocImgpFindSubstrCI(
     _In_ PCWSTR Needle
     )
 /*++
-    大小写不敏感子串查找（对齐 SS IocpFindInUnicodeString 语义）。
+    大小写不敏感子串查找（IocpFindInUnicodeString 语义）。
 --*/
 {
     SIZE_T hlen, nlen, i, j;
@@ -113,7 +113,7 @@ IocImgpIsPathSuspicious(
     _In_ PCWSTR ImagePath
     )
 /*++
-    检测镜像路径是否包含可疑子串（对齐 SS ImgpIsPathSuspicious）。
+    检测镜像路径是否包含可疑子串（ImgpIsPathSuspicious）。
 --*/
 {
     if (ImagePath == NULL) return FALSE;
@@ -131,7 +131,7 @@ IocImgpIsMasqueradingName(
     _In_ PCWSTR FileName
     )
 /*++
-    精确伪装系统 DLL 名（对齐 SS ImgpIsMasqueradingName 精确分支）。
+    精确伪装系统 DLL 名（ImgpIsMasqueradingName 精确分支）。
 --*/
 {
     if (FileName == NULL) return FALSE;
@@ -149,7 +149,7 @@ IocImgpDetectMasquerade(
     _In_ PCWSTR FileName
     )
 /*++
-    系统 DLL 伪装检测（精确 + typosquatting，对齐 SS ImgpIsMasqueradingName 全逻辑）：
+    系统 DLL 伪装检测（精确 + typosquatting，ImgpIsMasqueradingName 全逻辑）：
       - 精确匹配 → IOC_IMG_MASQ_EXACT
       - typosquatting（同长 1 字符差异 / ±1 字符 ≥minLen-2 匹配）→ IOC_IMG_MASQ_TYPO
 --*/
@@ -201,7 +201,7 @@ IocImgpHasDoubleExtension(
     _In_ PCWSTR FileName
     )
 /*++
-    双扩展名（文件名点计数 ≥2，对齐 SS ImgpDetectSuspiciousIndicators:3218-3228）。
+    双扩展名（文件名点计数 ≥2，ImgpDetectSuspiciousIndicators:3218-3228）。
 --*/
 {
     ULONG dotCount = 0;
@@ -421,7 +421,7 @@ IocImgpCalculateSectionEntropy(
 //
 // [死代码][SS ImageNotify.c:2344-2379 对齐] AppControl 镜像判定
 // 不接入原因：IocAppControl 存根态（IocAcEnabled 默认关），接线见
-//   Callbacks/ImageNotify.c AppControl 注释块。
+//   Callbacks/ImageNotification.c AppControl 注释块。
 //
 // [死代码][SS ImageNotify.c:2385-2396 对齐] AMSI Bypass 检测
 // 不接入原因：wkd AmsiBypassDetector 独立自持已激活（T1562.001）。

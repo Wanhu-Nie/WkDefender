@@ -82,7 +82,7 @@ typedef struct _AE_PROCESS_PAIR_KEY {
 // CumulativeThreatScore 在结算线程持 Pair 引用时读）。
 //
 typedef struct _AE_PAIR_BEHAVIOR_CONTEXT {
-    volatile ULONG SuspiciousEventCount;    /* 惯犯计数 — 对齐 SS BepUpdateProcessContext 可疑事件数 */
+    volatile ULONG SuspiciousEventCount;    /* 惯犯计数 — BepUpdateProcessContext 可疑事件数 */
     ULONG BehaviorFlags;                    /* 行为标志位（WKD_BEHAVIOR_*，合并自源进程 WKD_SECURITY_CONTEXT） */
     volatile ULONG ScoreMultiplierPercent;  /* 评分乘数百分比 — 默认 100（SS BepCalculateEventThreatScore 连乘缓存，结算侧应用） */
     ULONG StageFlags;                       /* 链种子：攻击阶段位图（SS BE_ATTACK_CHAIN.StageFlags，预留） */
@@ -101,7 +101,7 @@ typedef struct _AE_PROCESS_PAIR {
 
     ULONG64         SyncBitmap;         // 同步位图：控制哪些操作类型需要同步阻塞
 
-    /* ---- 行为上下文（进程对级行为状态，迁移自 SS BehaviorEngine） ---- */
+    /* ---- 行为上下文（进程对级行为状态，BehaviorEngine） ---- */
     AE_PAIR_BEHAVIOR_CONTEXT BehaviorContext;
 
     /* ---- 分析 + 评分上下文（2026-07 迁移自 WKD_PROCESS） ---- */

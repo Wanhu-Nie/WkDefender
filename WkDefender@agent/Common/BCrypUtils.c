@@ -1127,19 +1127,160 @@ IocScan_ComputePartialHashes(
     IocScan_ComputeHeaderSha256(FilePath, 4096, HeaderSha256Hex, HexCch);
 }
 
-/* -- Authentihash (SS FileHasher.cpp ComputeAuthentihashImpl L1038-1043) -------
- * ������: SS ��δʵ�� (���� PEParser ǩ��Ŀ¼����); wkd ֤����֤�� IocVerifySignature�� */
+/* -- Authentihash: 微软 Authenticode PE 认证哈希 (自立实现; SS FileHasher
+ *  ComputeAuthentihashImpl 为 stub "not yet integrated") ------------------
+ * 语义: 整文件 SHA-256, 但:
+ *  1) 可选头 CheckSum 字段 (偏移 = e_lfanew + 88, PE32/PE32+ 相同) 视为全零;
+ *  2) 排除 Security Directory (数据目录[4]) 指向的证书表: 目录 VA 域即文件
+ *     偏移, Size 为证书数据长, 排除区间含 8B 对齐尾 (微软 Authenticode 语义);
+ * 产出小写 hex (输出缓冲需 >=65 字节)。非 PE / 解析失败返回 FALSE, 不产出
+ * 伪哈希 (维持 SS "宁缺毋滥" 语义)。消费方: IocScan_ExtractCertDetails
+ * (证书详情增强), 供离线 catalog / 威胁情报 (authentihash) 比对。 */
 static BOOLEAN
+IocScan_ComputeAuthentihashBuffer(
+    _In_  const BYTE* Buf,
+    _In_  SIZE_T      Size,
+    _Out_ PCHAR       AuthHex,
+    _In_  ULONG       HexCch
+    )
+{
+    BCRYPT_ALG_HANDLE hAlg = NULL;
+    BCRYPT_HASH_HANDLE hHash = NULL;
+    NTSTATUS status;
+    BYTE digest[32];
+    BOOLEAN ok = FALSE;
+    ULONG peOff, sig, numDirs, certOff = 0, certSize = 0;
+USHORT magic, mz;
+    SIZE_T chkOff, certEnd, seg[3][2];
+    UCHAR segCount, k;
+
+    if (!Buf || !AuthHex || HexCch < 65) return FALSE;
+    AuthHex[0] = 0;
+
+    /* --- PE 头解析 (所有读取前先验长度, 防越界) --- */
+    if (Size < sizeof(IMAGE_DOS_HEADER)) return FALSE;
+    RtlCopyMemory(&mz, Buf, 2);
+    if (mz != IMAGE_DOS_SIGNATURE) return FALSE;
+
+    RtlCopyMemory(&peOff, Buf + FIELD_OFFSET(IMAGE_DOS_HEADER, e_lfanew), 4);
+    if (peOff == 0 || peOff > Size ||
+        peOff + 24 + 96 + 40 > Size) return FALSE;   /* NT 头 + 数据目录[4] 边界 */
+
+    RtlCopyMemory(&sig, Buf + peOff, 4);
+    if (sig != IMAGE_NT_SIGNATURE) return FALSE;
+
+    RtlCopyMemory(&magic, Buf + peOff + 24, 2);
+    if (magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC &&
+        magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return FALSE;
+
+    /* CheckSum 偏移 = e_lfanew + "PE\0\0"(4) + FileHeader(20) + 可选头偏移 64 */
+    chkOff = (SIZE_T)peOff + 88;
+    if (chkOff + 4 > Size) return FALSE;
+
+    /* Security Directory (数据目录[4]): VA 域即文件偏移; NumberOfRvaAndSizes
+     * 不足 5 视为无证书区 (防目录数组垃圾读取)。 */
+    certEnd = Size;
+    RtlCopyMemory(&numDirs, Buf + peOff + 24 + 92, 4);
+    if (numDirs > IMAGE_DIRECTORY_ENTRY_SECURITY) {
+        RtlCopyMemory(&certOff,  Buf + peOff + 24 + 96 + 4 * 8,       4);
+        RtlCopyMemory(&certSize, Buf + peOff + 24 + 96 + 4 * 8 + 4,   4);
+        if (certOff != 0 && certSize != 0 &&
+            certOff < Size && certSize <= Size - certOff) {
+            ULONGLONG end = (ULONGLONG)certOff + ((ULONGLONG)certSize + 7) & ~7ULL;
+            certEnd = (end > Size) ? Size : (SIZE_T)end;
+        } else {
+            certOff = 0; certEnd = Size;          /* 无效/越界 → 无证书区 */
+        }
+    } else {
+        certOff = 0;
+    }
+
+    /* --- 分段填充 (排除 CheckSum 4B 与证书表; 区间重叠时合并排除) --- */
+    {
+        const SIZE_T x0 = chkOff, x1 = chkOff + 4;
+        const SIZE_T y0 = certOff, y1 = certEnd;
+        if (y0 >= y1) {                           /* 无证书区 */
+            seg[0][0] = 0;    seg[0][1] = x0;
+            seg[1][0] = x1;   seg[1][1] = Size;
+            segCount = 2;
+        } else if (y0 >= x1) {                    /* 证书表位于 CheckSum 之后 */
+            seg[0][0] = 0;    seg[0][1] = x0;
+            seg[1][0] = x1;   seg[1][1] = y0;
+            seg[2][0] = y1;   seg[2][1] = Size;
+            segCount = 3;
+        } else if (y1 <= x0) {                    /* 证书表位于 CheckSum 之前 (畸形) */
+            seg[0][0] = 0;    seg[0][1] = y0;
+            seg[1][0] = y1;   seg[1][1] = x0;
+            seg[2][0] = x1;   seg[2][1] = Size;
+            segCount = 3;
+        } else {                                  /* 重叠: 合并为一个排除区间 */
+            seg[0][0] = 0;    seg[0][1] = (x0 < y0) ? x0 : y0;
+            seg[1][0] = (x1 > y1) ? x1 : y1;  seg[1][1] = Size;
+            segCount = 2;
+        }
+    }
+
+    status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, NULL, 0);
+    if (!NT_SUCCESS(status)) return FALSE;
+    status = BCryptCreateHash(hAlg, &hHash, NULL, 0, NULL, 0, 0);
+    if (!NT_SUCCESS(status)) goto Cleanup;
+
+    for (k = 0; k < segCount; k++) {
+        if (seg[k][1] > seg[k][0]) {
+            status = BCryptHashData(hHash, (PUCHAR)Buf + seg[k][0],
+                                    (ULONG)(seg[k][1] - seg[k][0]), 0);
+            if (!NT_SUCCESS(status)) goto Cleanup;
+        }
+    }
+    status = BCryptFinishHash(hHash, digest, sizeof(digest), 0);
+    if (!NT_SUCCESS(status)) goto Cleanup;
+
+    ok = UtHexEncode(digest, sizeof(digest), AuthHex, HexCch, FALSE);
+
+Cleanup:
+    if (hHash) BCryptDestroyHash(hHash);
+    if (hAlg)  BCryptCloseAlgorithmProvider(hAlg, 0);
+    if (!ok) AuthHex[0] = 0;
+    return ok;
+}
+
+BOOLEAN
 IocScan_ComputeAuthentihash(
     _In_  PCWSTR FilePath,
-    _Out_ PCHAR  AuthHex,           /* ��129 */
+    _Out_ PCHAR  AuthHex,          /* 需 >=65 字节 */
     _In_  ULONG  HexCch
     )
 {
-    (void)FilePath;
-    if (!AuthHex || HexCch == 0) return FALSE;
+    HANDLE hFile;
+    HANDLE hMap = NULL;
+    LPVOID base = NULL;
+    LARGE_INTEGER size;
+    BOOLEAN tooLarge = FALSE;
+    BOOLEAN ok = FALSE;
+
+    if (!FilePath || !AuthHex || HexCch < 65) return FALSE;
     AuthHex[0] = 0;
-    return FALSE;   /* δʵ��: �� PE [Ŀ¼]Authenticode ��ϣ������ */
+
+    hFile = CoOpenFileForSequentialRead(FilePath, &tooLarge);
+    if (hFile == INVALID_HANDLE_VALUE) return FALSE;
+
+    if (GetFileSizeEx(hFile, &size) && size.QuadPart > 0 &&
+        size.QuadPart <= (LONGLONG)WKD_MAX_HASH_FILE_SIZE) {
+        hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+        if (hMap) {
+            base = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+            if (base) {
+                ok = IocScan_ComputeAuthentihashBuffer((const BYTE*)base,
+                                                       (SIZE_T)size.QuadPart,
+                                                       AuthHex, HexCch);
+                UnmapViewOfFile(base);
+            }
+            CloseHandle(hMap);
+        }
+    }
+    CloseHandle(hFile);
+    if (!ok) AuthHex[0] = 0;
+    return ok;
 }
 
 /* -- ���ϣ����ȷ�Ƚ� (SS FileHasher.cpp CompareImpl L1158-1199) --------------

@@ -27,7 +27,7 @@
 #define WPA_PE32PLUS_MAGIC                  0x20B
 
 //
-// 深度 PE 验证常量 (对齐 SS MAX_IMAGE=256MB)
+// 深度 PE 验证常量 (MAX_IMAGE=256MB)
 //
 #define WKD_PE_DEEP_MAX_IMAGE              (256UL * 1024 * 1024)
 
@@ -339,7 +339,7 @@ WpeValidateModuleIntegrity(
     );
 
 /**************************************************/
-/*        版本信息提取 (对齐 SS GetVersionInfoImpl)   */
+/*        版本信息提取 (GetVersionInfoImpl)   */
 /**************************************************/
 typedef struct _PE_VERSION_INFO {
     BOOLEAN HasVersionInfo;
@@ -362,7 +362,7 @@ typedef struct _PE_VERSION_INFO {
 } PE_VERSION_INFO, *PPE_VERSION_INFO;
 
 /* 提取文件版本信息 (Win32 GetFileVersionInfoSizeW/GetFileVersionInfoW/VerQueryValueW,
- * 对齐 SS GetVersionInfoImpl L2508-2583)。无调用者不告警 (wkd 惯例)。 */
+ * GetVersionInfoImpl L2508-2583)。无调用者不告警 (wkd 惯例)。 */
 NTSTATUS
 WpeGetVersionInfo(
     _In_  PCWSTR            FilePath,
@@ -370,7 +370,7 @@ WpeGetVersionInfo(
     );
 
 /**************************************************/
-/*        ML 特征向量 (死代码, 对齐 SS ExtractMLFeatures)  */
+/*        ML 特征向量 (死代码, ExtractMLFeatures)  */
 /**************************************************/
 #define PE_ML_FEATURE_MAX      256
 
@@ -379,7 +379,7 @@ typedef struct _PE_ML_FEATURES {
     FLOAT Values[PE_ML_FEATURE_MAX];
 } PE_ML_FEATURES, *PPE_ML_FEATURES;
 
-/* 提取静态 PE 特征向量 (EMBER 对齐布局骨架, 对齐 SS ExtractMLFeatures L2799-2921)。
+/* 提取静态 PE 特征向量 (EMBER 对齐布局骨架, ExtractMLFeatures L2799-2921)。
  * 死代码: wkd 无 ONNX/PhantomCortex, 供未来 ML 融合预留。 */
 NTSTATUS
 WpeExtractMlFeatures(

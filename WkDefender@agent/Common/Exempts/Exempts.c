@@ -137,7 +137,7 @@ ExemptsEvaluate(
     )
 /*++
 Routine Description:
-    统一豁免判定（唯一判定入口）。信任层级（对齐 SS IsWhitelisted）：
+    统一豁免判定（唯一判定入口）。信任层级（IsWhitelisted）：
         Hash > Certificate > Publisher > Path，首匹配胜。
     任一维度命中即豁免。证书层缺 Result 时内部补做
     IocVerifySignature（对齐 IocFileWhitelist 行为）。
