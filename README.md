@@ -9,8 +9,8 @@ WkDefender 采用分层决策模型，其层级如下：
 | 层级 | 名称 | 职责 |
 |------|------|------|
 | L0 | 内核硬实时 | 回调监控 / 白名单过滤 / 权威进程副本（WKD_PROCESS） |
-| L1 | 内核软实时 | 静态特征和动态行为采集 / 分级同步或异步阻塞敏感操作 |
-| L2 | 用户态 Agent | 复杂分析：IOC/IOA 深度判定 / 进程系谱图 / 因果图 / 攻击链 / MITRE ATT&CK 映射 /  |
+| L1 | 内核软实时 | 静态特征和动态行为采集 / 分级异步或同步阻塞敏感操作 |
+| L2 | 用户态 Agent | 复杂分析：IOC/IOA 深度判定 / 进程系谱图 / 因果图 / 攻击链 / MITRE ATT&CK 映射 |
 
 内核驱动与用户层 Agent 通信链路：ALPC(+SectionView共享视图)、FltMessage 和 ETW。
 
@@ -18,13 +18,13 @@ WkDefender 采用分层决策模型，其层级如下：
 
 ### i) 内核驱动（WkDefender@driver/）
 
-> WDK / KMDF / C 实现，Minifilter AntiVirus 类，Altitude 385210。
+> KMDF / C 实现，Minifilter AntiVirus 类，Altitude 385210。
 
 #### 入口与构建
 
 | 文件路径 | 作用 |
 |----------|------|
-| `WkDefender@driver\WkdEntry.c` | 驱动入口 DriverEntry / DriverUnload，子系统初始化与接线 |
+| `WkDefender@driver\WkdEntry.c` | 驱动入口 DriverEntry / DriverUnload，子系统初始化 |
 | `WkDefender@driver\WkDefender.inf` | 驱动安装配置（Minifilter 类、Altitude、ALPC 主通道 + FLT YARA 端口） |
 | `WkDefender@driver\WkDefender@driver.vcxproj` | VS 工程文件（Debug/Release × x64/ARM64） |
 
@@ -32,39 +32,35 @@ WkDefender 采用分层决策模型，其层级如下：
 
 | 子目录/文件 | 作用 |
 |-------------|------|
+| `AccessControl\SelfProtectionEngine` | 驱动自保护引擎 (流水线编排器)；当前子系统正在向 **通用访问控制** 引擎方向迁移  |
+| `AccessControl\CallbackProtection` | 回调完整性检测（SHA-256 + MDL 恢复） |
+| `AccessControl\AntiDebug` / `AntiUnload` / `IntegrityMonitor` / `RegistryProtection` | 反调试、防卸载、完整性监控、注册表保护 |
+| `AccessControl\SelfProtectionCompat` | 自保护兼容层 |
+| `AnalysisEngine\` | 内核侧分析流水线编排：`AnalysisEngine` 主编排 + `IoaEngine` + `IocEngine`（含 IocSyscall/IocThread/IocHandle/IocImage/IocProcess/IocAppControl 子类等） |
 | `Callbacks\` | 内核回调注册：进程通知、线程通知、镜像加载通知、对象回调、注册表回调、文件系统通知 |
+| `Common\` | 工具库：HashMap、HashSet、DynamicArray、Lookaside 池、PeriodicTimer、BCryptUtils、ExportParser、PeParser、PeCallbacks、Utils、Constants.h |
+| `Common\Exempts\` | 内核豁免子系统（Exempts 门面 / ExemptsManager 存储 / ExemptPid / ExemptPath） |
+| `ETW\ETWProvider` | 内核 ETW 提供者 |
+| `FileSystem\` | Minifilter 文件过滤编排器：PreCreate/PreWrite/PostWrite/PreSetInformation/PreAcquireSection 回调、文件备份引擎、文件扫描、命名管道监控、USB 设备控制、进程文件上下文 |
+| `Include\` | 公共头文件：FileSystem.h、Memory/MemoryIntegrity.h、Process/WkdProcess.h、Process/DefensiveEvasion.h |
+| `Memory\` | 内存检测族：AMSI Bypass 检测、Shellcode 检测、注入检测、堆喷（HeapSpray）、ROP 检测、Sections 追踪、内存区域验证、内存扫描、内存完整性、内存监控 |
+| `Notification\AlpcService` | ALPC 服务端（生产者-消费者模型） |
+| `Notification\MessageQueue` / `MessageSync` | 驱动侧消息队列与同步 |
+| `Notification\NotificationHandler` / `NotificationManager` | 通知分发与协议管理（与 Agent 侧 WkDefenderHeader.h 同步） |
+| `Object\ObjectManager` | 全局对象注册管理 🔄️ |
 | `Process\ProcessMonitor.c` | 基于 PsSetCreateProcessNotifyRoutine 维护权威进程表（WKD_PROCESS） |
 | `Process\ProcessPairContext` | 父子进程上下文关联（供行为分析使用） |
 | `Process\HollowingDetector` | 进程镂空（Process Hollowing）内联检测 |
 | `Process\ProcessModuleTracker` | 进程模块加载追踪 |
 | `Process\HandleScanner` | 句柄扫描 |
-| `Notification\AlpcService` | ALPC 服务端（生产者-消费者模型） |
-| `Notification\MessageQueue` / `MessageSync` | 驱动侧消息队列与同步 |
-| `Notification\NotificationHandler` / `NotificationManager` | 通知分发与协议管理（与 Agent 侧 WkDefenderHeader.h 同步） |
 | `Syscall\SyscallMonitor` | 系统调用监控（ETW 拦截） |
 | `Syscall\SyscallHijack` + `SyscallTrampoline.asm` | 系统调用挂钩引擎（汇编蹦床） |
 | `Syscall\SyscallAggregation` / `SyscallContextCache` / `SyscallService` | Syscall 事件聚合、上下文缓存与分发 |
-| `AnalysisEngine\` | 内核侧分析编排：`AnalysisEngine` 主编排 + `IoaEngine` + `IocEngine`（含 IocSyscall/IocThread/IocHandle/IocImage/IocProcess/IocAppControl 子类） |
 | `ThreatScoring\` | 内核侧威胁评分引擎 |
-| `Memory\` | 内存检测族：AMSI Bypass 检测、Shellcode 检测、注入检测、堆喷（HeapSpray）、ROP 检测、Sections 追踪、内存区域验证、内存扫描、内存完整性、内存监控 |
-| `FileSystem\` | Minifilter 文件过滤编排器：PreCreate/PreWrite/PostWrite/PreSetInformation/PreAcquireSection 回调、文件备份引擎、文件扫描、命名管道监控、USB 设备控制、进程文件上下文 |
-| `AccessControl\SelfProtectionEngine` | 驱动自保护引擎 |
-| `AccessControl\CallbackProtection` | 回调代码完整性（SHA-256 + MDL 恢复） |
-| `AccessControl\AntiDebug` / `AntiUnload` / `IntegrityMonitor` / `RegistryProtection` | 反调试、防卸载、完整性监控、注册表保护 |
-| `AccessControl\SelfProtectionCompat` | 自保护兼容层 |
-| `Object\ObjectManager` | 对象句柄保护 |
-| `ETW\ETWProvider` | 内核 ETW 提供者 |
-| `Common\` | 工具库：HashMap、HashSet、DynamicArray、Lookaside 池、PeriodicTimer、BCryptUtils、ExportParser、PeParser、PeCallbacks、Utils、Constants.h |
-| `Common\Exempts\` | 内核豁免子系统（Exempts 门面 / ExemptsManager 存储 / ExemptPid / ExemptPath） |
-| `Include\` | 对外头文件：FileSystem.h、Memory/MemoryIntegrity.h、Process/WkdProcess.h、Process/DefensiveEvasion.h |
-
-> 注：`old\` 目录为旧代码残留，架构上直接忽略；规划新模块时应接入 `WkdEntry.c` 的 `XxxInitialize()/XxxCleanup()` 模式。
 
 ---
 
 ### ii) 用户态 Agent（WkDefender@agent/）
-
-> C 控制台实现的系统服务，深度分析与处置编排层。
 
 #### 入口与核心
 
@@ -159,14 +155,12 @@ WkDefender 采用分层决策模型，其层级如下：
 | `Common\Exempts\` | 豁免子系统：门面 + Hash / Path / Cert / Injection / Process / Push 六维判定 |
 | `External\sqlite3\` | SQLite 第三方库 |
 | `External\openssl\lib\` | OpenSSL 链接库 |
-| `External\yara\include|lib\` | YARA 引擎库 |
+| `External\yara\include\lib\` | YARA 引擎库 |
 | `Include\` | 内部头文件：FileSystem/FileAnalyzer.h、Process/InjectionDetector.h |
-
-> 注：`old\` 目录为旧代码残留，忽略；构建输出位于 `x64\Debug|Release`。
 
 ---
 
-## MITRE ATT&CK 覆盖
+## Ⅲ. MITRE ATT&CK 覆盖
 
 + Execution(TA0002)：T1047(Windows管理规范, WMI) 🔄️、T1059(命令和脚本解释器)、T1106(原生API调用)、T1129(共享模块) 🔄️、T1559(进程间通信)、T1569(系统服务) 🔄️等；
 + Persistence(TA0003)：T1053(计划任务/作业) 🔄️、T1078(有效账户) 🔄️、T1098(账户操纵) 🔄️、T1112(注册表修改)、T1136(创建账户) 🔄️、T1137(Office 应用程序启动) 🔄️、T1176 (软件扩展) 🔄️、T1542 (预启动引导) 🔄️、T1543(创建或修改系统进程)、T1546(事件触发执行)、T1547(启动或登录自动执行)、T1556 (修改认证流程) 🔄️等；
@@ -176,6 +170,6 @@ WkDefender 采用分层决策模型，其层级如下：
 + Credential Access(TA0006)：T1003(操作系统凭据转储)、T1056(输入捕获) 🔄️、T1110(暴力破解) 🔄️、T1552(不安全的凭据)、T1555(从密码存储中获取凭据)等；
 
 ---
-== 请注意：当前 WkDefender 正在进行大规模架构调整，存在大量流水线未接通的情况 !!! ==
+${\color{red}请注意: 当前 WkDefender 正在进行大规模架构调整，存在大量流水线未接通的情况 !!!}$
 
 如有兴趣或任何问题，可通过邮件与我交流（1578905282@qq.com），请说明来意，我会尽快回复。
